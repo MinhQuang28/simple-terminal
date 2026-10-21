@@ -1,5 +1,5 @@
 use eframe::egui::{
-    Align, Align2, Color32, FontId, Id, Label, Layout, Popup, PopupCloseBehavior, Response, RichText,
+    Align, Align2, Button, Color32, FontId, Id, Label, Layout, Popup, PopupCloseBehavior, Response, RichText,
     ScrollArea, Sense, Shape, Stroke, Ui, UiBuilder, pos2, vec2,
 };
 
@@ -91,16 +91,12 @@ fn approvals_section(ui: &mut Ui, approvals: &[Approval], actions: &mut Vec<Acti
 
 fn contents(ui: &mut Ui, inbox: &Inbox, filter: Id, actions: &mut Vec<Action>) {
     let mut unread_only = ui.data(|d| d.get_temp(filter)).unwrap_or(false);
+    // Title and filter only: the UI font may be a wide monospace one, so bulk actions sit in a
+    // footer instead of crowding this row.
     ui.horizontal(|ui| {
-        ui.label(RichText::new("Notifications").strong());
+        ui.label(RichText::new("Notifications").strong().size(13.0));
         right_aligned(ui, |ui| {
-            if ui.small_button("Clear").clicked() {
-                actions.push(Action::ClearNotices);
-            }
-            if ui.small_button("Mark all read").clicked() {
-                actions.push(Action::MarkNoticesRead);
-            }
-            if ui.selectable_label(unread_only, "Unread").clicked() {
+            if ui.selectable_label(unread_only, RichText::new("Unread").size(12.0)).clicked() {
                 unread_only = !unread_only;
                 ui.data_mut(|d| d.insert_temp(filter, unread_only));
             }
@@ -111,7 +107,7 @@ fn contents(ui: &mut Ui, inbox: &Inbox, filter: Id, actions: &mut Vec<Action>) {
     if notices.is_empty() {
         let text = if unread_only { "No unread notifications" } else { "Nothing yet" };
         ui.add_space(14.0);
-        ui.vertical_centered(|ui| ui.label(RichText::new(text).color(muted(ui))));
+        ui.vertical_centered(|ui| ui.label(RichText::new(text).color(muted(ui)).size(12.5)));
         ui.add_space(14.0);
         return;
     }
@@ -124,6 +120,20 @@ fn contents(ui: &mut Ui, inbox: &Inbox, filter: Id, actions: &mut Vec<Action>) {
                 ui.close();
             }
         }
+    });
+    ui.separator();
+    ui.horizontal(|ui| {
+        let link = |ui: &mut Ui, text: &str| {
+            ui.add(Button::new(RichText::new(text).color(muted(ui)).size(12.0)).frame(false))
+        };
+        if link(ui, "Mark all read").clicked() {
+            actions.push(Action::MarkNoticesRead);
+        }
+        right_aligned(ui, |ui| {
+            if link(ui, "Clear").clicked() {
+                actions.push(Action::ClearNotices);
+            }
+        });
     });
 }
 
@@ -165,19 +175,19 @@ fn notice_row(ui: &mut Ui, notice: &Notice, now: u64) -> Response {
 /// Outlined bell, with a badge showing `unread` when non-zero; orange while an approval waits.
 fn bell_icon(ui: &mut Ui, unread: usize, urgent: bool) -> Response {
     let (rect, response, color) = icon_button_frame(ui, false);
-    let stroke = Stroke::new(1.4, color);
-    let center = rect.center() + vec2(0.0, -1.0);
-    let radius = 5.0;
-    let base = center.y + 4.0;
-    let mut outline = vec![pos2(center.x - 7.0, base), pos2(center.x - radius, center.y)];
-    outline.extend((0..=8).map(|i| {
-        let angle = std::f32::consts::PI * (1.0 + i as f32 / 8.0);
-        pos2(center.x + radius * angle.cos(), center.y + radius * angle.sin())
+    let stroke = Stroke::new(1.3, color);
+    let c = rect.center();
+    // Dome on straight shoulders that flare into the rim; the clapper hangs below.
+    let (radius, dome_y, shoulder_y, rim_y) = (4.2, c.y - 1.5, c.y + 3.0, c.y + 4.5);
+    let mut outline = vec![pos2(c.x - 6.0, rim_y), pos2(c.x - 4.6, shoulder_y)];
+    outline.extend((0..=10).map(|i| {
+        let angle = std::f32::consts::PI * (1.0 + i as f32 / 10.0);
+        pos2(c.x + radius * angle.cos(), dome_y + radius * angle.sin())
     }));
-    outline.extend([pos2(center.x + radius, center.y), pos2(center.x + 7.0, base)]);
+    outline.extend([pos2(c.x + 4.6, shoulder_y), pos2(c.x + 6.0, rim_y)]);
     let painter = ui.painter();
     painter.add(Shape::closed_line(outline, stroke));
-    painter.line_segment([pos2(center.x - 2.0, base + 3.0), pos2(center.x + 2.0, base + 3.0)], stroke);
+    painter.line_segment([pos2(c.x - 1.5, rim_y + 2.2), pos2(c.x + 1.5, rim_y + 2.2)], stroke);
     if unread > 0 {
         let badge = rect.right_top() + vec2(-7.0, 7.0);
         painter.circle_filled(badge, 5.5, if urgent { AGENT } else { accent(ui) });
