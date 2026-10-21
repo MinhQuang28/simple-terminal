@@ -402,15 +402,17 @@ impl eframe::App for RepodeckApp {
         self.saver.flush();
     }
 
-    /// Runs instead of `ui` while the window is hidden or fully covered, so agents and commands
-    /// finishing in the meantime still notify right away instead of when the window next shows.
+    /// Runs before `ui` on every frame, and alone while the window is hidden or fully covered, so
+    /// agents and commands finishing in the meantime still notify right away. All per-pane
+    /// bookkeeping lives here so it runs exactly once per frame.
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         while let Ok(job) = self.jobs.try_recv() {
             job(self);
         }
-        let visible = HashSet::new();
+        let visible = self.visible_panes();
+        let window_focused = ctx.input(|i| i.focused && !i.viewport().minimized.unwrap_or(false));
         self.pool.pump_background(&visible, ctx);
-        self.track_activity(&visible, false, ctx);
+        self.track_activity(&visible, window_focused, ctx);
         self.save_when_due(ctx);
     }
 
@@ -449,10 +451,6 @@ impl eframe::App for RepodeckApp {
         if self.pending_paste.is_some() {
             ctx.request_repaint_after(Duration::from_millis(200));
         }
-        let visible = self.visible_panes();
-        let window_focused = ctx.input(|i| i.focused);
-        self.pool.pump_background(&visible, &ctx);
-        self.track_activity(&visible, window_focused, &ctx);
         self.save_when_due(&ctx);
         // Keep relative timestamps fresh without busy-looping; they only show whole minutes.
         ctx.request_repaint_after(Duration::from_secs(60));
