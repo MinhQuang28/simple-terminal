@@ -168,11 +168,11 @@ pub fn file_icon(ui: &mut Ui, is_dir: bool) {
     }
 }
 
-/// Spinner animation frame rate; egui's own `Spinner` repaints every frame, which keeps the whole
-/// window at full refresh rate for as long as any tab is busy.
-const SPINNER_FRAME: Duration = Duration::from_millis(150);
+/// Spinner animation frame interval: smooth at 60 Hz, but capped there so a 120 Hz display
+/// doesn't double the cost of repainting the window while a tab is busy (a frame takes ~1 ms).
+const SPINNER_FRAME: Duration = Duration::from_micros(1_000_000 / 60);
 
-/// Rotating arc like egui's `Spinner`, animated at a modest rate.
+/// Rotating arc like egui's `Spinner`, repainted only while visible.
 pub fn spinner_at(ui: &Ui, rect: Rect, color: Color32) {
     if !ui.is_rect_visible(rect) {
         return;

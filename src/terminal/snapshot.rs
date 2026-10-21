@@ -49,6 +49,8 @@ pub struct Frame {
     pub history_size: usize,
     pub screen_lines: usize,
     pub has_selection: bool,
+    /// Nothing but spaces on screen, e.g. while a program is still starting.
+    pub blank: bool,
     captured_at: Option<Instant>,
 }
 
@@ -63,6 +65,7 @@ impl Default for Frame {
             history_size: 0,
             screen_lines: 0,
             has_selection: false,
+            blank: true,
             captured_at: None,
         }
     }
@@ -91,6 +94,7 @@ impl Frame {
         let cells = &mut self.cells;
         cells.clear();
         let mut under = None;
+        let mut blank = true;
 
         let above = edge_row(term, -offset - 1);
         let below = edge_row(term, term.screen_lines() as i32 - offset);
@@ -99,6 +103,7 @@ impl Frame {
             if cell.flags.intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER) {
                 continue;
             }
+            blank &= cell.c == ' ';
             let selected = selection.as_ref().is_some_and(|s| s.contains(indexed.point));
             let (fg, bg) = cell_colors(cell, palette, theme, selected);
             if indexed.point == cursor_point {
@@ -126,6 +131,7 @@ impl Frame {
         self.history_size = term.grid().history_size();
         self.screen_lines = term.screen_lines();
         self.has_selection = term.selection.is_some();
+        self.blank = blank;
     }
 }
 

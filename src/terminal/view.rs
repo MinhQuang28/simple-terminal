@@ -16,7 +16,7 @@ use super::render::{self, CursorState, Grid};
 use super::scroll::{self, ScrollState};
 use super::session::TerminalSession;
 use super::style::TerminalStyle;
-use super::view_chrome::{cursor_visible, exit_badge, hover_link, report_focus};
+use super::view_chrome::{cursor_visible, exit_badge, hover_link, report_focus, starting_indicator};
 
 const BELL_FLASH: Duration = Duration::from_millis(150);
 /// How soon a pane showing a stale frame tries again to capture the terminal.
@@ -128,6 +128,7 @@ pub fn show(
         }
     }
     exit_badge(ui, session, rect, style);
+    starting_indicator(ui, session, rect);
     let open_file = hover_link(ui, &response, session, grid, (cols, rows), cwd);
     if state.find.open {
         find::overlay(ui, session, &mut state.find, rect, grid, &response, style);
