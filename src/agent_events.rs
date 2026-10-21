@@ -65,8 +65,8 @@ pub fn with_hooks(command: &str) -> String {
     let mut out = Vec::new();
     let mut command_start = true;
     for token in command.split_whitespace() {
-        if command_start && token == "claude" {
-            out.push(format!("claude --settings \"${HOOKS_VAR}\""));
+        if command_start && Path::new(token).file_name().is_some_and(|name| name == "claude") {
+            out.push(format!("{token} --settings \"${HOOKS_VAR}\""));
         } else {
             out.push(token.to_string());
         }
@@ -204,6 +204,11 @@ mod tests {
             "claude --settings \"$REPODECK_AGENT_HOOKS\" --continue || claude --settings \"$REPODECK_AGENT_HOOKS\""
         );
         assert_eq!(with_hooks("echo claude"), "echo claude");
+        assert_eq!(
+            with_hooks("/opt/bin/claude --model opus"),
+            "/opt/bin/claude --settings \"$REPODECK_AGENT_HOOKS\" --model opus"
+        );
+        assert_eq!(with_hooks("claude-foo"), "claude-foo");
     }
 
     #[test]
