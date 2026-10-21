@@ -53,3 +53,13 @@ fn accepts_only_uuid_like_ids() {
     assert!(!is_session_id("abc; rm -rf ~"));
     assert!(!is_session_id(""));
 }
+
+#[test]
+fn rereads_a_title_only_when_the_transcript_changes() {
+    let file = Transcript::new(&[r#"{"type":"ai-title","aiTitle":"First"}"#]);
+    let titles = Mutex::default();
+    assert_eq!(cached_title(&titles, file.0.clone(), (1, 1)).as_deref(), Some("First"));
+    std::fs::write(&file.0, "{\"type\":\"ai-title\",\"aiTitle\":\"Second\"}\n").unwrap();
+    assert_eq!(cached_title(&titles, file.0.clone(), (1, 1)).as_deref(), Some("First"));
+    assert_eq!(cached_title(&titles, file.0.clone(), (2, 1)).as_deref(), Some("Second"));
+}

@@ -3,6 +3,7 @@ mod box_drawing;
 mod colors;
 mod decorations;
 mod find;
+mod image_paste;
 mod input;
 pub mod links;
 mod mouse;

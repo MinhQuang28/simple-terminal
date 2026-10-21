@@ -29,6 +29,7 @@ mod model;
 mod pane_layout;
 mod pr_status;
 mod session_pool;
+mod shell_env;
 mod shell_events;
 mod shell_integration;
 mod socket_api;

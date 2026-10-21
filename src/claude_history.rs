@@ -24,24 +24,31 @@ pub struct Session {
 
 struct Entry {
     scanned_at: Instant,
-    sessions: Option<Vec<Session>>,
+    sessions: Option<Arc<[Session]>>,
+}
+
+/// A transcript's title as of its size and mtime, so rescans skip files that haven't changed.
+struct CachedTitle {
+    stamp: (u64, u64),
+    title: Option<String>,
 }
 
 /// Claude Code transcripts per repo, scanned on background threads because they can be large.
 #[derive(Clone)]
 pub struct ClaudeHistory {
     entries: Arc<Mutex<HashMap<PathBuf, Entry>>>,
+    titles: Arc<Mutex<HashMap<PathBuf, CachedTitle>>>,
     ctx: egui::Context,
 }
 
 impl ClaudeHistory {
     pub fn new(ctx: egui::Context) -> Self {
-        Self { entries: Arc::default(), ctx }
+        Self { entries: Arc::default(), titles: Arc::default(), ctx }
     }
 
     /// Sessions for `repo`, newest first; `None` until the first scan finishes. Stale lists are
     /// returned while a rescan runs.
-    pub fn sessions(&self, repo: &Path) -> Option<Vec<Session>> {
+    pub fn sessions(&self, repo: &Path) -> Option<Arc<[Session]>> {
         let Ok(mut entries) = self.entries.lock() else { return None };
         let stale = entries.get(repo).is_none_or(|e| e.scanned_at.elapsed() > REFRESH_AFTER);
         if stale {
@@ -55,9 +62,9 @@ impl ClaudeHistory {
     fn spawn_scan(&self, repo: PathBuf) {
         let this = self.clone();
         let spawned = thread::Builder::new().name("claude-history".into()).spawn(move || {
-            let sessions = scan(&repo);
+            let sessions = scan(&repo, &this.titles);
             if let Ok(mut entries) = this.entries.lock() {
-                entries.insert(repo, Entry { scanned_at: Instant::now(), sessions: Some(sessions) });
+                entries.insert(repo, Entry { scanned_at: Instant::now(), sessions: Some(sessions.into()) });
             }
             this.ctx.request_repaint();
         });
@@ -76,28 +83,47 @@ pub(crate) fn transcripts_dir(repo: &Path) -> Option<PathBuf> {
     Some(Path::new(&home).join(".claude/projects").join(encoded))
 }
 
-fn scan(repo: &Path) -> Vec<Session> {
+fn scan(repo: &Path, titles: &Mutex<HashMap<PathBuf, CachedTitle>>) -> Vec<Session> {
     let Some(dir) = transcripts_dir(repo) else { return Vec::new() };
     let Ok(entries) = std::fs::read_dir(&dir) else { return Vec::new() };
-    let mut files: Vec<(PathBuf, u64)> = entries
+    let mut files: Vec<(PathBuf, u64, u64)> = entries
         .flatten()
         .map(|e| e.path())
         .filter(|p| p.extension().is_some_and(|e| e == "jsonl"))
         .filter_map(|p| {
-            let modified = p.metadata().ok()?.modified().ok()?.duration_since(UNIX_EPOCH).ok()?.as_secs();
-            Some((p, modified))
+            let meta = p.metadata().ok()?;
+            let modified = meta.modified().ok()?.duration_since(UNIX_EPOCH).ok()?.as_secs();
+            Some((p, meta.len(), modified))
         })
         .collect();
-    files.sort_by_key(|(_, modified)| std::cmp::Reverse(*modified));
+    files.sort_by_key(|(_, _, modified)| std::cmp::Reverse(*modified));
     files
         .into_iter()
-        .filter_map(|(path, modified)| {
+        .filter_map(|(path, len, modified)| {
             let id = path.file_stem()?.to_string_lossy().into_owned();
-            let title = read_title(&path)?;
-            is_session_id(&id).then_some(Session { id, title, modified })
+            if !is_session_id(&id) {
+                return None;
+            }
+            let title = cached_title(titles, path, (len, modified))?;
+            Some(Session { id, title, modified })
         })
         .take(MAX_SESSIONS)
         .collect()
+}
+
+/// Transcripts run to tens of megabytes, so a title is only read again once the file changed.
+fn cached_title(
+    titles: &Mutex<HashMap<PathBuf, CachedTitle>>,
+    path: PathBuf,
+    stamp: (u64, u64),
+) -> Option<String> {
+    let cached = titles.lock().ok()?.get(&path).filter(|c| c.stamp == stamp).map(|c| c.title.clone());
+    if let Some(title) = cached {
+        return title;
+    }
+    let title = read_title(&path);
+    titles.lock().ok()?.insert(path, CachedTitle { stamp, title: title.clone() });
+    title
 }
 
 /// Session ids are interpolated into a shell command, so only accept UUID-like names.
@@ -108,9 +134,15 @@ pub fn is_session_id(id: &str) -> bool {
 /// The user's rename, else Claude's generated title, else the latest prompt. `None` for transcripts
 /// without any prompt, which Claude can't meaningfully resume.
 fn read_title(path: &Path) -> Option<String> {
-    let file = File::open(path).ok()?;
+    let mut reader = BufReader::new(File::open(path).ok()?);
     let (mut custom, mut generated, mut prompt) = (None, None, None);
-    for line in BufReader::new(file).lines().map_while(Result::ok) {
+    // One buffer for every line: message entries can be megabytes each.
+    let mut line = String::new();
+    loop {
+        line.clear();
+        if !matches!(reader.read_line(&mut line), Ok(n) if n > 0) {
+            break;
+        }
         // Cheap substring checks first: transcripts are mostly large message entries.
         let slot = if line.contains(r#""type":"custom-title""#) {
             (&mut custom, "customTitle")

@@ -54,7 +54,15 @@ pub struct EventProxy {
 
 impl EventListener for EventProxy {
     fn send_event(&self, event: Event) {
+        // Replies are written from the UI thread, and programs block on them (Claude Code probes
+        // the terminal at startup), so queries skip the throttle; a hidden pane's lane would
+        // otherwise hold each reply for up to a second.
+        let query = matches!(event, Event::PtyWrite(_) | Event::ColorRequest(..));
         let _ = self.tx.send(event);
-        self.repaint.request(&self.ctx, self.visible.load(Ordering::Relaxed));
+        if query {
+            self.ctx.request_repaint();
+        } else {
+            self.repaint.request(&self.ctx, self.visible.load(Ordering::Relaxed));
+        }
     }
 }

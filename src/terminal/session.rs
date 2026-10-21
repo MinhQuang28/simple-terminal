@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -20,12 +20,14 @@ use uuid::Uuid;
 use alacritty_terminal::grid::Dimensions;
 
 use super::colors;
+use super::image_paste::Queued;
 use super::input::paste_bytes;
 use super::osc_notify::NotifyingPty;
 pub use super::repaint::{EventProxy, RepaintGate};
 use super::snapshot::Frame;
 use crate::agent_events::{self, AgentEvents, AgentStatus};
 use crate::model::CursorShape;
+use crate::shell_env;
 use crate::shell_events::ShellEvents;
 use crate::shell_integration;
 use crate::socket_api;
@@ -56,6 +58,9 @@ pub enum Launch<'a> {
     LoginShell,
     /// Runs `command` through the user's shell, then drops into an interactive shell.
     Command(&'a str),
+    /// Like `Command`, but started from the login environment captured at launch, when it's
+    /// ready, instead of sourcing the user's startup files again first.
+    Agent(&'a str),
 }
 
 pub struct SessionConfig<'a> {
@@ -81,6 +86,7 @@ pub struct TerminalSession {
     pub exited: bool,
     pub last_output: Instant,
     last_user_input: Instant,
+    pub(super) spawned_at: Instant,
     /// When the program last rang the bell, for a brief visual flash.
     pub bell_at: Option<Instant>,
     theme: Theme,
@@ -91,6 +97,8 @@ pub struct TerminalSession {
     /// When the user started looking at this pane while its agent reported "Done".
     done_seen_at: Option<Instant>,
     pub(super) shell: Option<ShellEvents>,
+    /// Input waiting on a pasted image that is still being saved.
+    pub(super) queued: VecDeque<Queued>,
 }
 
 impl TerminalSession {
@@ -110,27 +118,30 @@ impl TerminalSession {
         let term = Term::new(config, &TermSize::new(cols, rows), proxy.clone());
         let term = Arc::new(FairMutex::new(term));
 
-        let shell_program = if shell.is_empty() {
-            std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into())
-        } else {
-            shell.to_string()
+        let shell_program = shell_env::program(shell);
+        let captured = match launch {
+            Launch::Agent(_) => shell_env::get(&shell_program),
+            _ => None,
         };
         let shell = match launch {
             Launch::LoginShell if shell.is_empty() => None,
             Launch::LoginShell => Some(Shell::new(shell_program.clone(), vec!["-l".into()])),
-            Launch::Command(command) => {
+            Launch::Command(command) | Launch::Agent(command) => {
                 let script = format!("{command}; exec {shell_program} -l");
-                Some(Shell::new(shell_program.clone(), vec!["-l".into(), "-i".into(), "-c".into(), script]))
+                let flags: &[&str] = if captured.is_some() { &["-c"] } else { &["-l", "-i", "-c"] };
+                let args = flags.iter().map(|f| f.to_string()).chain([script]).collect();
+                Some(Shell::new(shell_program.clone(), args))
             }
         };
-        let mut env = HashMap::from([
+        let mut env: HashMap<String, String> = captured.cloned().unwrap_or_default();
+        env.extend([
             ("TERM".into(), "xterm-256color".into()),
             ("COLORTERM".into(), "truecolor".into()),
             ("TERM_PROGRAM".into(), "Repodeck".into()),
         ]);
         // Lets scripts in the pane run `repodeck notify …` without installing anything.
         if let Some(dir) = std::env::current_exe().ok().and_then(|exe| exe.parent().map(Path::to_path_buf)) {
-            let path = std::env::var("PATH").unwrap_or_default();
+            let path = env.get("PATH").cloned().unwrap_or_else(|| std::env::var("PATH").unwrap_or_default());
             env.insert("PATH".into(), format!("{}:{path}", dir.display()));
         }
         env.insert(socket_api::PANE_VAR.into(), pane.to_string());
@@ -165,6 +176,7 @@ impl TerminalSession {
             exited: false,
             last_output: Instant::now(),
             last_user_input: Instant::now(),
+            spawned_at: Instant::now(),
             bell_at: None,
             theme: theme.clone(),
             frame: Frame::default(),
@@ -172,6 +184,7 @@ impl TerminalSession {
             status_change: None,
             done_seen_at: None,
             shell: shell_events,
+            queued: VecDeque::new(),
         })
     }
 
@@ -295,6 +308,7 @@ impl TerminalSession {
                 Event::Exit | Event::ChildExit(_) => self.exited = true,
             }
         }
+        self.flush_queued();
         if let Some(status) = self.agent.as_mut().and_then(AgentEvents::poll) {
             self.status_change = Some(status);
         }

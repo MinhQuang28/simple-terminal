@@ -24,6 +24,7 @@ use crate::library::Prompt;
 use crate::model::{AppState, PaneKind, Tab, now_secs};
 use crate::pr_status::PrWatcher;
 use crate::session_pool::SessionPool;
+use crate::shell_env;
 use crate::socket_api;
 use crate::store::{self, Saver};
 use crate::tab_title::task_summary;
@@ -89,6 +90,7 @@ impl RepodeckApp {
         let ctx = cc.egui_ctx.clone();
         let app_ctx = ctx.clone();
         let state = store::load();
+        shell_env::prefetch(shell_env::program(&state.settings.shell));
         state.settings.theme.apply_to(&ctx);
         // Install the bundled font immediately so the bold family exists before the first paint.
         font_catalog::apply(&ctx, None);
@@ -306,8 +308,8 @@ impl RepodeckApp {
                         }
                     }
                     // Remember where the shell went so a restored pane reopens there.
-                    let cwd = session.cwd().filter(|c| c.is_dir()).map(Path::to_path_buf);
-                    if let Some(cwd) = cwd.filter(|c| pane.cwd.as_ref() != Some(c) && *c != repo.path) {
+                    let cwd = session.cwd().filter(|c| pane.cwd.as_deref() != Some(*c) && *c != repo.path);
+                    if let Some(cwd) = cwd.filter(|c| c.is_dir()).map(Path::to_path_buf) {
                         pane.cwd = Some(cwd);
                         self.dirty = true;
                     }
@@ -400,15 +402,17 @@ impl eframe::App for RepodeckApp {
         self.saver.flush();
     }
 
-    /// Runs instead of `ui` while the window is hidden or fully covered, so agents and commands
-    /// finishing in the meantime still notify right away instead of when the window next shows.
+    /// Runs before `ui` on every frame, and alone while the window is hidden or fully covered, so
+    /// agents and commands finishing in the meantime still notify right away. All per-pane
+    /// bookkeeping lives here so it runs exactly once per frame.
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         while let Ok(job) = self.jobs.try_recv() {
             job(self);
         }
-        let visible = HashSet::new();
+        let visible = self.visible_panes();
+        let window_focused = ctx.input(|i| i.focused && !i.viewport().minimized.unwrap_or(false));
         self.pool.pump_background(&visible, ctx);
-        self.track_activity(&visible, false, ctx);
+        self.track_activity(&visible, window_focused, ctx);
         self.save_when_due(ctx);
     }
 
@@ -447,10 +451,6 @@ impl eframe::App for RepodeckApp {
         if self.pending_paste.is_some() {
             ctx.request_repaint_after(Duration::from_millis(200));
         }
-        let visible = self.visible_panes();
-        let window_focused = ctx.input(|i| i.focused);
-        self.pool.pump_background(&visible, &ctx);
-        self.track_activity(&visible, window_focused, &ctx);
         self.save_when_due(&ctx);
         // Keep relative timestamps fresh without busy-looping; they only show whole minutes.
         ctx.request_repaint_after(Duration::from_secs(60));

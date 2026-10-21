@@ -24,6 +24,8 @@ pub struct FindState {
     compiled: Option<Arc<Mutex<(String, RegexSearch)>>>,
     current: Option<Match>,
     total: usize,
+    /// Set by a keystroke, cleared once the matches were counted for it.
+    unsearched: bool,
 }
 
 impl FindState {
@@ -72,14 +74,16 @@ pub fn overlay(
                 let edit = ui.add(
                     TextEdit::singleline(&mut state.query).hint_text("Find (regex)").desired_width(170.0),
                 );
-                if !edit.has_focus() && state.current.is_none() && !state.query.is_empty() {
-                    // Nothing selected yet after opening: start from the first keystroke's result.
+                // Count once per edit, deferred until the box has a query; this used to re-count
+                // every frame whenever the box lost focus with no match.
+                state.unsearched |= edit.changed();
+                if state.unsearched && !state.query.is_empty() {
                     changed = true;
+                    state.unsearched = false;
                 }
                 if ui.memory(|m| m.focused().is_none()) {
                     edit.request_focus();
                 }
-                changed |= edit.changed();
                 let (shift, enter, escape) =
                     ui.input(|i| (i.modifiers.shift, i.key_pressed(Key::Enter), i.key_pressed(Key::Escape)));
                 if edit.has_focus() && enter {

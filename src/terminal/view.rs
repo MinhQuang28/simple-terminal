@@ -16,10 +16,11 @@ use super::render::{self, CursorState, Grid};
 use super::scroll::{self, ScrollState};
 use super::session::TerminalSession;
 use super::style::TerminalStyle;
-use super::view_chrome::{cursor_visible, exit_badge, hover_link, report_focus};
-use crate::clipboard_image;
+use super::view_chrome::{cursor_visible, exit_badge, hover_link, report_focus, starting_indicator};
 
 const BELL_FLASH: Duration = Duration::from_millis(150);
+/// How soon a pane showing a stale frame tries again to capture the terminal.
+const REFRESH_RETRY: Duration = Duration::from_millis(8);
 
 /// Per-view UI state kept in egui memory between frames.
 #[derive(Clone, Default)]
@@ -96,7 +97,8 @@ pub fn show(
             session.note_user_input();
         }
     }
-    let mode = *session.term.lock().mode();
+    // The previous frame's mode; reading the live one would wait on the PTY thread.
+    let mode = session.frame.mode;
     report_focus(ui, session, mode, focused, &mut state.reported_focus);
     let grid = Grid { origin: inner.min, cell, text_offset };
     if let Some(pointer) = response.hover_pos() {
@@ -109,7 +111,9 @@ pub fn show(
 
     painter.rect_filled(rect, 0.0, style.theme.background.color());
     let cursor_state = CursorState { focused, visible: cursor_visible(ui, style, focused, state.last_input) };
-    session.frame.capture_into(&session.term.lock(), style.theme);
+    if !session.frame.refresh(&session.term, style.theme) {
+        ui.ctx().request_repaint_after(REFRESH_RETRY);
+    }
     let preedit = focused.then_some(state.preedit.as_str());
     let cursor_rect = render::paint(&painter, grid, style, &session.frame, cursor_state, preedit);
     if !scroll::overlay(ui, session, &mut state.scroll, rect, id)
@@ -124,6 +128,7 @@ pub fn show(
         }
     }
     exit_badge(ui, session, rect, style);
+    starting_indicator(ui, session, rect);
     let open_file = hover_link(ui, &response, session, grid, (cols, rows), cwd);
     if state.find.open {
         find::overlay(ui, session, &mut state.find, rect, grid, &response, style);
@@ -155,7 +160,7 @@ fn handle_keyboard(
     style: &TerminalStyle<'_>,
 ) -> bool {
     let events = ui.input(|i| i.events.clone());
-    let mode = *session.term.lock().mode();
+    let mode = session.frame.mode;
     let mut typed = false;
     // Option+key with Meta enabled sends Esc+key; the composed character egui also reports for
     // the same press (e.g. ∂ for ⌥D) is dropped.
@@ -186,15 +191,12 @@ fn handle_keyboard(
             }
             Event::Key { key, pressed: true, modifiers, .. } => key_to_bytes(key, modifiers, mode),
             Event::Paste(text) => Some(paste_bytes(&text, mode)),
-            // An image with no text alongside it (screenshots, "Copy Image"): programs such as
-            // Claude Code attach image files named in the prompt, so paste a path to one.
-            Event::PasteImage(image) => match clipboard_image::save_png(&image) {
-                Ok(path) => Some(paste_bytes(&format!("{} ", path.display()), mode)),
-                Err(err) => {
-                    log::error!("Failed to save pasted image: {err:#}");
-                    None
-                }
-            },
+            // An image with no text alongside it (screenshots, "Copy Image"), pasted as a path.
+            Event::PasteImage(image) => {
+                session.paste_image(image, ui.ctx());
+                typed = true;
+                None
+            }
             Event::Copy | Event::Cut => {
                 if let Some(text) = session.term.lock().selection_to_string() {
                     ui.ctx().copy_text(text);
@@ -212,11 +214,13 @@ fn handle_keyboard(
             _ => None,
         };
         if let Some(bytes) = bytes.filter(|b| !b.is_empty()) {
-            session.write(bytes);
+            session.send_input(bytes);
             typed = true;
         }
     }
-    if typed {
+    // Skips the lock, which may wait on the PTY thread mid-parse, when there's nothing to undo.
+    let frame = &session.frame;
+    if typed && (frame.has_selection || frame.display_offset > 0 || state.scroll.remainder != 0.0) {
         let mut term = session.term.lock();
         term.selection = None;
         state.scroll.snap_to_bottom(&mut term);
@@ -243,6 +247,8 @@ fn handle_selection(response: &Response, session: &mut TerminalSession, grid: Gr
     } else if response.clicked() {
         term.selection = None;
     }
+    // The frame was captured before this change; typing checks it to decide whether to clear.
+    session.frame.has_selection = term.selection.is_some();
 }
 
 fn grid_point(grid: Grid, pos: Pos2, (cols, rows): (u16, u16), display_offset: i32) -> (Point, Side) {
