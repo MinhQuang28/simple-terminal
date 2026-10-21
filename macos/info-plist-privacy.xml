@@ -1,0 +1,15 @@
+<!-- Merged into Info.plist by cargo-bundle (osx_info_plist_exts): bare keys only.
+     macOS attributes privacy prompts for programs run in a terminal to the terminal app, so these
+     strings explain why e.g. `ls ~/Desktop` or `osascript` asks for Repodeck's permission. -->
+<key>NSAppleEventsUsageDescription</key>
+<string>Programs you run in Repodeck terminals want to control other apps.</string>
+<key>NSDesktopFolderUsageDescription</key>
+<string>Programs you run in Repodeck terminals want to access your Desktop folder.</string>
+<key>NSDocumentsFolderUsageDescription</key>
+<string>Programs you run in Repodeck terminals want to access your Documents folder.</string>
+<key>NSDownloadsFolderUsageDescription</key>
+<string>Programs you run in Repodeck terminals want to access your Downloads folder.</string>
+<key>NSNetworkVolumesUsageDescription</key>
+<string>Programs you run in Repodeck terminals want to access files on a network volume.</string>
+<key>NSRemovableVolumesUsageDescription</key>
+<string>Programs you run in Repodeck terminals want to access files on a removable volume.</string>

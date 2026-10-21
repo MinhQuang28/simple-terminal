@@ -1,0 +1,47 @@
+[package]
+name = "repodeck"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+alacritty_terminal = "0.26"
+anyhow = "1.0.104"
+directories = "6"
+eframe = { version = "0.37", features = ["persistence"] }
+# Bundles egui's emoji fonts; no macOS font has some icons widgets draw, e.g. the code block copy 🗐.
+egui = { version = "0.37", default-features = false, features = ["monochrome_emoji_fonts"] }
+egui_commonmark = { version = "0.26", default-features = false, features = ["pulldown_cmark"] }
+egui_extras = { version = "0.37", features = ["syntect"] }
+env_logger = "0.11.11"
+ignore = "0.4"
+log = "0.4.34"
+memmap2 = "0.9"
+notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
+notify-rust = "4"
+png = "0.18"
+polling = "3"
+rfd = "0.17.2"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+ttf-parser = "0.25"
+uuid = { version = "1.28.0", features = ["v4", "serde"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSEvent", "NSResponder", "NSPasteboard", "NSPasteboardItem", "NSWindow", "NSDockTile"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSGeometry", "NSString", "NSURL"] }
+
+[package.metadata.bundle]
+name = "Repodeck"
+identifier = "dev.repodeck.app"
+category = "public.app-category.developer-tools"
+short_description = "Project-grouped terminal for multi-repo work"
+osx_minimum_system_version = "12.0"
+osx_info_plist_exts = ["macos/info-plist-services.xml", "macos/info-plist-privacy.xml"]
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
