@@ -101,8 +101,9 @@ pub fn show(
     let mode = session.frame.mode;
     report_focus(ui, session, mode, focused, &mut state.reported_focus);
     let grid = Grid { origin: inner.min, cell, text_offset };
-    if let Some(pointer) = response.hover_pos() {
-        scroll::handle_wheel(ui, session, &mut state.scroll, grid, pointer);
+    match response.hover_pos() {
+        Some(pointer) => scroll::handle_wheel(ui, session, &mut state.scroll, grid, pointer),
+        None => scroll::scroll_scrollback(ui, session, &mut state.scroll, 0.0),
     }
     if mode.contains(TermMode::ALT_SCREEN) {
         state.scroll.clear_pixel_offset();

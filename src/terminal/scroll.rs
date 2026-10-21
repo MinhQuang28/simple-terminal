@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::term::{Term, TermMode};
@@ -27,6 +27,8 @@ const ARROW_REFILL_PER_SEC: f32 = 40.0;
 #[derive(Clone, Copy, Default)]
 pub struct ScrollState {
     pub remainder: f32,
+    /// Lines of scrollback movement not yet applied because the PTY thread held the terminal.
+    pending: f32,
     /// Fractional lines of wheel movement not yet forwarded to the program as a whole event.
     carry: f32,
     arrow_tokens: f32,
@@ -77,6 +79,24 @@ impl ScrollState {
     }
 }
 
+/// Scrolls the scrollback by `lines` without waiting on the PTY thread: while it holds the
+/// terminal mid-parse (a streaming build, a resumed Claude conversation replaying), the lines are
+/// kept for the next frame so a wheel flick never stalls the window.
+pub fn scroll_scrollback(ui: &Ui, session: &TerminalSession, state: &mut ScrollState, lines: f32) {
+    let lines = state.pending + lines;
+    state.pending = 0.0;
+    if lines == 0.0 {
+        return;
+    }
+    match session.term.try_lock_unfair() {
+        Some(mut term) => state.scroll_lines(&mut term, lines),
+        None => {
+            state.pending = lines;
+            ui.ctx().request_repaint_after(Duration::from_millis(8));
+        }
+    }
+}
+
 /// Routes mouse-wheel input: mouse reports for programs that asked for them, arrow keys for
 /// full-screen programs, scrollback otherwise.
 pub fn handle_wheel(
@@ -91,9 +111,7 @@ pub fn handle_wheel(
         || mode.contains(TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL);
     if !forwarded {
         let delta = ui.input(|i| i.smooth_scroll_delta.y);
-        if delta != 0.0 {
-            state.scroll_lines(&mut session.term.lock(), delta / grid.cell.y);
-        }
+        scroll_scrollback(ui, session, state, delta / grid.cell.y);
         return;
     }
 
@@ -208,7 +226,7 @@ fn scrollbar(
     if response.dragged() && travel > 0.0 {
         // One pixel of thumb travel covers this many lines of history.
         let lines_per_px = history as f32 / travel;
-        state.scroll_lines(&mut session.term.lock(), -response.drag_delta().y * lines_per_px);
+        scroll_scrollback(ui, session, state, -response.drag_delta().y * lines_per_px);
     }
     let pointer_near = ui.rect_contains_pointer(rect.with_min_x(track.left() - 24.0));
     let shown = pointer_near || response.dragged() || offset > 0;
