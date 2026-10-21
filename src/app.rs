@@ -11,7 +11,6 @@ use crate::agent_events::AgentStatus;
 use crate::app_notices::{PaneReport, Report};
 use crate::attention;
 use crate::claude_history::ClaudeHistory;
-use crate::claude_usage::UsageCache;
 use crate::diff::DiffCache;
 use crate::editor::Buffers;
 use crate::file_drag::FileDrag;
@@ -72,7 +71,6 @@ pub struct RepodeckApp {
     /// Set while an action confirmed through a dialog is applied, so it skips its own check.
     pub(crate) confirmed: bool,
     quit_confirmed: bool,
-    pub(crate) usage: UsageCache,
     settings_page: Page,
     fonts: FontCatalog,
     /// The font family currently installed in egui; `None` until the first install.
@@ -98,7 +96,6 @@ impl RepodeckApp {
         let folder_requests = finder_service::register(&ctx);
         let claude_history = ClaudeHistory::new(ctx.clone());
         let file_tree = FileTree::new(ctx.clone());
-        let usage = UsageCache::new(ctx.clone());
         let git = GitWatcher::spawn(ctx.clone());
         let prs = PrWatcher::spawn(ctx.clone());
         let (job_tx, jobs) = mpsc::channel();
@@ -130,7 +127,6 @@ impl RepodeckApp {
             inbox: Inbox::default(),
             confirmed: false,
             quit_confirmed: false,
-            usage,
             settings_page: Page::default(),
             fonts,
             applied_font: None,

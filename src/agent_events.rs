@@ -3,6 +3,7 @@ use std::path::Path;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+use crate::claude_status_line::{self, StatusFile, StatusLine};
 use crate::event_log::EventLog;
 
 /// Environment variable naming the file Claude Code hooks append their events to.
@@ -49,13 +50,14 @@ impl AgentStatus {
 }
 
 /// Settings JSON for `claude --settings` that makes every hooked event append its JSON payload,
-/// newline-terminated, to the file named by `EVENTS_VAR`.
-pub fn hooks_settings() -> String {
+/// newline-terminated, to the file named by `EVENTS_VAR`, and saves the status line JSON of an
+/// agent started in `cwd`.
+pub fn hooks_settings(cwd: &Path) -> String {
     let hook =
         json!([{ "hooks": [{ "type": "command", "command": format!("(cat; echo) >> \"${EVENTS_VAR}\"") }] }]);
     let hooks: serde_json::Map<String, Value> =
         HOOKED_EVENTS.iter().map(|event| (event.to_string(), hook.clone())).collect();
-    json!({ "hooks": hooks }).to_string()
+    json!({ "hooks": hooks, "statusLine": claude_status_line::settings(cwd) }).to_string()
 }
 
 /// Rewrites each `claude` invocation in a shell command line to load the hook settings.
@@ -76,6 +78,7 @@ pub fn with_hooks(command: &str) -> String {
 /// Tracks what the agent in a pane is doing from the events its hooks append.
 pub struct AgentEvents {
     log: EventLog,
+    status_line: StatusFile,
     status: AgentStatus,
     session_id: Option<String>,
     /// What the agent is asking permission for, while it waits.
@@ -86,6 +89,7 @@ impl AgentEvents {
     pub fn create(pane: Uuid) -> Option<Self> {
         Some(Self {
             log: EventLog::create("agent-events", pane)?,
+            status_line: StatusFile::create(pane)?,
             status: AgentStatus::Idle,
             session_id: None,
             request: None,
@@ -94,6 +98,16 @@ impl AgentEvents {
 
     pub fn path(&self) -> &Path {
         self.log.path()
+    }
+
+    /// Where the status line command saves Claude Code's status JSON.
+    pub fn status_line_path(&self) -> &Path {
+        self.status_line.path()
+    }
+
+    /// Subscription limits and context use, once Claude Code has reported them.
+    pub fn status_line(&self) -> Option<StatusLine> {
+        self.status_line.latest()
     }
 
     pub fn status(&self) -> AgentStatus {
@@ -113,6 +127,7 @@ impl AgentEvents {
     /// Applies newly appended events; returns the status if it changed.
     pub fn poll(&mut self) -> Option<AgentStatus> {
         let before = self.status;
+        self.status_line.poll();
         for line in self.log.poll_lines() {
             let Ok(event) = serde_json::from_str::<Value>(&line) else { continue };
             if let Some(id) = event["session_id"].as_str() {
@@ -193,11 +208,12 @@ mod tests {
 
     #[test]
     fn settings_register_every_hooked_event() {
-        let settings: Value = serde_json::from_str(&hooks_settings()).unwrap();
+        let settings: Value = serde_json::from_str(&hooks_settings(Path::new("/"))).unwrap();
         for event in HOOKED_EVENTS {
             let command = settings["hooks"][event][0]["hooks"][0]["command"].as_str().unwrap();
             assert!(command.contains(EVENTS_VAR), "{event}");
         }
+        assert!(settings["statusLine"]["command"].as_str().unwrap().contains(claude_status_line::STATUS_VAR));
     }
 
     #[test]

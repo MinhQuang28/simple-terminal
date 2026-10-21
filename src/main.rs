@@ -12,7 +12,7 @@ mod app_shortcuts;
 mod app_worktree;
 mod attention;
 mod claude_history;
-mod claude_usage;
+mod claude_status_line;
 mod clipboard_image;
 mod diff;
 mod editor;

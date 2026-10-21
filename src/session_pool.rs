@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::agent_events::{AgentEvents, AgentStatus, with_hooks};
 use crate::claude_history::is_session_id;
+use crate::claude_status_line::StatusLine;
 use crate::model::{Pane, PaneKind, Settings};
 use crate::terminal::{Launch, RepaintGate, SessionConfig, TerminalSession};
 
@@ -100,6 +101,15 @@ impl SessionPool {
 
     pub fn agent_status(&self, pane: Uuid) -> Option<AgentStatus> {
         self.sessions.get(&pane)?.agent_status()
+    }
+
+    /// The most recent subscription limits any agent reported; they're account-wide.
+    pub fn latest_limits(&self) -> Option<StatusLine> {
+        self.sessions
+            .values()
+            .filter_map(TerminalSession::agent_status_line)
+            .filter(StatusLine::has_limits)
+            .max_by_key(|s| s.reported_at)
     }
 
     /// Number of agents stopped and waiting on the user.

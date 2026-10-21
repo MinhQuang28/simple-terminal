@@ -26,6 +26,7 @@ use super::osc_notify::NotifyingPty;
 pub use super::repaint::{EventProxy, RepaintGate};
 use super::snapshot::Frame;
 use crate::agent_events::{self, AgentEvents, AgentStatus};
+use crate::claude_status_line::{self, StatusLine};
 use crate::model::CursorShape;
 use crate::shell_env;
 use crate::shell_events::ShellEvents;
@@ -150,7 +151,11 @@ impl TerminalSession {
         }
         if let Some(agent) = &agent {
             env.insert(agent_events::EVENTS_VAR.into(), agent.path().to_string_lossy().into_owned());
-            env.insert(agent_events::HOOKS_VAR.into(), agent_events::hooks_settings());
+            env.insert(agent_events::HOOKS_VAR.into(), agent_events::hooks_settings(cwd));
+            env.insert(
+                claude_status_line::STATUS_VAR.into(),
+                agent.status_line_path().to_string_lossy().into_owned(),
+            );
         }
         let shell_events = ShellEvents::create(pane);
         if let Some(events) = &shell_events {
@@ -231,6 +236,10 @@ impl TerminalSession {
 
     pub fn agent_status(&self) -> Option<AgentStatus> {
         self.agent.as_ref().map(AgentEvents::status)
+    }
+
+    pub fn agent_status_line(&self) -> Option<StatusLine> {
+        self.agent.as_ref()?.status_line()
     }
 
     /// What the agent is waiting for permission to do, if anything.

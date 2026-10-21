@@ -1,7 +1,6 @@
 use eframe::egui::{self, CentralPanel, CornerRadius, Frame, Margin, Panel, Stroke};
 
 use crate::app::RepodeckApp;
-use crate::claude_usage::Usage;
 use crate::model::PaneKind;
 use crate::ui::workspace::Workspace;
 use crate::ui::{Action, chrome, files_panel, sidebar, workspace};
@@ -65,7 +64,15 @@ impl RepodeckApp {
             .exact_size(28.0)
             .show_separator_line(false)
             .frame(Frame::new().fill(window_bg).inner_margin(Margin::symmetric(6, 0)))
-            .show(ui, |ui| chrome::status_bar(ui, &self.state, status.as_deref(), self.active_usage()));
+            .show(ui, |ui| {
+                chrome::status_bar(
+                    ui,
+                    &self.state,
+                    status.as_deref(),
+                    self.pool.latest_limits(),
+                    self.active_context(),
+                )
+            });
 
         CentralPanel::default().frame(Frame::new().fill(window_bg)).show(ui, |ui| {
             card.show(ui, |ui| {
@@ -87,14 +94,14 @@ impl RepodeckApp {
         });
     }
 
-    /// Tokens used by the conversation in the active Claude pane.
-    fn active_usage(&self) -> Option<Usage> {
+    /// Share of the context window the conversation in the active Claude pane fills.
+    fn active_context(&self) -> Option<f64> {
         let repo = self.state.selected_repo.and_then(|id| self.state.repo(id))?;
         let tab = repo.tabs.iter().find(|t| Some(t.id) == repo.active_tab)?;
         let pane = tab.panes.iter().find(|p| Some(p.id) == tab.active_pane).or(tab.panes.first())?;
         if pane.kind != PaneKind::Agent {
             return None;
         }
-        self.usage.usage(&repo.path, pane.session.as_deref()?)
+        self.pool.get(pane.id)?.agent_status_line()?.context_percent
     }
 }
