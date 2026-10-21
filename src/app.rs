@@ -20,6 +20,7 @@ use crate::font_catalog::{self, FontCatalog};
 use crate::git_watcher::GitWatcher;
 use crate::inbox::{Inbox, Source};
 use crate::library::Prompt;
+use crate::library_cache::LibraryCache;
 use crate::model::{AppState, PaneKind, Tab, now_secs};
 use crate::pr_status::PrWatcher;
 use crate::session_pool::SessionPool;
@@ -65,6 +66,7 @@ pub struct RepodeckApp {
     pub(crate) pending_paste: Option<PendingPaste>,
     pub(crate) file_tree: FileTree,
     pub(crate) claude_history: ClaudeHistory,
+    pub(crate) library: LibraryCache,
     pub(crate) drag: FileDrag,
     pub(crate) ctx: egui::Context,
     pub(crate) inbox: Inbox,
@@ -95,6 +97,7 @@ impl RepodeckApp {
         let fonts = FontCatalog::scan(ctx.clone());
         let folder_requests = finder_service::register(&ctx);
         let claude_history = ClaudeHistory::new(ctx.clone());
+        let library = LibraryCache::new(ctx.clone());
         let file_tree = FileTree::new(ctx.clone());
         let git = GitWatcher::spawn(ctx.clone());
         let prs = PrWatcher::spawn(ctx.clone());
@@ -122,6 +125,7 @@ impl RepodeckApp {
             pending_paste: None,
             file_tree,
             claude_history,
+            library,
             drag: FileDrag::default(),
             ctx: app_ctx,
             inbox: Inbox::default(),

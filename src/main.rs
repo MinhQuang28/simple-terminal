@@ -25,6 +25,7 @@ mod git_status;
 mod git_watcher;
 mod inbox;
 mod library;
+mod library_cache;
 mod model;
 mod pane_layout;
 mod pr_status;

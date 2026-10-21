@@ -8,6 +8,7 @@ use super::library_panel;
 use super::widgets::{file_icon, muted, right_aligned, row};
 use crate::file_tree::FileTree;
 use crate::git_status::{ChangedFile, GitStatus};
+use crate::library_cache::LibraryCache;
 use crate::model::{AppState, Repo, SidePanel};
 
 const INDENT: f32 = 14.0;
@@ -17,6 +18,7 @@ pub fn show(
     state: &AppState,
     status: Option<Arc<GitStatus>>,
     tree: &mut FileTree,
+    library: &LibraryCache,
     actions: &mut Vec<Action>,
 ) {
     let changes = status.as_ref().map_or(0, |s| s.files.len());
@@ -41,7 +43,7 @@ pub fn show(
         repo.active_tab.and_then(|id| repo.tabs.iter().find(|t| t.id == id)).and_then(|t| t.file.clone());
     ScrollArea::vertical().auto_shrink(false).show(ui, |ui| match state.side_panel {
         SidePanel::Files => directory(ui, tree, repo, &repo.path, 0, open_file.as_deref(), actions),
-        SidePanel::Library => library_panel::show(ui, repo, &state.settings, actions),
+        SidePanel::Library => library_panel::show(ui, repo, &state.settings, library, actions),
         SidePanel::Changes => match status {
             Some(status) if !status.files.is_empty() => {
                 for file in &status.files {

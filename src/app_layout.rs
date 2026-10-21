@@ -48,7 +48,14 @@ impl RepodeckApp {
                     bottom: 8,
                 }))
                 .show(ui, |ui| {
-                    files_panel::show(ui, &self.state, status.clone(), &mut self.file_tree, actions)
+                    files_panel::show(
+                        ui,
+                        &self.state,
+                        status.clone(),
+                        &mut self.file_tree,
+                        &self.library,
+                        actions,
+                    )
                 });
         }
 

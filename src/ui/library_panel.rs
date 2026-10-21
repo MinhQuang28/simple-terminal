@@ -3,12 +3,19 @@ use std::path::Path;
 use eframe::egui::{Label, RichText, Ui};
 
 use super::Action;
-use super::widgets::{glyph_button, muted, right_aligned, row, tag};
-use crate::library::{self, McpServer, Skill};
+use super::widgets::{glyph_button, muted, right_aligned, row, spinner, tag};
+use crate::library::{McpServer, Skill};
+use crate::library_cache::LibraryCache;
 use crate::model::{Repo, Settings};
 
 /// Prompts, skills and MCP servers available to agents in the selected repo.
-pub fn show(ui: &mut Ui, repo: &Repo, settings: &Settings, actions: &mut Vec<Action>) {
+pub fn show(
+    ui: &mut Ui,
+    repo: &Repo,
+    settings: &Settings,
+    library: &LibraryCache,
+    actions: &mut Vec<Action>,
+) {
     section(ui, "Prompts", Some(Action::OpenEditPrompt(None)), actions);
     if settings.prompts.is_empty() {
         hint(ui, "Reusable snippets to paste into a pane. ⇧⌘P picks one from the keyboard.");
@@ -32,21 +39,28 @@ pub fn show(ui: &mut Ui, repo: &Repo, settings: &Settings, actions: &mut Vec<Act
         });
     }
 
+    // Scanned in the background: reading every SKILL.md and ~/.claude.json takes milliseconds.
+    let Some(library) = library.get(&repo.path) else {
+        section(ui, "Skills", None, actions);
+        ui.horizontal(|ui| {
+            spinner(ui, 12.0, muted(ui));
+            ui.label(RichText::new("Loading…").color(muted(ui)));
+        });
+        return;
+    };
     section(ui, "Skills", None, actions);
-    let skills = library::skills(&repo.path);
-    if skills.is_empty() {
+    if library.skills.is_empty() {
         hint(ui, "No skills in ~/.claude/skills or this repo's .claude/skills.");
     }
-    for skill in &skills {
+    for skill in &library.skills {
         skill_row(ui, repo, skill, actions);
     }
 
     section(ui, "MCP servers", None, actions);
-    let servers = library::mcp_servers(&repo.path);
-    if servers.is_empty() {
+    if library.servers.is_empty() {
         hint(ui, "No servers in .mcp.json or ~/.claude.json.");
     }
-    for server in &servers {
+    for server in &library.servers {
         server_row(ui, repo, server, actions);
     }
 }

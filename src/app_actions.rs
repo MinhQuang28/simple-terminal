@@ -231,6 +231,8 @@ impl RepodeckApp {
                 if let Err(err) = library::set_skill_enabled(&file, enabled) {
                     self.report_error("Could not change the skill", format!("{}: {err}", file.display()));
                 }
+                // Shows the toggle at once instead of after the next rescan.
+                self.library.invalidate();
                 return;
             }
             Action::AnswerApproval { pane, allow } => {
