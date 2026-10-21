@@ -1,13 +1,15 @@
 use uuid::Uuid;
 
 use crate::app::{Job, RepodeckApp};
+use crate::claude_history;
 use crate::model::PaneKind;
 use crate::worktree;
 
 impl RepodeckApp {
     /// Checks `branch` out in `<repo>-<branch>` next to the repo (creating the branch if needed)
     /// in the background, then adds it to the same project and opens a shell there that first
-    /// runs the repo's setup command.
+    /// runs the repo's setup command. The repo's Claude Code history is copied over so its
+    /// conversations can be resumed there.
     pub(crate) fn create_worktree(&mut self, repo_id: Uuid, branch: &str) {
         let Some(repo) = self.state.repo(repo_id) else { return };
         let (source, setup) = (repo.path.clone(), repo.setup_command.clone());
@@ -17,11 +19,16 @@ impl RepodeckApp {
         let project =
             self.state.projects.iter().find(|p| p.repos.iter().any(|r| r.id == repo_id)).map(|p| p.id);
         self.spawn_job("worktree-add", move || {
-            let result = worktree::add(&source, &path, &branch);
+            let result = worktree::add(&source, &path, &branch).map(|mut warnings| {
+                if let Err(err) = claude_history::copy_transcripts(&source, &path) {
+                    warnings.push(format!("Claude history not copied: {err}"));
+                }
+                warnings
+            });
             Box::new(move |app: &mut RepodeckApp| match result {
                 Ok(warnings) => {
                     for warning in warnings {
-                        app.report_error("Worktree include skipped", warning);
+                        app.report_error("Worktree copy incomplete", warning);
                     }
                     let id = app.add_repo_to(project, &path);
                     if let Some(new) = app.state.repo_mut(id) {

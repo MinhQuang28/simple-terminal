@@ -91,7 +91,7 @@ fn is_safe_relative(path: &Path) -> bool {
     !path.as_os_str().is_empty() && path.components().all(|c| matches!(c, Component::Normal(_)))
 }
 
-fn copy_path(from: &Path, to: &Path) -> std::io::Result<()> {
+pub fn copy_path(from: &Path, to: &Path) -> std::io::Result<()> {
     if from.is_dir() {
         fs::create_dir_all(to)?;
         for entry in fs::read_dir(from)? {

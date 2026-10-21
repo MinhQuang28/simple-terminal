@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -8,6 +8,8 @@ use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use eframe::egui;
 use serde_json::Value;
+
+use crate::worktree::copy_path;
 
 /// How long a repo's session list is reused before it is rescanned in the background.
 const REFRESH_AFTER: Duration = Duration::from_secs(15);
@@ -124,6 +126,20 @@ fn cached_title(
     let title = read_title(&path);
     titles.lock().ok()?.insert(path, CachedTitle { stamp, title: title.clone() });
     title
+}
+
+/// Copies `from`'s Claude Code transcripts into `to`'s transcript directory, so conversations
+/// started in a repo can be resumed from a new worktree of it. Entries already there are kept.
+pub fn copy_transcripts(from: &Path, to: &Path) -> Result<(), String> {
+    let (Some(src), Some(dst)) = (transcripts_dir(from), transcripts_dir(to)) else { return Ok(()) };
+    let Ok(entries) = fs::read_dir(&src) else { return Ok(()) };
+    for entry in entries.flatten() {
+        let target = dst.join(entry.file_name());
+        if !target.exists() {
+            copy_path(&entry.path(), &target).map_err(|err| format!("{}: {err}", entry.path().display()))?;
+        }
+    }
+    Ok(())
 }
 
 /// Session ids are interpolated into a shell command, so only accept UUID-like names.
