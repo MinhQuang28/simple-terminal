@@ -59,7 +59,11 @@ impl SessionPool {
                 .then(|| AgentEvents::create(id))
                 .flatten();
             let command = command.map(|c| if agent.is_some() { with_hooks(&c) } else { c });
-            let launch = command.as_deref().map_or(Launch::LoginShell, Launch::Command);
+            let launch = match (&pane.kind, command.as_deref()) {
+                (_, None) => Launch::LoginShell,
+                (PaneKind::Agent, Some(command)) => Launch::Agent(command),
+                (PaneKind::Shell, Some(command)) => Launch::Command(command),
+            };
             let config = SessionConfig {
                 pane: id,
                 cwd,

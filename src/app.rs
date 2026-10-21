@@ -24,6 +24,7 @@ use crate::library::Prompt;
 use crate::model::{AppState, PaneKind, Tab, now_secs};
 use crate::pr_status::PrWatcher;
 use crate::session_pool::SessionPool;
+use crate::shell_env;
 use crate::socket_api;
 use crate::store::{self, Saver};
 use crate::tab_title::task_summary;
@@ -89,6 +90,7 @@ impl RepodeckApp {
         let ctx = cc.egui_ctx.clone();
         let app_ctx = ctx.clone();
         let state = store::load();
+        shell_env::prefetch(shell_env::program(&state.settings.shell));
         state.settings.theme.apply_to(&ctx);
         // Install the bundled font immediately so the bold family exists before the first paint.
         font_catalog::apply(&ctx, None);
