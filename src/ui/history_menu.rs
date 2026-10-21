@@ -34,12 +34,12 @@ pub fn show(ui: &mut Ui, repo: &Repo, history: &ClaudeHistory, actions: &mut Vec
                 Some(sessions) => {
                     let now = now_secs();
                     ScrollArea::vertical().max_height(380.0).show(ui, |ui| {
-                        for session in sessions {
+                        for session in sessions.iter() {
                             if session_row(ui, &session.title, &ago(session.modified, now)).clicked() {
                                 actions.push(Action::ResumeSession {
                                     repo: repo.id,
-                                    session: session.id,
-                                    title: session.title,
+                                    session: session.id.clone(),
+                                    title: session.title.clone(),
                                 });
                                 ui.close();
                             }

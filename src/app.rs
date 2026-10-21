@@ -306,8 +306,8 @@ impl RepodeckApp {
                         }
                     }
                     // Remember where the shell went so a restored pane reopens there.
-                    let cwd = session.cwd().filter(|c| c.is_dir()).map(Path::to_path_buf);
-                    if let Some(cwd) = cwd.filter(|c| pane.cwd.as_ref() != Some(c) && *c != repo.path) {
+                    let cwd = session.cwd().filter(|c| pane.cwd.as_deref() != Some(*c) && *c != repo.path);
+                    if let Some(cwd) = cwd.filter(|c| c.is_dir()).map(Path::to_path_buf) {
                         pane.cwd = Some(cwd);
                         self.dirty = true;
                     }
