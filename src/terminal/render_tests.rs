@@ -1,4 +1,3 @@
-use alacritty_terminal::term::TermMode;
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::vte::ansi::CursorShape;
 use eframe::egui::{Color32, Context, LayerId, Painter, RawInput, Rect, Shape, pos2, vec2};
@@ -20,11 +19,9 @@ fn backgrounds_are_painted_before_text() {
     let bar = Color32::from_rgb(55, 55, 55);
     let cells =
         vec![cell(0, '❯', bar), cell(1, ' ', bar), cell(2, 'a', bar), cell(3, '─', bar), cell(4, 'i', bar)];
-    let frame = Frame {
-        cells,
-        cursor: Cursor { row: 5, col: 0, shape: CursorShape::Hidden, under: None },
-        mode: TermMode::empty(),
-    };
+    let mut frame = Frame::default();
+    frame.cells = cells;
+    frame.cursor = Cursor { row: 5, col: 0, shape: CursorShape::Hidden, under: None };
 
     let ctx = Context::default();
     ctx.begin_pass(RawInput::default());

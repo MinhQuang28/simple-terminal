@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -20,6 +20,7 @@ use uuid::Uuid;
 use alacritty_terminal::grid::Dimensions;
 
 use super::colors;
+use super::image_paste::Queued;
 use super::input::paste_bytes;
 use super::osc_notify::NotifyingPty;
 pub use super::repaint::{EventProxy, RepaintGate};
@@ -91,6 +92,8 @@ pub struct TerminalSession {
     /// When the user started looking at this pane while its agent reported "Done".
     done_seen_at: Option<Instant>,
     pub(super) shell: Option<ShellEvents>,
+    /// Input waiting on a pasted image that is still being saved.
+    pub(super) queued: VecDeque<Queued>,
 }
 
 impl TerminalSession {
@@ -172,6 +175,7 @@ impl TerminalSession {
             status_change: None,
             done_seen_at: None,
             shell: shell_events,
+            queued: VecDeque::new(),
         })
     }
 
@@ -295,6 +299,7 @@ impl TerminalSession {
                 Event::Exit | Event::ChildExit(_) => self.exited = true,
             }
         }
+        self.flush_queued();
         if let Some(status) = self.agent.as_mut().and_then(AgentEvents::poll) {
             self.status_change = Some(status);
         }

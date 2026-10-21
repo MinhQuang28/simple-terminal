@@ -86,10 +86,7 @@ pub fn handle_wheel(
     grid: Grid,
     pointer: Pos2,
 ) {
-    let (mode, rows) = {
-        let term = session.term.lock();
-        (*term.mode(), term.screen_lines())
-    };
+    let (mode, rows) = (session.frame.mode, session.frame.screen_lines);
     let forwarded = mode.intersects(TermMode::MOUSE_MODE)
         || mode.contains(TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL);
     if !forwarded {
@@ -175,14 +172,9 @@ pub fn overlay(
     rect: Rect,
     id: Id,
 ) -> bool {
-    let extent = {
-        let term = session.term.lock();
-        Extent {
-            offset: term.grid().display_offset(),
-            history: term.grid().history_size(),
-            rows: term.screen_lines(),
-        }
-    };
+    let frame = &session.frame;
+    let extent =
+        Extent { offset: frame.display_offset, history: frame.history_size, rows: frame.screen_lines };
     if extent.history == 0 {
         return false;
     }

@@ -1,5 +1,8 @@
+use std::time::{Duration, Instant};
+
 use alacritty_terminal::grid::{Dimensions, Indexed};
 use alacritty_terminal::index::{Column, Line, Point};
+use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::cell::{Cell as TermCell, Flags};
 use alacritty_terminal::term::color::Colors;
 use alacritty_terminal::term::{Term, TermMode};
@@ -9,6 +12,11 @@ use eframe::egui::Color32;
 use super::colors;
 use super::session::EventProxy;
 use crate::theme::Theme;
+
+/// Longest a pane keeps showing its previous frame while the PTY thread holds the terminal.
+/// Parsing one synchronized update (up to 2 MiB, e.g. Claude Code replaying a resumed
+/// conversation) holds the lock for over 10 ms; waiting on it every frame stalls the whole window.
+const MAX_STALE: Duration = Duration::from_millis(50);
 
 /// A visible cell with colors already resolved against palette, theme and selection.
 pub struct Cell {
@@ -30,24 +38,52 @@ pub struct Cursor {
     pub under: Option<(char, Color32, bool)>,
 }
 
-/// Everything the painter needs, copied out of the terminal so its lock is held only while
-/// copying rather than through text layout.
+/// Everything the view needs, copied out of the terminal so its lock is held only while
+/// copying rather than through text layout, and taken once per frame.
 pub struct Frame {
     pub cells: Vec<Cell>,
     pub cursor: Cursor,
     pub mode: TermMode,
+    /// Lines the view is scrolled up into history.
+    pub display_offset: usize,
+    pub history_size: usize,
+    pub screen_lines: usize,
+    pub has_selection: bool,
+    captured_at: Option<Instant>,
 }
 
 impl Default for Frame {
     fn default() -> Self {
         let cursor = Cursor { row: 0, col: 0, shape: CursorShape::Hidden, under: None };
-        Self { cells: Vec::new(), cursor, mode: TermMode::empty() }
+        Self {
+            cells: Vec::new(),
+            cursor,
+            mode: TermMode::empty(),
+            display_offset: 0,
+            history_size: 0,
+            screen_lines: 0,
+            has_selection: false,
+            captured_at: None,
+        }
     }
 }
 
 impl Frame {
+    /// Recaptures the frame unless the PTY thread is mid-parse, in which case the previous frame
+    /// is kept for up to `MAX_STALE`. Returns false when the frame is stale.
+    pub fn refresh(&mut self, term: &FairMutex<Term<EventProxy>>, theme: &Theme) -> bool {
+        let term = match term.try_lock_unfair() {
+            Some(term) => term,
+            None if self.captured_at.is_some_and(|at| at.elapsed() < MAX_STALE) => return false,
+            None => term.lock(),
+        };
+        self.capture_into(&term, theme);
+        self.captured_at = Some(Instant::now());
+        true
+    }
+
     /// Refills the frame from the terminal, reusing the cell buffer across frames.
-    pub fn capture_into(&mut self, term: &Term<EventProxy>, theme: &Theme) {
+    fn capture_into(&mut self, term: &Term<EventProxy>, theme: &Theme) {
         let content = term.renderable_content();
         let offset = content.display_offset as i32;
         let cursor_point = content.cursor.point;
@@ -86,6 +122,10 @@ impl Frame {
             under,
         };
         self.mode = content.mode;
+        self.display_offset = offset as usize;
+        self.history_size = term.grid().history_size();
+        self.screen_lines = term.screen_lines();
+        self.has_selection = term.selection.is_some();
     }
 }
 
@@ -117,3 +157,7 @@ fn edge_row(term: &Term<EventProxy>, line: i32) -> impl Iterator<Item = Indexed<
         .flatten()
         .map(move |(col, cell)| Indexed { point: Point::new(Line(line), Column(col)), cell })
 }
+
+#[cfg(test)]
+#[path = "snapshot_tests.rs"]
+mod tests;
