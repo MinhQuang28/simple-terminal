@@ -34,6 +34,7 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 [package.metadata.bundle]
 name = "Repodeck"
 identifier = "dev.repodeck.app"
+icon = ["macos/AppIcon.icns"]
 category = "public.app-category.developer-tools"
 short_description = "Project-grouped terminal for multi-repo work"
 osx_minimum_system_version = "12.0"
