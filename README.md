@@ -140,7 +140,7 @@ For a quick unbundled run while developing: `cargo run`.
 | ⌘,       | Settings                     |          |                            |
 
 **Settings** (⌘,) covers appearance (theme, ANSI palette), typography (terminal font and size,
-a separate interface font and text size, line height), terminal
+a separate interface font and size, line height), terminal
 behaviour (shell, cursor, scrollback, Option as Meta, copy on select) and the agent (the command
 that starts new Claude sessions).
 

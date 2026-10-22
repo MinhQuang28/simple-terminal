@@ -22,8 +22,8 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, fonts: &FontCatalog) {
         card.row("Font family", "Used by the sidebar, tabs, menus and settings.", |ui| {
             font_picker(ui, "ui-font", &mut settings.ui_font_family, "Default", fonts, false);
         });
-        card.row("Text size", "Scales every interface label; the terminal keeps its own size.", |ui| {
-            number_field(ui, &mut settings.ui_font_scale, 0.8..=1.5, 0.05, "×");
+        card.row("Font size", "Size of interface text; the terminal keeps its own size.", |ui| {
+            number_field(ui, &mut settings.ui_font_size, 9.0..=24.0, 0.5, " pt");
         });
     });
 

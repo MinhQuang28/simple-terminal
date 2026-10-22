@@ -268,7 +268,7 @@ impl RepodeckApp {
     fn sync_font(&mut self, ctx: &egui::Context) {
         let settings = &self.state.settings;
         let key =
-            (settings.font_family.clone(), settings.ui_font_family.clone(), settings.ui_font_scale.to_bits());
+            (settings.font_family.clone(), settings.ui_font_family.clone(), settings.ui_font_size.to_bits());
         if self.applied_font.as_ref() == Some(&key) {
             return;
         }
@@ -288,7 +288,7 @@ impl RepodeckApp {
         let choice = FontChoice {
             terminal: find(&settings.font_family),
             ui: find(&settings.ui_font_family),
-            ui_scale: settings.ui_font_scale,
+            ui_scale: font_install::ui_scale(settings.ui_font_size),
         };
         font_install::apply(ctx, choice);
         self.applied_font = Some(key);

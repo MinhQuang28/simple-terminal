@@ -7,6 +7,13 @@ use crate::symbol_fallback_fonts;
 
 /// egui's bundled interface font, used when no interface font is chosen.
 const DEFAULT_UI_FONT: &str = "Ubuntu-Light";
+/// Interface text size the labels were designed at; other sizes scale the font from it.
+pub const UI_BASE_FONT_SIZE: f32 = 13.0;
+
+/// Font scale that shows interface text at `size` points.
+pub fn ui_scale(size: f32) -> f32 {
+    size / UI_BASE_FONT_SIZE
+}
 
 /// Fonts to install: the terminal's (also used by the editor) and the interface's.
 pub struct FontChoice<'a> {

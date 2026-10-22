@@ -4,6 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::font_install;
 use crate::library::Prompt;
 use crate::pane_layout::PaneLayout;
 use crate::theme::Theme;
@@ -29,8 +30,8 @@ pub struct Settings {
     pub font_size: f32,
     /// Interface font; empty keeps egui's bundled one.
     pub ui_font_family: String,
-    /// Multiplier on interface text sizes.
-    pub ui_font_scale: f32,
+    /// Interface text size in points; labels drawn at fixed sizes scale with it.
+    pub ui_font_size: f32,
     /// Row height as a multiple of the font size.
     pub line_height: f32,
     /// Extra horizontal space between cells, in points.
@@ -62,7 +63,7 @@ impl Default for Settings {
             font_family: String::new(),
             font_size: 13.0,
             ui_font_family: String::new(),
-            ui_font_scale: 1.0,
+            ui_font_size: font_install::UI_BASE_FONT_SIZE,
             line_height: 1.25,
             letter_spacing: 0.0,
             padding: 8.0,
