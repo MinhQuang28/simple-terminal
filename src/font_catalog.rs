@@ -204,3 +204,23 @@ pub(crate) fn load(face: &FontFace) -> Option<FontData> {
     Face::parse(&data, face.index).ok()?;
     Some(FontData::from_blob(Arc::new(data), face.index))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Apple's downloadable SF Pro names its text-size faces "SF Pro Text" in both family name
+    /// fields, so they group under the name the app looks for; skipped where it isn't installed.
+    #[test]
+    fn apples_static_sf_pro_text_is_listed_under_its_own_family() {
+        let path = Path::new("/Library/Fonts/SF-Pro-Text-Regular.otf");
+        if !path.exists() {
+            return;
+        }
+        let faces = scan_file(path);
+        assert_eq!(faces.len(), 1);
+        assert_eq!(faces[0].family, SYSTEM_UI_TEXT_FONT);
+        assert_eq!(faces[0].weight, 400);
+        assert!(!faces[0].monospace && !faces[0].italic);
+    }
+}
