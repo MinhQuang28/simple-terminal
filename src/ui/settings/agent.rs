@@ -1,6 +1,6 @@
 use eframe::egui::{TextEdit, Ui};
 
-use super::controls::{card, section_label, segmented};
+use super::controls::{card, section_label, segmented, toggle};
 use crate::model::{AgentRenderer, Settings};
 
 const COMMAND_WIDTH: f32 = 300.0;
@@ -26,15 +26,24 @@ pub fn show(ui: &mut Ui, settings: &mut Settings) {
         );
         card.row(
             "Renderer",
-            "Fullscreen: Claude scrolls its own transcript, a line per wheel step. Classic: Claude \
-             writes into the pane's scrollback, which scrolls smoothly, is searchable, and stays \
-             after Claude exits. Applies to sessions started from now on.",
+            "Classic: Claude writes into the pane's scrollback, which scrolls smoothly, is \
+             searchable, and stays after Claude exits. Fullscreen: Claude scrolls its own \
+             transcript, a line per wheel step. Applies to sessions started from now on.",
             |ui| {
                 segmented(
                     ui,
                     &mut settings.agent_renderer,
-                    &[(AgentRenderer::Fullscreen, "Fullscreen"), (AgentRenderer::Classic, "Classic")],
+                    &[(AgentRenderer::Classic, "Classic"), (AgentRenderer::Fullscreen, "Fullscreen")],
                 );
+            },
+        );
+        card.row(
+            "Use subscription",
+            "Hides ANTHROPIC_API_KEY and ANTHROPIC_AUTH_TOKEN from Claude so it signs in with your \
+             Claude subscription instead of billing an API key per token. Turn off to keep using \
+             a key or a gateway from your shell. Applies to sessions started from now on.",
+            |ui| {
+                toggle(ui, &mut settings.agent_hide_api_keys);
             },
         );
     });

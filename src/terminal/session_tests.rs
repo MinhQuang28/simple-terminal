@@ -23,6 +23,7 @@ fn osc_notifications_from_the_child_reach_the_session() {
         scrollback_lines: 100,
         theme: &theme,
         agent_renderer: AgentRenderer::default(),
+        agent_hide_api_keys: false,
     };
     let mut session = TerminalSession::spawn(config, None, Arc::default(), &ctx).unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -52,6 +53,7 @@ fn input_typed_after_a_pasted_image_lands_after_its_path() {
         scrollback_lines: 100,
         theme: &theme,
         agent_renderer: AgentRenderer::default(),
+        agent_hide_api_keys: false,
     };
     let mut session = TerminalSession::spawn(config, None, Arc::default(), &ctx).unwrap();
     let image = egui::ColorImage::filled([2, 2], egui::Color32::RED);
@@ -89,6 +91,7 @@ fn the_classic_renderer_reaches_agent_panes_through_the_environment() {
         scrollback_lines: 100,
         theme: &theme,
         agent_renderer: AgentRenderer::Classic,
+        agent_hide_api_keys: true,
     };
     let agent = crate::agent_events::AgentEvents::create(pane);
     let mut session = TerminalSession::spawn(config, agent, Arc::default(), &ctx).unwrap();

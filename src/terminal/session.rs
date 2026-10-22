@@ -74,6 +74,8 @@ pub struct SessionConfig<'a> {
     pub scrollback_lines: u32,
     pub theme: &'a Theme,
     pub agent_renderer: AgentRenderer,
+    /// Drop the API key variables so Claude signs in with the user's subscription.
+    pub agent_hide_api_keys: bool,
 }
 
 /// A running PTY child plus the terminal state parsed from its output.
@@ -95,7 +97,7 @@ pub struct TerminalSession {
     /// Last captured grid contents; kept so its buffer is reused.
     pub frame: Frame,
     agent: Option<AgentEvents>,
-    status_change: Option<AgentStatus>,
+    status_change: Option<(AgentStatus, String)>,
     /// When the user started looking at this pane while its agent reported "Done".
     done_seen_at: Option<Instant>,
     pub(super) shell: Option<ShellEvents>,
@@ -110,8 +112,17 @@ impl TerminalSession {
         repaint: Arc<RepaintGate>,
         ctx: &egui::Context,
     ) -> Result<Self> {
-        let SessionConfig { pane, cwd, launch, shell, cursor, scrollback_lines, theme, agent_renderer } =
-            config;
+        let SessionConfig {
+            pane,
+            cwd,
+            launch,
+            shell,
+            cursor,
+            scrollback_lines,
+            theme,
+            agent_renderer,
+            agent_hide_api_keys,
+        } = config;
         let (tx, events) = mpsc::channel();
         let visible = Arc::new(AtomicBool::new(true));
         let proxy = EventProxy { tx, ctx: ctx.clone(), repaint, visible: visible.clone() };
@@ -153,7 +164,15 @@ impl TerminalSession {
         }
         if let Some(agent) = &agent {
             env.insert(agent_events::EVENTS_VAR.into(), agent.path().to_string_lossy().into_owned());
-            env.insert(agent_events::HOOKS_VAR.into(), agent_events::hooks_settings(cwd));
+            env.insert(
+                agent_events::HOOKS_VAR.into(),
+                agent_events::hooks_settings(cwd, agent_hide_api_keys),
+            );
+            if agent_hide_api_keys {
+                for var in agent_events::API_KEY_VARS {
+                    env.remove(*var);
+                }
+            }
             env.insert(
                 claude_status_line::STATUS_VAR.into(),
                 agent.status_line_path().to_string_lossy().into_owned(),
@@ -263,8 +282,8 @@ impl TerminalSession {
         self.agent.as_ref()?.session_id()
     }
 
-    /// The agent status if it changed since the last call.
-    pub fn take_status_change(&mut self) -> Option<AgentStatus> {
+    /// The agent status if it changed since the last call, with the text that came with it.
+    pub fn take_status_change(&mut self) -> Option<(AgentStatus, String)> {
         self.status_change.take()
     }
 
@@ -323,8 +342,10 @@ impl TerminalSession {
             }
         }
         self.flush_queued();
-        if let Some(status) = self.agent.as_mut().and_then(AgentEvents::poll) {
-            self.status_change = Some(status);
+        if let Some(agent) = &mut self.agent
+            && let Some(status) = agent.poll()
+        {
+            self.status_change = Some((status, agent.message().unwrap_or_default().to_owned()));
         }
         if let Some(shell) = &mut self.shell {
             let term = &self.term;

@@ -30,7 +30,8 @@ CLI (`claude`), never calls an LLM API itself, and runs as one Rust process.
 - **Agent status at a glance** — each Claude pane shows *Working*, *Done*, *Your turn*, *Approve?*
   or *Error*, read from Claude Code hooks injected per launch with `claude --settings` (your global
   `~/.claude/settings.json` is never edited).
-- **Inbox & notifications** — a bell lists every agent that finished or needs you; allow or deny
+- **Inbox & notifications** — a bell lists every agent that finished or needs you, with what it
+  said; allow or deny
   permission prompts without switching panes; ⌃⌘N jumps to the next pane needing attention.
 - **Subscription usage** — a gauge in the top bar opens a card with your Pro/Max **session and
   weekly limits** (per-model weekly limits too), how much is left, when each resets, and the active
@@ -144,9 +145,10 @@ For a quick unbundled run while developing: `cargo run`.
 a separate interface font and size, line height), notifications (on/off, sound, and whether
 macOS allows them), terminal
 behaviour (shell, cursor, scrollback, Option as Meta, copy on select) and the agent (the command
-that starts new Claude sessions, and its renderer: **Fullscreen**, where Claude scrolls its own
-transcript a line at a time, or **Classic**, where Claude writes into the pane's scrollback so it
-scrolls smoothly, is searchable, and stays after Claude exits).
+that starts new Claude sessions, whether API key variables are hidden from it so it uses your
+subscription, and its renderer: **Classic**, the default, where Claude writes into the pane's
+scrollback so it scrolls smoothly, is searchable, and stays after Claude exits, or **Fullscreen**,
+where Claude scrolls its own transcript a line at a time).
 
 Per repo, a **setup command** runs in each new worktree, and a `.worktreeinclude` file at the repo
 root lists gitignored paths (one per line, e.g. `.env`) to copy into new worktrees.

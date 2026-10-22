@@ -337,8 +337,9 @@ impl RepodeckApp {
                     if let Some(finished) = session.take_long_finished() {
                         report(Report::Command(finished));
                     }
-                    if let Some(status) = session.take_status_change().filter(|s| s.needs_attention()) {
-                        report(Report::Status(status));
+                    let change = session.take_status_change().filter(|(status, _)| status.needs_attention());
+                    if let Some((status, message)) = change {
+                        report(Report::Status { status, message });
                     }
                     for text in session.take_notifications() {
                         report(Report::Message(text));

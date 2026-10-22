@@ -74,6 +74,7 @@ impl SessionPool {
                 scrollback_lines: settings.scrollback_lines,
                 theme: &settings.theme,
                 agent_renderer: settings.agent_renderer,
+                agent_hide_api_keys: settings.agent_hide_api_keys,
             };
             let spawned = TerminalSession::spawn(config, agent, self.repaint.clone(), ctx);
             match spawned {

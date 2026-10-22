@@ -10,8 +10,8 @@ use crate::shell_events::Finished;
 
 /// Something a pane reported during a frame.
 pub(crate) enum Report {
-    /// An agent stopped and waits on the user.
-    Status(AgentStatus),
+    /// An agent stopped and waits on the user, saying `message` (possibly nothing).
+    Status { status: AgentStatus, message: String },
     /// A long command finished.
     Command(Finished),
     /// A program sent an OSC notification.
@@ -38,7 +38,7 @@ impl RepodeckApp {
             let watching = window_focused && visible.contains(&source.pane);
             log::debug!("report for pane {} (watching={watching})", source.pane);
             let (status, label, detail) = match report {
-                Report::Status(status) => (status, status.label().to_string(), String::new()),
+                Report::Status { status, message } => (status, status.label().to_string(), message),
                 Report::Command(finished) => {
                     let ok = finished.exit_code == 0;
                     let outcome = if ok { "finished" } else { "failed" };

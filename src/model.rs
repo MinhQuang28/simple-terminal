@@ -17,9 +17,9 @@ pub fn now_secs() -> u64 {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AgentRenderer {
     /// Claude takes over the screen and scrolls its own transcript, one line per wheel step.
-    #[default]
     Fullscreen,
     /// Claude writes into the pane's scrollback, which Repodeck scrolls by the pixel.
+    #[default]
     Classic,
 }
 
@@ -70,6 +70,9 @@ pub struct Settings {
     /// Run instead of `agent_command` when an agent pane is restored after restart.
     pub agent_resume_command: String,
     pub agent_renderer: AgentRenderer,
+    /// Hide `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` from Claude so it signs in with the
+    /// user's subscription instead of billing an API key per token.
+    pub agent_hide_api_keys: bool,
     /// Post system notifications for panes the user isn't watching.
     pub notifications: bool,
     /// Play the system alert sound with each notification.
@@ -101,6 +104,7 @@ impl Default for Settings {
             agent_command: "claude".into(),
             agent_resume_command: "claude --continue || claude".into(),
             agent_renderer: AgentRenderer::default(),
+            agent_hide_api_keys: true,
             notifications: true,
             notification_sound: true,
             external_editor: String::new(),

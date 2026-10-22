@@ -10,6 +10,9 @@ use crate::event_log::EventLog;
 pub const EVENTS_VAR: &str = "REPODECK_AGENT_EVENTS";
 /// Environment variable holding the inline settings JSON that registers those hooks.
 pub const HOOKS_VAR: &str = "REPODECK_AGENT_HOOKS";
+/// Variables that make Claude Code bill an API key instead of the user's subscription.
+pub const API_KEY_VARS: &[&str] = &["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"];
+const MESSAGE_CHARS: usize = 200;
 const HOOKED_EVENTS: &[&str] = &[
     "SessionStart",
     "UserPromptSubmit",
@@ -53,18 +56,24 @@ impl AgentStatus {
 /// newline-terminated, to the file named by `EVENTS_VAR`, and saves the status line JSON of an
 /// agent started in `cwd`. It also turns off Claude Code's wheel acceleration: it ramps the step
 /// up with every consecutive wheel event, which turns a trackpad's stream of small events into
-/// ever larger jumps the longer a flick lasts.
-pub fn hooks_settings(cwd: &Path) -> String {
+/// ever larger jumps the longer a flick lasts. With `hide_api_keys`, the settings also blank the
+/// API key variables, in case the user's shell start-up files export them.
+pub fn hooks_settings(cwd: &Path, hide_api_keys: bool) -> String {
     let hook =
         json!([{ "hooks": [{ "type": "command", "command": format!("(cat; echo) >> \"${EVENTS_VAR}\"") }] }]);
     let hooks: serde_json::Map<String, Value> =
         HOOKED_EVENTS.iter().map(|event| (event.to_string(), hook.clone())).collect();
-    json!({
+    let mut settings = json!({
         "hooks": hooks,
         "statusLine": claude_status_line::settings(cwd),
         "wheelScrollAccelerationEnabled": false,
-    })
-    .to_string()
+    });
+    if hide_api_keys {
+        let blank: serde_json::Map<String, Value> =
+            API_KEY_VARS.iter().map(|var| (var.to_string(), Value::String(String::new()))).collect();
+        settings["env"] = Value::Object(blank);
+    }
+    settings.to_string()
 }
 
 /// Rewrites each `claude` invocation in a shell command line to load the hook settings.
@@ -90,6 +99,8 @@ pub struct AgentEvents {
     session_id: Option<String>,
     /// What the agent is asking permission for, while it waits.
     request: Option<String>,
+    /// What the agent said with its latest status: its last reply, a notification, or an error.
+    message: Option<String>,
 }
 
 impl AgentEvents {
@@ -100,6 +111,7 @@ impl AgentEvents {
             status: AgentStatus::Idle,
             session_id: None,
             request: None,
+            message: None,
         })
     }
 
@@ -131,6 +143,11 @@ impl AgentEvents {
         self.request.as_deref().filter(|_| self.status == AgentStatus::NeedsApproval)
     }
 
+    /// The text that came with the current status, e.g. Claude's last reply once it stopped.
+    pub fn message(&self) -> Option<&str> {
+        self.message.as_deref()
+    }
+
     /// Applies newly appended events; returns the status if it changed.
     pub fn poll(&mut self) -> Option<AgentStatus> {
         let before = self.status;
@@ -145,6 +162,7 @@ impl AgentEvents {
             }
             if let Some(status) = status_from_event(&event) {
                 self.status = status;
+                self.message = message_from_event(&event);
             }
         }
         (self.status != before).then_some(self.status)
@@ -181,6 +199,19 @@ fn request_from_event(event: &Value) -> Option<String> {
         .unwrap_or_default();
     let detail: String = detail.lines().next().unwrap_or_default().chars().take(120).collect();
     Some(if detail.is_empty() { tool.to_string() } else { format!("{tool}: {detail}") })
+}
+
+/// The first line of the text a status-changing event carries, trimmed to fit a notice.
+fn message_from_event(event: &Value) -> Option<String> {
+    let key = match event["hook_event_name"].as_str()? {
+        "Stop" => "last_assistant_message",
+        "Notification" => "message",
+        "StopFailure" => "error",
+        _ => return None,
+    };
+    let text = event[key].as_str()?;
+    let line = text.lines().map(str::trim).find(|line| !line.is_empty())?;
+    Some(line.chars().take(MESSAGE_CHARS).collect())
 }
 
 fn status_from_event(event: &Value) -> Option<AgentStatus> {
@@ -220,13 +251,47 @@ mod tests {
 
     #[test]
     fn settings_register_every_hooked_event() {
-        let settings: Value = serde_json::from_str(&hooks_settings(Path::new("/"))).unwrap();
+        let settings: Value = serde_json::from_str(&hooks_settings(Path::new("/"), false)).unwrap();
         for event in HOOKED_EVENTS {
             let command = settings["hooks"][event][0]["hooks"][0]["command"].as_str().unwrap();
             assert!(command.contains(EVENTS_VAR), "{event}");
         }
         assert!(settings["statusLine"]["command"].as_str().unwrap().contains(claude_status_line::STATUS_VAR));
         assert_eq!(settings["wheelScrollAccelerationEnabled"], false);
+        assert!(settings.get("env").is_none());
+    }
+
+    #[test]
+    fn settings_can_blank_the_api_key_variables() {
+        let settings: Value = serde_json::from_str(&hooks_settings(Path::new("/"), true)).unwrap();
+        for var in API_KEY_VARS {
+            assert_eq!(settings["env"][var], "", "{var}");
+        }
+    }
+
+    #[test]
+    fn keeps_the_first_line_of_what_the_agent_said() {
+        let message = |json: &str| serde_json::from_str(json).ok().and_then(|e| message_from_event(&e));
+        assert_eq!(
+            message(
+                r#"{"hook_event_name":"Stop","last_assistant_message":"\n  Done: 3 tests pass.\nDetails…"}"#
+            )
+            .as_deref(),
+            Some("Done: 3 tests pass.")
+        );
+        assert_eq!(
+            message(r#"{"hook_event_name":"Notification","message":"Claude needs your permission"}"#)
+                .as_deref(),
+            Some("Claude needs your permission")
+        );
+        assert_eq!(
+            message(r#"{"hook_event_name":"StopFailure","error":"rate limited"}"#).as_deref(),
+            Some("rate limited")
+        );
+        assert_eq!(message(r#"{"hook_event_name":"Stop"}"#), None);
+        assert_eq!(message(r#"{"hook_event_name":"UserPromptSubmit","prompt":"hi"}"#), None);
+        let long = format!(r#"{{"hook_event_name":"Stop","last_assistant_message":"{}"}}"#, "x".repeat(500));
+        assert_eq!(message(&long).unwrap().chars().count(), MESSAGE_CHARS);
     }
 
     #[test]
