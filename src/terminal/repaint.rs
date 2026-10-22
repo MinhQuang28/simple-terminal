@@ -7,8 +7,9 @@ use alacritty_terminal::event::{Event, EventListener};
 use eframe::egui;
 
 /// Output-driven repaints are capped at this rate; the PTY reader already batches bytes, but a
-/// streaming program still wakes the UI far more often than a display can show.
-const REPAINT_INTERVAL: Duration = Duration::from_micros(1_000_000 / 60);
+/// streaming program still wakes the UI far more often than a display can show. 120 Hz matches
+/// ProMotion displays, where a 60 Hz cap showed every other frame of a scrolling agent pane.
+const REPAINT_INTERVAL: Duration = Duration::from_micros(1_000_000 / 120);
 /// Panes that aren't on screen only need their sidebar spinner and title refreshed now and then.
 const HIDDEN_REPAINT_INTERVAL: Duration = Duration::from_secs(1);
 
