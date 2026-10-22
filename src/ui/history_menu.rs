@@ -41,21 +41,27 @@ pub fn show(ui: &mut Ui, repo: &Repo, history: &ClaudeHistory, actions: &mut Vec
                 }
                 Some(sessions) => {
                     let now = now_secs();
-                    // As tall as the window allows, up to MAX_ROWS rows.
-                    let room = ui.ctx().content_rect().bottom() - ui.min_rect().top() - 24.0;
+                    // As tall as the window allows, up to MAX_ROWS rows. The popup's area is
+                    // sized from its first (invisible) pass, where the scroll area sees no room;
+                    // `min_scrolled_height` makes it claim the height anyway once there is more
+                    // content than fits.
+                    let room = ui.ctx().content_rect().bottom() - ui.cursor().top() - 24.0;
                     let max_height = room.clamp(ROW_HEIGHT * 4.0, ROW_HEIGHT * MAX_ROWS as f32);
-                    ScrollArea::vertical().max_height(max_height).show(ui, |ui| {
-                        for session in sessions.iter() {
-                            if session_row(ui, session, now).clicked() {
-                                actions.push(Action::ResumeSession {
-                                    repo: repo.id,
-                                    session: session.id.clone(),
-                                    title: session.title.clone(),
-                                });
-                                ui.close();
+                    ScrollArea::vertical().max_height(max_height).min_scrolled_height(max_height).show(
+                        ui,
+                        |ui| {
+                            for session in sessions.iter() {
+                                if session_row(ui, session, now).clicked() {
+                                    actions.push(Action::ResumeSession {
+                                        repo: repo.id,
+                                        session: session.id.clone(),
+                                        title: session.title.clone(),
+                                    });
+                                    ui.close();
+                                }
                             }
-                        }
-                    });
+                        },
+                    );
                 }
             }
         });

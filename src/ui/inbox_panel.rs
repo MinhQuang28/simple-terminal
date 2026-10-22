@@ -113,7 +113,7 @@ fn contents(ui: &mut Ui, inbox: &Inbox, filter: Id, actions: &mut Vec<Action>) {
         return;
     }
     let now = now_secs();
-    ScrollArea::vertical().max_height(MAX_HEIGHT).show(ui, |ui| {
+    ScrollArea::vertical().max_height(MAX_HEIGHT).min_scrolled_height(MAX_HEIGHT).show(ui, |ui| {
         ui.spacing_mut().item_spacing.y = 0.0;
         for notice in notices {
             if notice_row(ui, notice, now).clicked() {
