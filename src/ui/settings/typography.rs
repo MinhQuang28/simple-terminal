@@ -1,6 +1,7 @@
 use eframe::egui::{ComboBox, RichText, Ui};
 
-use super::controls::{card, number_field, section_label};
+use super::controls::{card, section_label};
+use super::fields::{number_field, picker_visuals};
 use crate::font_catalog::{FontCatalog, SYSTEM_UI_FONT};
 use crate::model::Settings;
 
@@ -58,6 +59,7 @@ fn font_picker(
     monospace_only: bool,
 ) {
     let selected = if family.is_empty() { default_label.to_string() } else { family.clone() };
+    picker_visuals(ui);
     ComboBox::from_id_salt(id).selected_text(selected).width(CONTROL_WIDTH).show_ui(ui, |ui| {
         ui.selectable_value(family, String::new(), default_label);
         match catalog.fonts() {

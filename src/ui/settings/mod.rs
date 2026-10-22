@@ -1,6 +1,7 @@
 mod agent;
 mod appearance;
 mod controls;
+mod fields;
 mod nav;
 mod notifications;
 mod terminal;

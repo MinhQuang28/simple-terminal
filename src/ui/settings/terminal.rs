@@ -1,6 +1,7 @@
 use eframe::egui::{TextEdit, Ui};
 
-use super::controls::{card, number_field, section_label, segmented, toggle};
+use super::controls::{card, section_label, segmented, toggle};
+use super::fields::number_field;
 use crate::model::{CursorShape, Settings};
 
 pub fn show(ui: &mut Ui, settings: &mut Settings) {

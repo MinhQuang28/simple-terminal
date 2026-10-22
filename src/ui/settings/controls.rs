@@ -1,18 +1,17 @@
-use std::ops::RangeInclusive;
-
-use eframe::egui::emath::Numeric;
 use eframe::egui::{
-    Align, Button, Color32, CornerRadius, DragValue, Frame, Layout, Margin, Response, RichText, Sense,
-    Stroke, Ui, vec2,
+    Align, Color32, CornerRadius, Frame, Layout, Margin, Response, RichText, Sense, Stroke, Ui, vec2,
 };
 
+use super::fields::steady_hover;
 use crate::ui::widgets::muted;
 
-const ROW_MIN_HEIGHT: f32 = 58.0;
+/// Space above and below each row's content.
+const ROW_PADDING_Y: f32 = 14.0;
+/// Height of the band a row's title shares with its control, so a switch, a field or a segmented
+/// group all sit level with the title's line whatever the description below does.
+const CONTROL_BAND: f32 = 32.0;
 const SEGMENT_WIDTH: f32 = 64.0;
 const SEGMENT_HEIGHT: f32 = 26.0;
-const STEPPER_SIZE: f32 = 26.0;
-const NUMBER_FIELD_WIDTH: f32 = 72.0;
 const CARD_PADDING_X: i8 = 20;
 
 /// Uppercase caption above a card, e.g. "THEME".
@@ -33,18 +32,29 @@ impl Card<'_> {
     pub fn row(&mut self, title: &str, description: &str, control: impl FnOnce(&mut Ui)) {
         self.separator();
         let ui = &mut *self.ui;
-        ui.horizontal(|ui| {
-            ui.set_min_height(ROW_MIN_HEIGHT);
+        ui.add_space(ROW_PADDING_Y);
+        ui.horizontal_top(|ui| {
             let text_width = (ui.available_width() * 0.55).max(220.0);
             ui.allocate_ui_with_layout(vec2(text_width, 0.0), Layout::top_down(Align::Min), |ui| {
-                ui.label(RichText::new(title).size(14.0).color(ui.visuals().strong_text_color()));
+                ui.allocate_ui_with_layout(
+                    vec2(text_width, CONTROL_BAND),
+                    Layout::left_to_right(Align::Center),
+                    |ui| {
+                        ui.label(RichText::new(title).size(14.0).color(ui.visuals().strong_text_color()));
+                    },
+                );
                 if !description.is_empty() {
-                    ui.add_space(2.0);
                     ui.label(RichText::new(description).size(12.5).color(muted(ui)));
                 }
             });
-            ui.with_layout(Layout::right_to_left(Align::Center), control);
+            let control_width = ui.available_width();
+            ui.allocate_ui_with_layout(
+                vec2(control_width, CONTROL_BAND),
+                Layout::right_to_left(Align::Center),
+                control,
+            );
         });
+        ui.add_space(ROW_PADDING_Y);
     }
 
     /// Free-form content spanning the card's width.
@@ -94,6 +104,7 @@ pub fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T,
         .inner_margin(Margin::same(3))
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
+            steady_hover(ui);
             // Rows lay controls out right-to-left; keep the options in reading order and stop the
             // group from growing to the row's full size.
             let width = options.len() as f32 * (SEGMENT_WIDTH + 2.0) - 2.0;
@@ -142,66 +153,6 @@ pub fn toggle(ui: &mut Ui, on: &mut bool) -> Response {
     let x = eframe::egui::lerp(rect.left() + 10.0..=rect.right() - 10.0, t);
     painter.circle_filled(eframe::egui::pos2(x, rect.center().y), 8.0, Color32::WHITE);
     response
-}
-
-/// A numeric input box with −/+ steppers; click the value to type, or drag it.
-pub fn number_field<T: Numeric>(
-    ui: &mut Ui,
-    value: &mut T,
-    range: RangeInclusive<T>,
-    step: f64,
-    suffix: &str,
-) -> Response {
-    let stepper = |ui: &mut Ui, label: &str| {
-        let button = Button::new(RichText::new(label).size(15.0))
-            .fill(ui.visuals().text_color().gamma_multiply(0.08))
-            .stroke(Stroke::NONE)
-            .corner_radius(CornerRadius::same(6))
-            .min_size(vec2(STEPPER_SIZE, STEPPER_SIZE));
-        ui.add(button).clicked()
-    };
-    let bump = |value: &mut T, delta: f64| {
-        let next = (value.to_f64() + delta).clamp(range.start().to_f64(), range.end().to_f64());
-        *value = T::from_f64((next / step).round() * step);
-    };
-    // Rows lay controls out right-to-left; keep "− value +" in reading order.
-    let gap = 6.0;
-    let width = 2.0 * STEPPER_SIZE + NUMBER_FIELD_WIDTH + 2.0 * (gap + 8.0 + 1.0);
-    ui.allocate_ui_with_layout(vec2(width, STEPPER_SIZE), Layout::left_to_right(Align::Center), |ui| {
-        ui.spacing_mut().item_spacing.x = gap;
-        if stepper(ui, "−") {
-            bump(value, -step);
-        }
-        let field = Frame::new()
-            .fill(ui.visuals().extreme_bg_color)
-            .stroke(Stroke::new(1.0, ui.visuals().text_color().gamma_multiply(0.25)))
-            .corner_radius(CornerRadius::same(6))
-            .inner_margin(Margin::symmetric(8, 3))
-            .show(ui, |ui| {
-                ui.set_width(NUMBER_FIELD_WIDTH);
-                let widgets = &mut ui.visuals_mut().widgets;
-                for state in [&mut widgets.inactive, &mut widgets.hovered, &mut widgets.active] {
-                    state.weak_bg_fill = Color32::TRANSPARENT;
-                    state.bg_fill = Color32::TRANSPARENT;
-                    state.bg_stroke = Stroke::NONE;
-                }
-                let decimals = if step.fract() == 0.0 { 0 } else { 2 };
-                ui.add(
-                    DragValue::new(value)
-                        .range(range.clone())
-                        .speed(step)
-                        .suffix(suffix)
-                        .min_decimals(decimals)
-                        .max_decimals(decimals),
-                )
-            })
-            .inner;
-        if stepper(ui, "+") {
-            bump(value, step);
-        }
-        field
-    })
-    .inner
 }
 
 #[cfg(test)]
