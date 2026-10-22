@@ -142,7 +142,9 @@ For a quick unbundled run while developing: `cargo run`.
 **Settings** (⌘,) covers appearance (theme, ANSI palette), typography (terminal font and size,
 a separate interface font and size, line height), terminal
 behaviour (shell, cursor, scrollback, Option as Meta, copy on select) and the agent (the command
-that starts new Claude sessions).
+that starts new Claude sessions, and its renderer: **Fullscreen**, where Claude scrolls its own
+transcript a line at a time, or **Classic**, where Claude writes into the pane's scrollback so it
+scrolls smoothly, is searchable, and stays after Claude exits).
 
 Per repo, a **setup command** runs in each new worktree, and a `.worktreeinclude` file at the repo
 root lists gitignored paths (one per line, e.g. `.env`) to copy into new worktrees.

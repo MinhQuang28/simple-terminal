@@ -27,7 +27,7 @@ pub use super::repaint::{EventProxy, RepaintGate};
 use super::snapshot::Frame;
 use crate::agent_events::{self, AgentEvents, AgentStatus};
 use crate::claude_status_line::{self, StatusLine};
-use crate::model::CursorShape;
+use crate::model::{AgentRenderer, CursorShape};
 use crate::shell_env;
 use crate::shell_events::ShellEvents;
 use crate::shell_integration;
@@ -73,6 +73,7 @@ pub struct SessionConfig<'a> {
     pub cursor: CursorShape,
     pub scrollback_lines: u32,
     pub theme: &'a Theme,
+    pub agent_renderer: AgentRenderer,
 }
 
 /// A running PTY child plus the terminal state parsed from its output.
@@ -109,7 +110,8 @@ impl TerminalSession {
         repaint: Arc<RepaintGate>,
         ctx: &egui::Context,
     ) -> Result<Self> {
-        let SessionConfig { pane, cwd, launch, shell, cursor, scrollback_lines, theme } = config;
+        let SessionConfig { pane, cwd, launch, shell, cursor, scrollback_lines, theme, agent_renderer } =
+            config;
         let (tx, events) = mpsc::channel();
         let visible = Arc::new(AtomicBool::new(true));
         let proxy = EventProxy { tx, ctx: ctx.clone(), repaint, visible: visible.clone() };
@@ -156,6 +158,9 @@ impl TerminalSession {
                 claude_status_line::STATUS_VAR.into(),
                 agent.status_line_path().to_string_lossy().into_owned(),
             );
+            if let Some((key, value)) = agent_renderer.env() {
+                env.insert(key.into(), value.into());
+            }
         }
         let shell_events = ShellEvents::create(pane);
         if let Some(events) = &shell_events {

@@ -73,6 +73,7 @@ impl SessionPool {
                 cursor: settings.cursor_shape,
                 scrollback_lines: settings.scrollback_lines,
                 theme: &settings.theme,
+                agent_renderer: settings.agent_renderer,
             };
             let spawned = TerminalSession::spawn(config, agent, self.repaint.clone(), ctx);
             match spawned {

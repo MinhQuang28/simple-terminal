@@ -13,6 +13,26 @@ pub fn now_secs() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or_default()
 }
 
+/// How Claude Code draws its interface in an agent pane.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AgentRenderer {
+    /// Claude takes over the screen and scrolls its own transcript, one line per wheel step.
+    #[default]
+    Fullscreen,
+    /// Claude writes into the pane's scrollback, which Repodeck scrolls by the pixel.
+    Classic,
+}
+
+impl AgentRenderer {
+    /// Environment that makes Claude Code use this renderer.
+    pub fn env(self) -> Option<(&'static str, &'static str)> {
+        match self {
+            Self::Fullscreen => None,
+            Self::Classic => Some(("CLAUDE_CODE_NO_FLICKER", "0")),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CursorShape {
     #[default]
@@ -49,6 +69,7 @@ pub struct Settings {
     pub agent_command: String,
     /// Run instead of `agent_command` when an agent pane is restored after restart.
     pub agent_resume_command: String,
+    pub agent_renderer: AgentRenderer,
     /// Command for ⌘-clicked file paths, with `{path}`, `{line}` and `{col}` placeholders; empty
     /// opens the built-in editor.
     pub external_editor: String,
@@ -75,6 +96,7 @@ impl Default for Settings {
             shell: String::new(),
             agent_command: "claude".into(),
             agent_resume_command: "claude --continue || claude".into(),
+            agent_renderer: AgentRenderer::default(),
             external_editor: String::new(),
             prompts: Vec::new(),
         }

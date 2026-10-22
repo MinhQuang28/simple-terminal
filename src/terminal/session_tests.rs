@@ -5,7 +5,7 @@ use eframe::egui;
 use uuid::Uuid;
 
 use super::{Launch, SessionConfig, TerminalSession};
-use crate::model::CursorShape;
+use crate::model::{AgentRenderer, CursorShape};
 use crate::theme::Theme;
 
 #[test]
@@ -22,6 +22,7 @@ fn osc_notifications_from_the_child_reach_the_session() {
         cursor: CursorShape::Block,
         scrollback_lines: 100,
         theme: &theme,
+        agent_renderer: AgentRenderer::default(),
     };
     let mut session = TerminalSession::spawn(config, None, Arc::default(), &ctx).unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -50,6 +51,7 @@ fn input_typed_after_a_pasted_image_lands_after_its_path() {
         cursor: CursorShape::Block,
         scrollback_lines: 100,
         theme: &theme,
+        agent_renderer: AgentRenderer::default(),
     };
     let mut session = TerminalSession::spawn(config, None, Arc::default(), &ctx).unwrap();
     let image = egui::ColorImage::filled([2, 2], egui::Color32::RED);
@@ -69,4 +71,33 @@ fn input_typed_after_a_pasted_image_lands_after_its_path() {
     let text = screen(&session);
     let (path, after) = (text.find(".png").expect("image path pasted"), text.find("after").unwrap());
     assert!(path < after, "{text}");
+}
+
+#[test]
+fn the_classic_renderer_reaches_agent_panes_through_the_environment() {
+    let ctx = egui::Context::default();
+    let theme = Theme::default();
+    let cwd = std::env::temp_dir();
+    let pane = Uuid::new_v4();
+    let script = "printf '\\033]9;NF=%s\\007' \"${CLAUDE_CODE_NO_FLICKER-unset}\"; exit";
+    let config = SessionConfig {
+        pane,
+        cwd: &cwd,
+        launch: Launch::Agent(script),
+        shell: "/bin/sh",
+        cursor: CursorShape::Block,
+        scrollback_lines: 100,
+        theme: &theme,
+        agent_renderer: AgentRenderer::Classic,
+    };
+    let agent = crate::agent_events::AgentEvents::create(pane);
+    let mut session = TerminalSession::spawn(config, agent, Arc::default(), &ctx).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut got = Vec::new();
+    while got.is_empty() && Instant::now() < deadline {
+        session.process_events();
+        got.extend(session.take_notifications());
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(got, ["NF=0"]);
 }

@@ -1,7 +1,7 @@
 use eframe::egui::{TextEdit, Ui};
 
-use super::controls::{card, section_label};
-use crate::model::Settings;
+use super::controls::{card, section_label, segmented};
+use crate::model::{AgentRenderer, Settings};
 
 const COMMAND_WIDTH: f32 = 300.0;
 
@@ -21,6 +21,19 @@ pub fn show(ui: &mut Ui, settings: &mut Settings) {
                     TextEdit::singleline(&mut settings.agent_resume_command)
                         .code_editor()
                         .desired_width(COMMAND_WIDTH),
+                );
+            },
+        );
+        card.row(
+            "Renderer",
+            "Fullscreen: Claude scrolls its own transcript, a line per wheel step. Classic: Claude \
+             writes into the pane's scrollback, which scrolls smoothly, is searchable, and stays \
+             after Claude exits. Applies to sessions started from now on.",
+            |ui| {
+                segmented(
+                    ui,
+                    &mut settings.agent_renderer,
+                    &[(AgentRenderer::Fullscreen, "Fullscreen"), (AgentRenderer::Classic, "Classic")],
                 );
             },
         );
