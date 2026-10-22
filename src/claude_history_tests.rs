@@ -48,6 +48,20 @@ fn encodes_paths_like_claude_code() {
 }
 
 #[test]
+fn has_transcript_only_when_the_file_is_present_under_the_cwd() {
+    // A unique cwd so its encoded transcript dir can't collide with a real one.
+    let cwd = std::env::temp_dir().join(format!("repodeck-resume-{}", uuid::Uuid::new_v4()));
+    let id = "79ed207a-4bd1-4b25-95cd-3e05df6968df";
+    assert!(!has_transcript(&cwd, id));
+    let dir = transcripts_dir(&cwd).unwrap();
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(format!("{id}.jsonl")), "{}\n").unwrap();
+    assert!(has_transcript(&cwd, id));
+    assert!(!has_transcript(&cwd, "00000000-0000-0000-0000-000000000000"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn accepts_only_uuid_like_ids() {
     assert!(is_session_id("f74a6790-b78d-4967-a62f-100cc8e5a231"));
     assert!(!is_session_id("abc; rm -rf ~"));

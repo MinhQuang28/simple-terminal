@@ -149,6 +149,14 @@ pub fn is_session_id(id: &str) -> bool {
     !id.is_empty() && id.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
 }
 
+/// Whether Claude Code has a transcript for `session` under `cwd`. `claude --resume <id>` only
+/// resolves against the current directory's project folder, so resuming an id whose transcript
+/// lives elsewhere (or was deleted) fails with "No conversation found with session ID"; callers
+/// check this first and fall back to a fresh session instead.
+pub fn has_transcript(cwd: &Path, session: &str) -> bool {
+    transcripts_dir(cwd).is_some_and(|dir| dir.join(format!("{session}.jsonl")).is_file())
+}
+
 /// The user's rename, else Claude's generated title, else the latest prompt. `None` for transcripts
 /// without any prompt, which Claude can't meaningfully resume.
 fn read_title(path: &Path) -> Option<String> {

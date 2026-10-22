@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::agent_events::{AgentEvents, AgentStatus};
 use crate::agent_launch::with_hooks;
-use crate::claude_history::is_session_id;
+use crate::claude_history::{has_transcript, is_session_id};
 use crate::claude_status_line::StatusLine;
 use crate::model::{Pane, PaneKind, Settings};
 use crate::terminal::{Launch, RepaintGate, SessionConfig, TerminalSession};
@@ -46,10 +46,13 @@ impl SessionPool {
             return Err(err.clone());
         }
         if !self.sessions.contains_key(&id) {
+            // Only resume when the transcript is actually present under this cwd; otherwise
+            // `claude --resume` aborts with "No conversation found with session ID", so fall
+            // through to the restore/fresh command instead.
             let resume = pane
                 .session
                 .as_deref()
-                .filter(|s| is_session_id(s))
+                .filter(|s| is_session_id(s) && has_transcript(cwd, s))
                 .map(|s| format!("{} --resume {s}", settings.agent_command));
             let command = match (&pane.kind, resume) {
                 (PaneKind::Shell, _) => self.startup.get(&id).cloned(),
