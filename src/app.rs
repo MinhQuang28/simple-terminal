@@ -107,6 +107,7 @@ impl RepodeckApp {
         let prs = PrWatcher::spawn(ctx.clone());
         let (job_tx, jobs) = mpsc::channel();
         socket_api::listen(job_tx.clone(), ctx.clone());
+        crate::editor::warm_up();
         #[cfg(target_os = "macos")]
         crate::app_menu::install("Repodeck", job_tx.clone(), ctx.clone());
         let pending_focus = state

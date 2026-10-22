@@ -120,6 +120,8 @@ mod tests {
         let log = fs::read_to_string(&events).unwrap();
         assert!(log.lines().any(|l| l.starts_with("S\t") && l.ends_with("\tfalse")), "{log}");
         assert!(log.lines().any(|l| l.starts_with("E\t") && l.contains("\t1\t")), "{log}");
-        fs::remove_dir_all(root).unwrap();
+        // Tests running alongside may still be writing event logs under the data dir this test
+        // pointed at itself, so a leftover file is not a failure.
+        let _ = fs::remove_dir_all(root);
     }
 }
