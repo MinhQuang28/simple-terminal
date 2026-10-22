@@ -10,6 +10,11 @@ const SOUND_NAME: &str = "message-new-instant";
 /// Posts a system notification, with the system alert sound when `sound`; the app's bundle
 /// identity is used when it runs from a bundle.
 pub fn notify(title: &str, body: &str, sound: bool) {
+    #[cfg(target_os = "macos")]
+    if crate::notification_post::available() {
+        crate::notification_post::post(title, body, sound);
+        return;
+    }
     static APP: Once = Once::new();
     APP.call_once(|| {
         let _ = notify_rust::set_application(crate::BUNDLE_ID);

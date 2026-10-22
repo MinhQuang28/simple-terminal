@@ -38,6 +38,8 @@ mod library;
 mod library_cache;
 mod model;
 mod notification_permission;
+#[cfg(target_os = "macos")]
+mod notification_post;
 mod pane_layout;
 mod pr_status;
 mod session_pool;
