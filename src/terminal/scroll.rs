@@ -21,6 +21,10 @@ const MIN_THUMB: f32 = 24.0;
 /// refill over 100 ms stays below that.
 const ARROW_BURST: f32 = 3.0;
 const ARROW_REFILL_PER_SEC: f32 = 40.0;
+/// Programs take one wheel report as one notch of a mouse and scroll about this many lines for
+/// it (vim's `mousescroll`, Claude Code's conversation view). A trackpad reports pixels, so its
+/// motion is sent as one report per this many lines to move the content as far as the finger.
+const LINES_PER_NOTCH: f32 = 3.0;
 
 /// Fractional scroll position between two grid lines, so trackpad scrolling moves pixel by pixel
 /// while the terminal itself only knows whole lines. Positive means scrolled up into history.
@@ -118,12 +122,13 @@ pub fn handle_wheel(
     // Programs pace their own wheel acceleration from event timing, so they get each wheel event
     // as the OS delivered it rather than egui's smoothed per-frame delta (which would turn one
     // mouse notch into a run of small events).
+    let reports_mouse = mode.intersects(TermMode::MOUSE_MODE);
     let events: Vec<f32> = ui.input(|i| {
         i.events
             .iter()
             .filter_map(|event| match event {
                 Event::MouseWheel { unit, delta, .. } => Some(match unit {
-                    MouseWheelUnit::Point => delta.y / grid.cell.y,
+                    MouseWheelUnit::Point => wheel_units(delta.y / grid.cell.y, reports_mouse),
                     MouseWheelUnit::Line => delta.y,
                     MouseWheelUnit::Page => delta.y * rows as f32,
                 }),
@@ -139,7 +144,7 @@ pub fn handle_wheel(
         if lines == 0 {
             continue;
         }
-        if mode.intersects(TermMode::MOUSE_MODE) {
+        if reports_mouse {
             session.write(wheel_report(mode, lines, col, row));
         } else {
             // Full-screen programs (less, vim) without mouse support expect arrow keys.
@@ -150,6 +155,12 @@ pub fn handle_wheel(
             }
         }
     }
+}
+
+/// Wheel units to forward for `lines` of trackpad motion: notches for a program reading mouse
+/// reports, lines for one that gets arrow keys instead.
+fn wheel_units(lines: f32, reports_mouse: bool) -> f32 {
+    if reports_mouse { lines / LINES_PER_NOTCH } else { lines }
 }
 
 /// Accumulates fractional lines and returns the whole lines to forward to the program.
