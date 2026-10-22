@@ -28,7 +28,7 @@ uuid = { version = "1.28.0", features = ["v4", "serde"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSEvent", "NSResponder", "NSPasteboard", "NSPasteboardItem", "NSWindow", "NSDockTile"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSEvent", "NSResponder", "NSPasteboard", "NSPasteboardItem", "NSWindow", "NSDockTile", "NSMenu", "NSMenuItem"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSGeometry", "NSString", "NSURL"] }
 
 [package.metadata.bundle]

@@ -3,6 +3,8 @@ mod app;
 mod app_actions;
 mod app_files;
 mod app_layout;
+#[cfg(target_os = "macos")]
+mod app_menu;
 mod app_notices;
 mod app_open_folder;
 mod app_panes;

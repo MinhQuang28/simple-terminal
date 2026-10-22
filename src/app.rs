@@ -105,6 +105,8 @@ impl RepodeckApp {
         let prs = PrWatcher::spawn(ctx.clone());
         let (job_tx, jobs) = mpsc::channel();
         socket_api::listen(job_tx.clone(), ctx.clone());
+        #[cfg(target_os = "macos")]
+        crate::app_menu::install("Repodeck", job_tx.clone(), ctx.clone());
         let pending_focus = state
             .selected_repo
             .and_then(|id| state.repo(id))
