@@ -4,7 +4,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub use crate::theme_presets::presets;
 
 /// An sRGB color stored as `#rrggbb` in the state file so it stays hand-editable.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Hex(pub [u8; 3]);
 
 impl Hex {
@@ -38,7 +38,7 @@ impl<'de> Deserialize<'de> for Hex {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Theme {
     pub name: String,
     pub background: Hex,

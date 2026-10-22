@@ -1,4 +1,5 @@
 mod buffer;
+mod highlight;
 mod markdown;
 mod view;
 

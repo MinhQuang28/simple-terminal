@@ -1,16 +1,14 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use super::buffer::{Buffer, Content, is_markdown};
+use super::{highlight, markdown};
+use crate::model::Settings;
 use eframe::egui::text::{CCursor, CCursorRange, LayoutJob};
 use eframe::egui::{
     Align, Button, Color32, FontId, Frame, Galley, Id, Label, Layout, Margin, RichText, ScrollArea,
     TextBuffer, TextEdit, TextFormat, Ui,
 };
-use egui_extras::syntax_highlighting::{CodeTheme, highlight};
-
-use super::buffer::{Buffer, Content, is_markdown};
-use super::markdown;
-use crate::model::Settings;
 
 /// Highlighting re-runs on every edit, so very large files are shown as plain text.
 const MAX_HIGHLIGHT_CHARS: usize = 200_000;
@@ -72,13 +70,10 @@ pub fn show(
 
     let font = FontId::monospace(settings.font_size);
     let language = language_for(path);
-    let code_theme =
-        if settings.theme.is_light() { CodeTheme::light(font.size) } else { CodeTheme::dark(font.size) }
-            .with_font_id(font.clone());
     let mut layouter = |ui: &Ui, buf: &dyn TextBuffer, _wrap: f32| -> Arc<Galley> {
         let code = buf.as_str();
         let mut job = if code.len() <= MAX_HIGHLIGHT_CHARS {
-            highlight(ui.ctx(), ui.style(), &code_theme, code, &language)
+            highlight::layout_job(ui.ctx(), &settings.theme, &font, &language, code)
         } else {
             let color = ui.visuals().text_color();
             LayoutJob::single_section(code.to_string(), TextFormat::simple(font.clone(), color))
