@@ -130,6 +130,12 @@ pub enum Action {
         tab: Uuid,
         to: usize,
     },
+    /// Moves a tab to the end of another repo's tabs and shows it there.
+    MoveTabToRepo {
+        from: Uuid,
+        tab: Uuid,
+        to: Uuid,
+    },
     /// Selects the tab `offset` places from the active one, wrapping around.
     SelectAdjacentTab(i32),
     OpenNewWorktree(Uuid),

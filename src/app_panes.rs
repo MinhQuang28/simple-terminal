@@ -56,6 +56,20 @@ impl RepodeckApp {
                 let moved = repo.tabs.remove(from);
                 repo.tabs.insert(to.min(repo.tabs.len()), moved);
             }
+            Action::MoveTabToRepo { from, tab, to } => {
+                let Some(repo) = self.state.repo_mut(from) else { return false };
+                let Some(index) = repo.tabs.iter().position(|t| t.id == tab) else { return false };
+                let moved = repo.tabs.remove(index);
+                if repo.active_tab == Some(tab) {
+                    repo.active_tab =
+                        repo.tabs.get(index.min(repo.tabs.len().saturating_sub(1))).map(|t| t.id);
+                }
+                let Some(target) = self.state.repo_mut(to) else { return false };
+                target.active_tab = Some(moved.id);
+                target.tabs.push(moved);
+                self.state.selected_repo = Some(to);
+                self.focus_active_pane();
+            }
             Action::SelectAdjacentTab(offset) => {
                 let Some(repo) = self.selected_repo_mut() else { return false };
                 let Some(index) = repo.tabs.iter().position(|t| Some(t.id) == repo.active_tab) else {

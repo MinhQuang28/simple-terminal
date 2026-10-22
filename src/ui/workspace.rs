@@ -55,7 +55,7 @@ pub fn show(ui: &mut Ui, ws: &mut Workspace<'_>) {
     // Dropping a folder on the tab strip opens a shell there, like the Finder service.
     folder_drop(ui, ws.drag, card.with_max_y(card.top() + tab_bar::TAB_HEIGHT), ws.actions);
     let branch = ws.git.status(&repo.path).map(|s| s.branch.clone());
-    tab_bar::show(ui, repo, branch.as_deref(), ws.pool, ws.buffers, ws.history, ws.actions);
+    tab_bar::show(ui, state, repo, branch.as_deref(), ws.pool, ws.buffers, ws.history, ws.actions);
     let separator = ui.available_rect_before_wrap();
     ui.painter().hline(separator.x_range(), separator.top(), Stroke::new(1.0, state.settings.theme.border()));
     ui.add_space(1.0);

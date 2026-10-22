@@ -160,13 +160,14 @@ impl RepodeckApp {
             | Action::ResizeSplit { .. }
             | Action::OpenRenameTab { .. }
             | Action::MoveTab { .. }
+            | Action::MoveTabToRepo { .. }
             | Action::SelectAdjacentTab(_) => {
                 if !self.apply_pane_action(action, ctx) {
                     return;
                 }
             }
             Action::ReopenClosedTab => {
-                let Some((repo_id, tab)) = self.closed_tabs.pop() else { return };
+                let Some((repo_id, tab)) = self.state.closed_tabs.pop() else { return };
                 let Some(repo) = self.state.repo_mut(repo_id) else { return };
                 repo.active_tab = Some(tab.id);
                 repo.tabs.push(tab);

@@ -48,14 +48,17 @@ pub fn repo_block(
     branch_row(ui, repo, selected && !tab_active, expandable, git, pr.as_deref(), pool, now, actions);
     if !repo.tabs_collapsed {
         for (index, tab) in tabs.iter().enumerate() {
-            tab_row(ui, repo, tab, Some(tab.id) == active_tab, index + 1 == tabs.len(), pool, actions);
+            let (selected, last) = (Some(tab.id) == active_tab, index + 1 == tabs.len());
+            tab_row(ui, state, repo, tab, selected, last, pool, actions);
         }
     }
     ui.add_space(6.0);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn tab_row(
     ui: &mut Ui,
+    state: &AppState,
     repo: &Repo,
     tab: &Tab,
     selected: bool,
@@ -103,7 +106,7 @@ fn tab_row(
     } else if response.clicked() {
         actions.push(Action::SelectTab { repo: repo.id, tab: tab.id });
     }
-    response.context_menu(|ui| tab_menu(ui, repo.id, tab.id, actions));
+    response.context_menu(|ui| tab_menu(ui, state, repo.id, tab.id, actions));
 }
 
 /// The `├`/`└` guide joining a tab to its branch; `last` stops the vertical line at this row.

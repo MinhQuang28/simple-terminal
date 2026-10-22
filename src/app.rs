@@ -23,7 +23,7 @@ use crate::git_watcher::GitWatcher;
 use crate::inbox::{Inbox, Source};
 use crate::library::Prompt;
 use crate::library_cache::LibraryCache;
-use crate::model::{AppState, PaneKind, Tab, now_secs};
+use crate::model::{AppState, PaneKind, now_secs};
 use crate::notification_permission::NotificationPermission;
 use crate::pr_status::PrWatcher;
 use crate::session_pool::SessionPool;
@@ -58,8 +58,6 @@ pub struct RepodeckApp {
     pub(crate) prs: PrWatcher,
     pub(crate) dialog: Option<Dialog>,
     pub(crate) palette: Option<Palette>,
-    /// Most recently closed last, for “Reopen closed tab”.
-    pub(crate) closed_tabs: Vec<(Uuid, Tab)>,
     pub(crate) pending_focus: Option<Uuid>,
     pub(crate) pending_goto: Option<(usize, usize)>,
     pub(crate) dirty: bool,
@@ -125,7 +123,6 @@ impl RepodeckApp {
             prs,
             dialog: None,
             palette: None,
-            closed_tabs: Vec::new(),
             pending_focus,
             pending_goto: None,
             dirty: false,

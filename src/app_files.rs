@@ -15,8 +15,10 @@ impl RepodeckApp {
         let Some(repo) = self.state.repo_mut(repo_id) else { return };
         let file = repo.tabs.iter().find(|t| t.id == tab_id).and_then(|t| t.file.clone());
         if let Some(tab) = close_tab(repo, tab_id) {
-            self.closed_tabs.push((repo_id, tab));
-            self.closed_tabs.truncate(20);
+            self.state.closed_tabs.push((repo_id, tab));
+            let excess = self.state.closed_tabs.len().saturating_sub(20);
+            self.state.closed_tabs.drain(..excess);
+            self.dirty = true;
         }
         if let Some(path) = file {
             let still_open = self

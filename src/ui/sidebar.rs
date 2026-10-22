@@ -1,21 +1,25 @@
-use eframe::egui::{Align, Button, Frame, Label, Layout, Panel, Rect, RichText, ScrollArea, Ui};
+use eframe::egui::{
+    Align, Button, Frame, Label, Layout, Panel, Rect, RichText, ScrollArea, Sense, Stroke, Ui, vec2,
+};
 use uuid::Uuid;
 
 use super::Action;
 use super::chrome::window_drag_area;
+use super::design::{TEXT_CAPTION, hairline};
 use super::sidebar_rows::repo_block;
-use super::widgets::{avatar, glyph_button, icon_button, menu_icon, muted, right_aligned, row_sized};
+use super::widgets::{glyph_button, icon_button, menu_icon, muted, right_aligned, row_sized};
 use crate::agent_events::AgentStatus;
 use crate::agent_launch::Agent;
 use crate::file_drag::FileDrag;
 use crate::git_watcher::GitWatcher;
-use crate::model::{AppState, Project, Tab, now_secs};
+use crate::model::{AppState, Project, Repo, Tab, now_secs};
 use crate::pr_status::PrWatcher;
 use crate::session_pool::SessionPool;
 use crate::tab_title;
 
 const TRAFFIC_LIGHTS_HEIGHT: f32 = 34.0;
-const PROJECT_GAP: f32 = 14.0;
+/// Space on each side of the hairline that separates projects.
+const PROJECT_GAP: f32 = 10.0;
 
 pub fn show(
     ui: &mut Ui,
@@ -55,7 +59,10 @@ pub fn show(
     ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
         ui.spacing_mut().item_spacing.y = 0.0;
         let now = now_secs();
-        for project in &state.projects {
+        for (index, project) in state.projects.iter().enumerate() {
+            if index > 0 {
+                project_divider(ui);
+            }
             let top = ui.cursor().top();
             project_row(ui, project, actions);
             if !project.collapsed {
@@ -74,7 +81,6 @@ pub fn show(
             }
             let span = ui.max_rect().x_range();
             spans.push((project.id, Rect::from_x_y_ranges(span, top..=ui.cursor().top())));
-            ui.add_space(PROJECT_GAP);
         }
         if state.projects.is_empty() {
             ui.add_space(12.0);
@@ -85,6 +91,14 @@ pub fn show(
         }
     });
     drop_target(ui, drag, &spans, actions);
+}
+
+/// Hairline between projects so each group reads as its own block.
+fn project_divider(ui: &mut Ui) {
+    ui.add_space(PROJECT_GAP);
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
+    ui.painter().hline(rect.x_range().shrink(6.0), rect.center().y, Stroke::new(1.0, hairline(ui)));
+    ui.add_space(PROJECT_GAP);
 }
 
 /// Dropping folders on a project adds them there; elsewhere in the sidebar, to the current one.
@@ -101,7 +115,7 @@ fn drop_target(ui: &Ui, drag: &FileDrag, spans: &[(Uuid, Rect)], actions: &mut V
 }
 
 fn project_row(ui: &mut Ui, project: &Project, actions: &mut Vec<Action>) {
-    let (response, ()) = row_sized(ui, false, 0.0, 32.0, |ui| {
+    let (response, ()) = row_sized(ui, false, 0.0, 26.0, |ui| {
         right_aligned(ui, |ui| {
             ui.spacing_mut().item_spacing.x = 10.0;
             menu_icon(ui, "⋯", |ui| {
@@ -116,11 +130,13 @@ fn project_row(ui: &mut Ui, project: &Project, actions: &mut Vec<Action>) {
                     actions.push(Action::RemoveProject(project.id));
                 }
             });
+            // A caption rather than a row, so it doesn't read as another repo.
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                avatar(ui, &project.name, 22.0);
-                ui.add(
-                    Label::new(RichText::new(&project.name).strong().size(15.0)).truncate().selectable(false),
-                );
+                ui.add_space(6.0);
+                let color = ui.visuals().text_color().gamma_multiply(0.55);
+                let name =
+                    RichText::new(project.name.to_uppercase()).strong().size(TEXT_CAPTION).color(color);
+                ui.add(Label::new(name).truncate().selectable(false));
                 let chevron = if project.collapsed { "›" } else { "⌄" };
                 ui.label(RichText::new(chevron).color(muted(ui)).size(12.0));
             });
@@ -131,9 +147,21 @@ fn project_row(ui: &mut Ui, project: &Project, actions: &mut Vec<Action>) {
     }
 }
 
-pub fn tab_menu(ui: &mut Ui, repo: Uuid, tab: Uuid, actions: &mut Vec<Action>) {
+pub fn tab_menu(ui: &mut Ui, state: &AppState, repo: Uuid, tab: Uuid, actions: &mut Vec<Action>) {
     if ui.button("Rename tab…").clicked() {
         actions.push(Action::OpenRenameTab { repo, tab });
+    }
+    let others: Vec<&Repo> = state.projects.iter().flat_map(|p| &p.repos).filter(|r| r.id != repo).collect();
+    if !others.is_empty() {
+        ui.menu_button("Move to", |ui| {
+            ui.set_min_width(180.0);
+            for other in others {
+                if ui.button(&other.name).clicked() {
+                    actions.push(Action::MoveTabToRepo { from: repo, tab, to: other.id });
+                    ui.close();
+                }
+            }
+        });
     }
     if ui.add(Button::new("Close tab").shortcut_text("⇧⌘W")).clicked() {
         actions.push(Action::CloseTab { repo, tab });

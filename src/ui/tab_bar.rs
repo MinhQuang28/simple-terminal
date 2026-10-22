@@ -11,7 +11,7 @@ use crate::agent_events::AgentStatus;
 use crate::agent_launch::Agent;
 use crate::claude_history::ClaudeHistory;
 use crate::editor::Buffers;
-use crate::model::{PaneKind, Repo, Tab};
+use crate::model::{AppState, PaneKind, Repo, Tab};
 use crate::session_pool::SessionPool;
 
 pub const TAB_HEIGHT: f32 = 38.0;
@@ -27,8 +27,10 @@ struct TabState {
     agent: Agent,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn show(
     ui: &mut Ui,
+    state: &AppState,
     repo: &Repo,
     branch: Option<&str>,
     pool: &SessionPool,
@@ -45,14 +47,14 @@ pub fn show(
         for (index, tab) in repo.tabs.iter().enumerate() {
             let fallback = branch.unwrap_or(&repo.name);
             let title = truncate(&tab_title(tab, pool, fallback), MAX_TITLE_CHARS);
-            let state = TabState {
+            let tab_state = TabState {
                 active: repo.active_tab == Some(tab.id),
                 dirty: tab.file.as_deref().is_some_and(|p| buffers.is_dirty(p)),
                 busy: tab_busy(tab, pool),
                 attention: tab_status(tab, pool).filter(|s| s.needs_attention()),
                 agent: tab_agent(tab, pool),
             };
-            let (response, close) = tab_item(ui, index + 1, tab, &title, &state);
+            let (response, close) = tab_item(ui, index + 1, tab, &title, &tab_state);
             centers.push(response.rect.center().x);
             if response.dragged()
                 && let Some(pos) = response.interact_pointer_pos()
@@ -64,7 +66,7 @@ pub fn show(
             } else if response.clicked() {
                 actions.push(Action::SelectTab { repo: repo.id, tab: tab.id });
             }
-            response.context_menu(|ui| tab_menu(ui, repo.id, tab.id, actions));
+            response.context_menu(|ui| tab_menu(ui, state, repo.id, tab.id, actions));
         }
         // Dragging a tab past a neighbour's centre moves it there.
         if let Some((index, tab, x)) = dragging {

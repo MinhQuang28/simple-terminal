@@ -133,6 +133,9 @@ pub struct AppState {
     pub settings: Settings,
     pub show_side_panel: bool,
     pub side_panel: SidePanel,
+    /// Tabs closed most recently last, with the repo each came from, for "Reopen closed tab".
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub closed_tabs: Vec<(Uuid, Tab)>,
 }
 
 impl Default for AppState {
@@ -143,6 +146,7 @@ impl Default for AppState {
             settings: Settings::default(),
             show_side_panel: true,
             side_panel: SidePanel::default(),
+            closed_tabs: Vec::new(),
         }
     }
 }
