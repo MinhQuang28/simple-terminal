@@ -3,8 +3,7 @@ use std::sync::Arc;
 use eframe::egui::{self, FontDefinitions, FontFamily, FontTweak};
 
 use crate::font_catalog::{
-    BOLD_FAMILY, FontEntry, FontFace, SYSTEM_FONT, SYSTEM_FONT_PATH, SYSTEM_UI_FONT, SYSTEM_UI_FONT_PATH,
-    load,
+    BOLD_FAMILY, FontEntry, FontFace, SYSTEM_FONT, SYSTEM_FONT_PATH, SYSTEM_UI_FONT_PATH, load,
 };
 use crate::symbol_fallback_fonts;
 
@@ -55,7 +54,7 @@ fn install_terminal(defs: &mut FontDefinitions, entry: &FontEntry) {
 
 fn install_ui(defs: &mut FontDefinitions, entry: Option<&FontEntry>, scale: f32) {
     let tweak = FontTweak { scale, ..Default::default() };
-    let face = entry.map(|e| e.regular.clone()).unwrap_or_else(|| system_ui_face());
+    let face = entry.map(|e| e.regular.clone()).unwrap_or_else(system_ui_face);
     match load(&face) {
         Some(data) => {
             defs.font_data.insert("ui-regular".into(), Arc::new(data.tweak(tweak)));
@@ -83,6 +82,7 @@ fn system_font() -> FontEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::font_catalog::SYSTEM_UI_FONT;
 
     #[test]
     fn terminal_font_heads_monospace_and_ui_font_heads_proportional() {
