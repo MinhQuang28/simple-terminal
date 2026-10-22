@@ -16,7 +16,8 @@ use crate::editor::Buffers;
 use crate::file_drag::FileDrag;
 use crate::file_tree::FileTree;
 use crate::finder_service::{self, FolderRequest};
-use crate::font_catalog::{self, FontCatalog};
+use crate::font_catalog::FontCatalog;
+use crate::font_install::{self, FontChoice};
 use crate::git_watcher::GitWatcher;
 use crate::inbox::{Inbox, Source};
 use crate::library::Prompt;
@@ -76,7 +77,7 @@ pub struct RepodeckApp {
     settings_page: Page,
     fonts: FontCatalog,
     /// The font family currently installed in egui; `None` until the first install.
-    applied_font: Option<String>,
+    applied_font: Option<(String, String, u32)>,
     last_save: Instant,
     saver: Saver,
     badge: usize,
@@ -93,7 +94,8 @@ impl RepodeckApp {
         shell_env::prefetch(shell_env::program(&state.settings.shell));
         state.settings.theme.apply_to(&ctx);
         // Install the bundled font immediately so the bold family exists before the first paint.
-        font_catalog::apply(&ctx, None);
+        // Bundled defaults until the font scan finds the chosen families.
+        font_install::apply(&ctx, FontChoice { terminal: None, ui: None, ui_scale: 1.0 });
         let fonts = FontCatalog::scan(ctx.clone());
         let folder_requests = finder_service::register(&ctx);
         let claude_history = ClaudeHistory::new(ctx.clone());
@@ -262,23 +264,34 @@ impl RepodeckApp {
         self.dirty |= changes.any;
     }
 
-    /// Installs the configured font once the system font scan has found it.
+    /// Installs the configured fonts once the system font scan has found them.
     fn sync_font(&mut self, ctx: &egui::Context) {
-        let family = &self.state.settings.font_family;
-        if self.applied_font.as_ref() == Some(family) {
+        let settings = &self.state.settings;
+        let key =
+            (settings.font_family.clone(), settings.ui_font_family.clone(), settings.ui_font_scale.to_bits());
+        if self.applied_font.as_ref() == Some(&key) {
             return;
         }
-        if family.is_empty() {
-            font_catalog::apply(ctx, None);
-        } else {
-            let Some(fonts) = self.fonts.fonts() else { return };
+        let wanted = [&settings.font_family, &settings.ui_font_family];
+        let fonts = match self.fonts.fonts() {
+            Some(fonts) => fonts,
+            None if wanted.iter().all(|f| f.is_empty()) => Vec::new(),
+            None => return,
+        };
+        let find = |family: &String| {
             let entry = fonts.iter().find(|f| &f.family == family);
-            if entry.is_none() {
-                log::warn!("Font {family:?} not installed; using the system font");
+            if !family.is_empty() && entry.is_none() {
+                log::warn!("Font {family:?} not installed; using the default");
             }
-            font_catalog::apply(ctx, entry);
-        }
-        self.applied_font = Some(family.clone());
+            entry
+        };
+        let choice = FontChoice {
+            terminal: find(&settings.font_family),
+            ui: find(&settings.ui_font_family),
+            ui_scale: settings.ui_font_scale,
+        };
+        font_install::apply(ctx, choice);
+        self.applied_font = Some(key);
     }
 
     /// Persists recent PTY output as tab activity so the sidebar can show "5m ago", and agent task

@@ -4,11 +4,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use eframe::egui::{self, FontData, FontDefinitions, FontFamily};
+use eframe::egui::{self, FontData};
 use memmap2::Mmap;
 use ttf_parser::{Face, PlatformId, name_id};
-
-use crate::symbol_fallback_fonts;
 
 /// Family used for bold terminal cells; falls back to the regular monospace stack.
 pub const BOLD_FAMILY: &str = "terminal-bold";
@@ -16,7 +14,7 @@ pub const BOLD_FAMILY: &str = "terminal-bold";
 /// Font used when none is chosen. egui's bundled Hack lacks Vietnamese letters, which would
 /// otherwise render in a proportional fallback font.
 pub const SYSTEM_FONT: &str = "SF Mono";
-const SYSTEM_FONT_PATH: &str = "/System/Library/Fonts/SFNSMono.ttf";
+pub const SYSTEM_FONT_PATH: &str = "/System/Library/Fonts/SFNSMono.ttf";
 
 /// Every lowercase Vietnamese letter with a diacritic. Fonts missing any are left out of the
 /// catalog, since a fallback glyph mid-word looks broken.
@@ -33,9 +31,11 @@ pub struct FontEntry {
     pub family: String,
     pub regular: FontFace,
     pub bold: Option<FontFace>,
+    /// Fixed-pitch, so usable for the terminal; the interface takes any font.
+    pub monospace: bool,
 }
 
-/// Monospace fonts installed on the system, discovered on a background thread.
+/// Fonts installed on the system that cover Vietnamese, discovered on a background thread.
 #[derive(Clone, Default)]
 pub struct FontCatalog {
     fonts: Arc<Mutex<Option<Vec<FontEntry>>>>,
@@ -47,7 +47,7 @@ impl FontCatalog {
         let fonts = catalog.fonts.clone();
         let spawned = thread::Builder::new().name("font-scan".into()).spawn(move || {
             let found = scan_system_fonts();
-            log::info!("Found {} monospace font families", found.len());
+            log::info!("Found {} font families", found.len());
             if let Ok(mut slot) = fonts.lock() {
                 *slot = Some(found);
             }
@@ -104,6 +104,7 @@ struct ScannedFace {
     family: String,
     weight: u16,
     italic: bool,
+    monospace: bool,
 }
 
 fn scan_system_fonts() -> Vec<FontEntry> {
@@ -123,7 +124,12 @@ fn scan_system_fonts() -> Vec<FontEntry> {
             let upright = || faces.iter().filter(|f| !f.italic);
             let regular = upright().min_by_key(|f| f.weight.abs_diff(400))?;
             let bold = upright().filter(|f| f.weight >= 600).min_by_key(|f| f.weight.abs_diff(700));
-            Some(FontEntry { family, regular: regular.face.clone(), bold: bold.map(|f| f.face.clone()) })
+            Some(FontEntry {
+                family,
+                regular: regular.face.clone(),
+                bold: bold.map(|f| f.face.clone()),
+                monospace: regular.monospace,
+            })
         })
         .collect()
 }
@@ -134,7 +140,7 @@ fn scan_file(path: &Path) -> Vec<ScannedFace> {
     (0..count)
         .filter_map(|index| {
             let face = Face::parse(&data, index).ok()?;
-            if !is_monospaced(&face) || !covers_vietnamese(&face) {
+            if !covers_vietnamese(&face) {
                 return None;
             }
             let family = family_name(&face)?;
@@ -147,6 +153,7 @@ fn scan_file(path: &Path) -> Vec<ScannedFace> {
                 family,
                 weight: face.weight().to_number(),
                 italic: face.is_italic(),
+                monospace: is_monospaced(&face),
             })
         })
         .collect()
@@ -190,37 +197,4 @@ pub(crate) fn load(face: &FontFace) -> Option<FontData> {
     let data = map_file(&face.path)?;
     Face::parse(&data, face.index).ok()?;
     Some(FontData::from_blob(Arc::new(data), face.index))
-}
-
-fn system_font() -> FontEntry {
-    let regular = FontFace { path: SYSTEM_FONT_PATH.into(), index: 0 };
-    FontEntry { family: SYSTEM_FONT.into(), regular, bold: None }
-}
-
-/// Installs `entry` for the terminal, editor and app chrome; `None` uses [`SYSTEM_FONT`].
-pub fn apply(ctx: &egui::Context, entry: Option<&FontEntry>) {
-    let mut defs = FontDefinitions::default();
-    let mut mono = defs.families.get(&FontFamily::Monospace).cloned().unwrap_or_default();
-    let mut bold = mono.clone();
-    let system = system_font();
-    if let Some(entry) = entry.or(Some(&system)) {
-        if let Some(data) = load(&entry.regular) {
-            defs.font_data.insert("terminal-regular".into(), Arc::new(data));
-            mono.insert(0, "terminal-regular".into());
-            bold = mono.clone();
-        }
-        // A chosen font also styles the interface; the system default keeps egui's UI font. egui's
-        // proportional fonts stay behind it as fallbacks for glyphs it lacks.
-        if entry.family != SYSTEM_FONT {
-            defs.families.entry(FontFamily::Proportional).or_default().insert(0, "terminal-regular".into());
-        }
-        if let Some(data) = entry.bold.as_ref().and_then(load) {
-            defs.font_data.insert("terminal-bold".into(), Arc::new(data));
-            bold.insert(0, "terminal-bold".into());
-        }
-    }
-    defs.families.insert(FontFamily::Monospace, mono);
-    defs.families.insert(FontFamily::Name(BOLD_FAMILY.into()), bold);
-    symbol_fallback_fonts::install(&mut defs);
-    ctx.set_fonts(defs);
 }

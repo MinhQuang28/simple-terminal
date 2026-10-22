@@ -24,9 +24,13 @@ pub enum CursorShape {
 #[serde(default)]
 pub struct Settings {
     pub theme: Theme,
-    /// Empty means the bundled monospace font.
+    /// Terminal and editor font; empty means the bundled monospace font.
     pub font_family: String,
     pub font_size: f32,
+    /// Interface font; empty keeps egui's bundled one.
+    pub ui_font_family: String,
+    /// Multiplier on interface text sizes.
+    pub ui_font_scale: f32,
     /// Row height as a multiple of the font size.
     pub line_height: f32,
     /// Extra horizontal space between cells, in points.
@@ -57,6 +61,8 @@ impl Default for Settings {
             theme: Theme::default(),
             font_family: String::new(),
             font_size: 13.0,
+            ui_font_family: String::new(),
+            ui_font_scale: 1.0,
             line_height: 1.25,
             letter_spacing: 0.0,
             padding: 8.0,

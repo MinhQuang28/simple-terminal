@@ -22,7 +22,8 @@ CLI (`claude`), never calls an LLM API itself, and runs as one Rust process.
 - **Finder integration** — drop folders on the sidebar, or use Finder's Services menu
   ("New Repodeck Terminal at Folder").
 - 11 built-in themes (Repodeck Dark, One Dark, Dracula, Catppuccin, Tokyo Night, Nord, Gruvbox,
-  Solarized, GitHub Light…) and any installed monospace font.
+  Solarized, GitHub Light…); any installed monospace font for the terminal and any installed
+  font, at its own size, for the interface.
 
 ### Claude Code agents
 
@@ -138,7 +139,8 @@ For a quick unbundled run while developing: `cargo run`.
 | ⌃⌘N      | Next pane needing attention  | ⌘B       | Toggle files panel         |
 | ⌘,       | Settings                     |          |                            |
 
-**Settings** (⌘,) covers appearance (theme, ANSI palette, font, size, line height), terminal
+**Settings** (⌘,) covers appearance (theme, ANSI palette), typography (terminal font and size,
+a separate interface font and text size, line height), terminal
 behaviour (shell, cursor, scrollback, Option as Meta, copy on select) and the agent (the command
 that starts new Claude sessions).
 

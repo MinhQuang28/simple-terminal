@@ -21,6 +21,7 @@ mod file_drag;
 mod file_tree;
 mod finder_service;
 mod font_catalog;
+mod font_install;
 mod git_status;
 mod git_watcher;
 mod inbox;
