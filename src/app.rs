@@ -14,6 +14,7 @@ use crate::claude_history::ClaudeHistory;
 use crate::diff::DiffCache;
 use crate::editor::Buffers;
 use crate::file_drag::FileDrag;
+use crate::file_index::FileIndex;
 use crate::file_tree::FileTree;
 use crate::finder_service::{self, FolderRequest};
 use crate::font_catalog::{self, FontCatalog};
@@ -67,6 +68,7 @@ pub struct RepodeckApp {
     pub(crate) diffs: DiffCache,
     pub(crate) pending_paste: Option<PendingPaste>,
     pub(crate) file_tree: FileTree,
+    pub(crate) file_index: FileIndex,
     pub(crate) claude_history: ClaudeHistory,
     pub(crate) library: LibraryCache,
     pub(crate) drag: FileDrag,
@@ -103,6 +105,7 @@ impl RepodeckApp {
         let claude_history = ClaudeHistory::new(ctx.clone());
         let library = LibraryCache::new(ctx.clone());
         let file_tree = FileTree::new(ctx.clone());
+        let file_index = FileIndex::new(ctx.clone());
         let git = GitWatcher::spawn(ctx.clone());
         let prs = PrWatcher::spawn(ctx.clone());
         let (job_tx, jobs) = mpsc::channel();
@@ -131,6 +134,7 @@ impl RepodeckApp {
             diffs: DiffCache::new(ctx.clone()),
             pending_paste: None,
             file_tree,
+            file_index,
             claude_history,
             library,
             drag: FileDrag::default(),
@@ -457,7 +461,7 @@ impl eframe::App for RepodeckApp {
 
         self.show_dialog(&ctx);
         if let Some(palette) = &mut self.palette
-            && palette.show(&ctx, &self.state, &self.pool, &mut actions)
+            && palette.show(&ctx, &self.state, &self.pool, &mut self.file_index, &mut actions)
         {
             self.palette = None;
             self.focus_active_pane();

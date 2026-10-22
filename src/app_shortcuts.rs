@@ -72,6 +72,9 @@ impl RepodeckApp {
         if pressed(cmd, Key::T) {
             actions.extend(repo.map(|repo| Action::NewTab { repo, kind: PaneKind::Shell }));
         }
+        if pressed(cmd, Key::P) && repo.is_some() {
+            self.palette = Some(Palette::files());
+        }
         if pressed(cmd, Key::D) {
             actions.push(Action::Split { dir: SplitDir::Right, kind: PaneKind::Shell });
         }

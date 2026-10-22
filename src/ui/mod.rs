@@ -107,6 +107,8 @@ pub enum Action {
     ToggleSidePanel,
     /// Opens the find bar in the active terminal pane.
     OpenFind,
+    /// Opens the palette listing the selected repo's files.
+    OpenQuickOpen,
     SetSidePanel(SidePanel),
     /// Shows the active pane alone, or restores the split.
     ToggleZoom,

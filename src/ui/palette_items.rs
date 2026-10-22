@@ -13,8 +13,10 @@ pub enum Kind {
     Tab,
     Repo,
     Prompt,
+    File,
 }
 
+#[derive(Clone)]
 pub struct Item {
     pub label: String,
     /// The shortcut, for commands that have one.
@@ -46,6 +48,7 @@ pub fn items(state: &AppState, pool: &SessionPool) -> Vec<Item> {
             push("Remove this worktree…", "", Action::OpenRemoveWorktree(repo.id));
         }
         push("Find in terminal", "⌘F", Action::OpenFind);
+        push("Open file…", "⌘P", Action::OpenQuickOpen);
         push("Next tab", "⇧⌘]", Action::SelectAdjacentTab(1));
         push("Previous tab", "⇧⌘[", Action::SelectAdjacentTab(-1));
     }

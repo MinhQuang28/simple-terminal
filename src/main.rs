@@ -26,6 +26,7 @@ mod diff;
 mod editor;
 mod event_log;
 mod file_drag;
+mod file_index;
 mod file_tree;
 mod finder_service;
 mod font_catalog;

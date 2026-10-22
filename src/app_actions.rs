@@ -12,6 +12,7 @@ use crate::library;
 use crate::model::{PaneKind, Project, Repo, Tab};
 use crate::ui::Action;
 use crate::ui::dialogs::Dialog;
+use crate::ui::palette::Palette;
 
 impl RepodeckApp {
     pub(crate) fn apply(&mut self, action: Action, ctx: &egui::Context) {
@@ -137,6 +138,7 @@ impl RepodeckApp {
             Action::AddDroppedRepos { project, paths } => self.add_dropped_repos(project, &paths),
             Action::OpenFolderTab(path) => self.open_folder(FolderRequest { path, kind: PaneKind::Shell }),
             Action::ToggleSidePanel => self.state.show_side_panel = !self.state.show_side_panel,
+            Action::OpenQuickOpen => self.palette = Some(Palette::files()),
             Action::OpenFind => {
                 let terminal_tab = self
                     .selected_repo_mut()
