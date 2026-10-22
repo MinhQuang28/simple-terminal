@@ -64,22 +64,15 @@ impl RepodeckApp {
             .show_separator_line(false)
             .frame(Frame::new().fill(window_bg).inner_margin(Margin::symmetric(6, 0)))
             .show(ui, |ui| {
-                chrome::top_bar(ui, &self.state, status.as_deref(), &self.inbox, &self.pool, actions)
+                let context = self.active_context();
+                chrome::top_bar(ui, &self.state, status.as_deref(), &self.inbox, &self.pool, context, actions)
             });
 
         Panel::bottom("statusbar")
             .exact_size(28.0)
             .show_separator_line(false)
             .frame(Frame::new().fill(window_bg).inner_margin(Margin::symmetric(6, 0)))
-            .show(ui, |ui| {
-                chrome::status_bar(
-                    ui,
-                    &self.state,
-                    status.as_deref(),
-                    self.pool.latest_limits(),
-                    self.active_context(),
-                )
-            });
+            .show(ui, |ui| chrome::status_bar(ui, &self.state, status.as_deref()));
 
         CentralPanel::default().frame(Frame::new().fill(window_bg)).show(ui, |ui| {
             card.show(ui, |ui| {

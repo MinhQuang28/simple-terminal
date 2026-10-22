@@ -10,8 +10,6 @@ use crate::store;
 /// Environment variable naming the file Claude Code's status line command writes its JSON to.
 pub const STATUS_VAR: &str = "REPODECK_AGENT_STATUS";
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
-/// Usage at or above this share of a limit is highlighted.
-const HIGH_USAGE: f64 = 80.0;
 
 /// The `statusLine` setting for `claude --settings`: saves Claude Code's status JSON to the file
 /// named by `STATUS_VAR`, then pipes it to the user's own status line command so that still shows.
@@ -50,12 +48,35 @@ impl Limit {
     }
 }
 
+/// A usage window with the name Claude Code reports it under, e.g. `seven_day_opus`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Window {
+    pub key: String,
+    pub limit: Limit,
+}
+
+impl Window {
+    /// "Session", "Weekly", or "Weekly · Opus" for a per-model weekly window.
+    pub fn label(&self) -> String {
+        match self.key.as_str() {
+            "five_hour" => "Session".into(),
+            "seven_day" => "Weekly".into(),
+            key => match key.strip_prefix("seven_day_") {
+                Some(model) => format!("Weekly · {}", capitalize(&model.replace('_', " "))),
+                None => capitalize(&key.replace('_', " ")),
+            },
+        }
+    }
+}
+
 /// What Claude Code last reported through its status line. Limits are only present for Pro/Max
 /// subscriptions, after the session's first response.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct StatusLine {
     pub five_hour: Option<Limit>,
     pub seven_day: Option<Limit>,
+    /// Further windows, such as per-model weekly limits, in the order reported.
+    pub others: Vec<Window>,
     pub context_percent: Option<f64>,
     /// Unix seconds.
     pub reported_at: u64,
@@ -63,53 +84,54 @@ pub struct StatusLine {
 
 impl StatusLine {
     fn parse(json: &Value, reported_at: u64) -> Self {
-        let limit = |key: &str| {
-            let window = &json["rate_limits"][key];
+        let limit = |window: &Value| {
             Some(Limit {
                 used_percent: window["used_percentage"].as_f64()?,
                 resets_at: window["resets_at"].as_u64()?,
             })
         };
+        let windows = json["rate_limits"].as_object();
+        let others = windows
+            .into_iter()
+            .flatten()
+            .filter(|(key, _)| !matches!(key.as_str(), "five_hour" | "seven_day"))
+            .filter_map(|(key, window)| Some(Window { key: key.clone(), limit: limit(window)? }))
+            .collect();
         Self {
-            five_hour: limit("five_hour"),
-            seven_day: limit("seven_day"),
+            five_hour: limit(&json["rate_limits"]["five_hour"]),
+            seven_day: limit(&json["rate_limits"]["seven_day"]),
+            others,
             context_percent: json["context_window"]["used_percentage"].as_f64(),
             reported_at,
         }
     }
 
     pub fn has_limits(&self) -> bool {
-        self.five_hour.is_some() || self.seven_day.is_some()
+        self.five_hour.is_some() || self.seven_day.is_some() || !self.others.is_empty()
     }
 
-    /// Short form for the status bar, e.g. "5h 15% · 7d 2%".
-    pub fn summary(&self) -> String {
-        let now = now();
-        let windows = [("5h", self.five_hour), ("7d", self.seven_day)];
-        let parts: Vec<String> = windows
-            .iter()
-            .filter_map(|(name, l)| Some(format!("{name} {:.0}%", l.as_ref()?.used_at(now))))
-            .collect();
-        parts.join(" · ")
+    /// Every window in display order: session, weekly, then the rest.
+    pub fn windows(&self) -> Vec<Window> {
+        let named = |key: &str, limit: Option<Limit>| limit.map(|limit| Window { key: key.into(), limit });
+        named("five_hour", self.five_hour)
+            .into_iter()
+            .chain(named("seven_day", self.seven_day))
+            .chain(self.others.iter().cloned())
+            .collect()
     }
 
-    pub fn details(&self) -> String {
+    /// The largest share used across windows now.
+    pub fn peak_used(&self) -> f64 {
         let now = now();
-        let windows = [("5-hour limit", self.five_hour), ("Weekly limit", self.seven_day)];
-        let lines: Vec<String> = windows
-            .iter()
-            .filter_map(|(name, limit)| {
-                let limit = limit.as_ref()?;
-                let resets = limit.resets_at.saturating_sub(now);
-                Some(format!("{name}: {:.0}% used · resets in {}", limit.used_at(now), duration(resets)))
-            })
-            .collect();
-        lines.join("\n")
+        self.windows().iter().map(|w| w.limit.used_at(now)).fold(0.0, f64::max)
     }
+}
 
-    pub fn is_high(&self) -> bool {
-        let now = now();
-        [self.five_hour, self.seven_day].iter().flatten().any(|l| l.used_at(now) >= HIGH_USAGE)
+fn capitalize(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
     }
 }
 
@@ -135,7 +157,7 @@ impl StatusFile {
     }
 
     pub fn latest(&self) -> Option<StatusLine> {
-        self.latest
+        self.latest.clone()
     }
 
     /// Reads the file if it changed. A half-written file fails to parse and is read again later.
@@ -155,9 +177,12 @@ impl StatusFile {
         self.modified = Some(modified);
         let mut status = StatusLine::parse(&json, now());
         // A report without limits doesn't mean they went away.
-        if let Some(previous) = self.latest {
+        if let Some(previous) = self.latest.take() {
             status.five_hour = status.five_hour.or(previous.five_hour);
             status.seven_day = status.seven_day.or(previous.seven_day);
+            if status.others.is_empty() {
+                status.others = previous.others;
+            }
         }
         self.latest = Some(status);
     }
@@ -169,12 +194,12 @@ impl Drop for StatusFile {
     }
 }
 
-fn now() -> u64 {
+pub(crate) fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
 /// e.g. "45m", "2h 13m", "6d 3h".
-fn duration(secs: u64) -> String {
+pub fn duration(secs: u64) -> String {
     let (days, hours, minutes) = (secs / 86_400, secs / 3_600 % 24, secs / 60 % 60);
     match (days, hours) {
         (0, 0) => format!("{minutes}m"),
@@ -200,6 +225,19 @@ mod tests {
         assert_eq!(status.context_percent, Some(4.0));
         assert!(status.has_limits());
         assert!(!StatusLine::parse(&json!({}), 100).has_limits());
+    }
+
+    #[test]
+    fn keeps_per_model_windows_with_readable_labels() {
+        let json: Value = serde_json::from_str(
+            r#"{"rate_limits":{"seven_day":{"used_percentage":7,"resets_at":900},
+                "seven_day_opus":{"used_percentage":11,"resets_at":900},"overage":{"enabled":true}}}"#,
+        )
+        .unwrap();
+        let status = StatusLine::parse(&json, 100);
+        let labels: Vec<String> = status.windows().iter().map(Window::label).collect();
+        assert_eq!(labels, ["Weekly", "Weekly · Opus"]);
+        assert_eq!(status.peak_used(), 11.0);
     }
 
     #[test]

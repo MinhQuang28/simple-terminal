@@ -15,6 +15,7 @@ pub mod settings;
 pub mod sidebar;
 mod sidebar_rows;
 mod tab_bar;
+mod usage_panel;
 pub(crate) mod widgets;
 pub mod workspace;
 

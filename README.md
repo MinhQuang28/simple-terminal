@@ -32,9 +32,10 @@ CLI (`claude`), never calls an LLM API itself, and runs as one Rust process.
   `~/.claude/settings.json` is never edited).
 - **Inbox & notifications** — a bell lists every agent that finished or needs you; allow or deny
   permission prompts without switching panes; ⌃⌘N jumps to the next pane needing attention.
-- **Subscription usage** — the status bar shows your Pro/Max **5-hour and weekly limits** and the
-  active pane's context-window use, taken from Claude Code's own status line JSON. Your own
-  `statusLine` command keeps working.
+- **Subscription usage** — a gauge in the top bar opens a card with your Pro/Max **session and
+  weekly limits** (per-model weekly limits too), how much is left, when each resets, and the active
+  pane's context-window use, taken from Claude Code's own status line JSON. Your own `statusLine`
+  command keeps working.
 - **Resume past conversations** — the clock button lists the repo's Claude sessions; pick one to
   resume it in a new tab. Restarted agent panes resume where they left off.
 - **Prompt library** — reusable prompts, plus the skills and MCP servers available in the repo.

@@ -4,8 +4,8 @@ use eframe::egui::{
 
 use super::Action;
 use super::inbox_panel;
+use super::usage_panel;
 use super::widgets::{icon_button_frame, muted, right_aligned};
-use crate::claude_status_line::StatusLine;
 use crate::font_catalog::SYSTEM_FONT;
 use crate::git_status::GitStatus;
 use crate::inbox::Inbox;
@@ -31,6 +31,7 @@ pub fn top_bar(
     status: Option<&GitStatus>,
     inbox: &Inbox,
     pool: &SessionPool,
+    context: Option<f64>,
     actions: &mut Vec<Action>,
 ) {
     window_drag_area(ui, ui.max_rect());
@@ -55,6 +56,7 @@ pub fn top_bar(
                 actions.push(Action::ToggleSidePanel);
             }
             inbox_panel::bell(ui, state, inbox, pool, actions);
+            usage_panel::gauge(ui, state, pool.latest_limits().as_ref(), context);
             if search_icon(ui).on_hover_text("Find in terminal (⌘F)").clicked() {
                 actions.push(Action::OpenFind);
             }
@@ -86,14 +88,7 @@ fn search_icon(ui: &mut Ui) -> Response {
     response
 }
 
-/// `limits` are the subscription's account-wide usage; `context` is the active agent pane's.
-pub fn status_bar(
-    ui: &mut Ui,
-    state: &AppState,
-    status: Option<&GitStatus>,
-    limits: Option<StatusLine>,
-    context: Option<f64>,
-) {
+pub fn status_bar(ui: &mut Ui, state: &AppState, status: Option<&GitStatus>) {
     ui.horizontal_centered(|ui| {
         ui.add_space(4.0);
         let Some(status) = status else { return };
@@ -107,7 +102,6 @@ pub fn status_bar(
             let color = state.settings.theme.modified();
             ui.label(RichText::new(format!("● {} changed", status.changed)).color(color).size(12.0));
         }
-        claude_usage(ui, state, limits, context);
         right_aligned(ui, |ui| {
             ui.add_space(8.0);
             let font =
@@ -116,21 +110,4 @@ pub fn status_bar(
             ui.label(RichText::new(info).color(muted(ui)).size(11.5));
         });
     });
-}
-
-fn claude_usage(ui: &mut Ui, state: &AppState, limits: Option<StatusLine>, context: Option<f64>) {
-    let context_text = context.map(|c| format!("ctx {c:.0}%"));
-    let parts: Vec<String> = limits.map(|l| l.summary()).into_iter().chain(context_text).collect();
-    if parts.is_empty() {
-        return;
-    }
-    let high = limits.is_some_and(|l| l.is_high());
-    let color = if high { state.settings.theme.modified() } else { muted(ui) };
-    let details: Vec<String> = limits
-        .map(|l| l.details())
-        .into_iter()
-        .chain(context.map(|c| format!("Context window: {c:.0}% used (this pane)")))
-        .collect();
-    ui.label(RichText::new(format!("Claude {}", parts.join(" · "))).color(color).size(12.0))
-        .on_hover_text(details.join("\n"));
 }

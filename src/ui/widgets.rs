@@ -7,6 +7,8 @@ use eframe::egui::{
 };
 
 pub const AGENT: Color32 = Color32::from_rgb(0xe0, 0x8a, 0x5f);
+/// Green for healthy states: permission granted, plenty of quota left.
+pub const GOOD: Color32 = Color32::from_rgb(0x4f, 0xb8, 0x6e);
 
 /// Hit size of the square icon buttons in the sidebar footer and tab bar.
 pub const ICON_BUTTON_SIZE: f32 = 28.0;

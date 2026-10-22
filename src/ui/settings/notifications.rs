@@ -1,13 +1,11 @@
-use eframe::egui::{Color32, RichText, Ui};
+use eframe::egui::{RichText, Ui};
 
 use super::controls::{card, section_label, toggle};
 use crate::attention;
 use crate::model::Settings;
 use crate::notification_permission::{self, NotificationPermission, Permission};
 use crate::ui::dialog_kit::{Tone, button};
-use crate::ui::widgets::muted;
-
-const ALLOWED: Color32 = Color32::from_rgb(0x4f, 0xb8, 0x6e);
+use crate::ui::widgets::{GOOD, muted};
 
 pub fn show(ui: &mut Ui, settings: &mut Settings, permission: &NotificationPermission) {
     section_label(ui, "System notifications");
@@ -45,7 +43,7 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, permission: &NotificationPermi
                     if button(ui, "System Settings…", Tone::Secondary).clicked() {
                         notification_permission::open_system_settings();
                     }
-                    ui.label(RichText::new("● Allowed").color(ALLOWED));
+                    ui.label(RichText::new("● Allowed").color(GOOD));
                 }
                 Some(Permission::Denied) => {
                     if button(ui, "Open System Settings…", Tone::Primary).clicked() {
@@ -64,7 +62,7 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, permission: &NotificationPermi
         if let Some(status) = status.filter(|s| s.permission == Permission::Allowed) {
             card.row("Sound allowed by macOS", "The sound switch for Repodeck in System Settings.", |ui| {
                 let (text, color) = if status.sound_allowed {
-                    ("● On", ALLOWED)
+                    ("● On", GOOD)
                 } else {
                     ("● Off", ui.visuals().error_fg_color)
                 };
