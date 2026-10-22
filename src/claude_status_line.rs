@@ -230,8 +230,8 @@ mod tests {
     #[test]
     fn keeps_per_model_windows_with_readable_labels() {
         let json: Value = serde_json::from_str(
-            r#"{"rate_limits":{"seven_day":{"used_percentage":7,"resets_at":900},
-                "seven_day_opus":{"used_percentage":11,"resets_at":900},"overage":{"enabled":true}}}"#,
+            r#"{"rate_limits":{"seven_day":{"used_percentage":7,"resets_at":4000000000},
+                "seven_day_opus":{"used_percentage":11,"resets_at":4000000000},"overage":{"enabled":true}}}"#,
         )
         .unwrap();
         let status = StatusLine::parse(&json, 100);
