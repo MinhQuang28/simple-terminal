@@ -428,3 +428,7 @@ fn window_size(cols: u16, rows: u16) -> WindowSize {
 #[cfg(test)]
 #[path = "session_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "agent_codex_tests.rs"]
+mod agent_codex_tests;
