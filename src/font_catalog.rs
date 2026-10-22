@@ -15,6 +15,9 @@ pub const BOLD_FAMILY: &str = "terminal-bold";
 /// otherwise render in a proportional fallback font.
 pub const SYSTEM_FONT: &str = "SF Mono";
 pub const SYSTEM_FONT_PATH: &str = "/System/Library/Fonts/SFNSMono.ttf";
+/// macOS's interface font (San Francisco), hidden from font lists under the name ".SF NS".
+pub const SYSTEM_UI_FONT: &str = "SF Pro";
+pub const SYSTEM_UI_FONT_PATH: &str = "/System/Library/Fonts/SFNS.ttf";
 
 /// Every lowercase Vietnamese letter with a diacritic. Fonts missing any are left out of the
 /// catalog, since a fallback glyph mid-word looks broken.

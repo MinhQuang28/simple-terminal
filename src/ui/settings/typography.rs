@@ -1,7 +1,7 @@
 use eframe::egui::{ComboBox, RichText, Ui};
 
 use super::controls::{card, number_field, section_label};
-use crate::font_catalog::FontCatalog;
+use crate::font_catalog::{FontCatalog, SYSTEM_UI_FONT};
 use crate::model::Settings;
 
 const CONTROL_WIDTH: f32 = 260.0;
@@ -20,7 +20,14 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, fonts: &FontCatalog) {
     section_label(ui, "Interface font");
     card(ui, |card| {
         card.row("Font family", "Used by the sidebar, tabs, menus and settings.", |ui| {
-            font_picker(ui, "ui-font", &mut settings.ui_font_family, "Default", fonts, false);
+            font_picker(
+                ui,
+                "ui-font",
+                &mut settings.ui_font_family,
+                &format!("{SYSTEM_UI_FONT} (system)"),
+                fonts,
+                false,
+            );
         });
         card.row("Font size", "Size of interface text; the terminal keeps its own size.", |ui| {
             number_field(ui, &mut settings.ui_font_size, 9.0..=24.0, 0.5, " pt");
