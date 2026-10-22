@@ -1,3 +1,7 @@
+/// The app bundle's identifier, as in Cargo.toml's bundle metadata; macOS keys permissions and
+/// icon caches by it.
+pub const BUNDLE_ID: &str = "co.egohub.repodeck";
+
 mod agent_events;
 mod app;
 mod app_actions;

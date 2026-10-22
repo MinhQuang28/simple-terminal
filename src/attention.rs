@@ -12,7 +12,7 @@ const SOUND_NAME: &str = "message-new-instant";
 pub fn notify(title: &str, body: &str, sound: bool) {
     static APP: Once = Once::new();
     APP.call_once(|| {
-        let _ = notify_rust::set_application("dev.repodeck.app");
+        let _ = notify_rust::set_application(crate::BUNDLE_ID);
     });
     let (title, body) = (title.to_string(), body.to_string());
     thread::spawn(move || {

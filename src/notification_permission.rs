@@ -81,7 +81,10 @@ impl NotificationPermission {
 
 /// Opens System Settings at Repodeck's notification options.
 pub fn open_system_settings() {
-    let url = "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=dev.repodeck.app";
+    let url = format!(
+        "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id={}",
+        crate::BUNDLE_ID
+    );
     if let Err(err) = std::process::Command::new("open").arg(url).spawn() {
         log::warn!("Could not open System Settings: {err}");
     }
