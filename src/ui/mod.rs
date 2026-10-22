@@ -1,6 +1,7 @@
 pub mod agent_status;
 pub mod chrome;
 pub(crate) mod claude_icon;
+pub(crate) mod dialog_kit;
 pub mod dialogs;
 pub(crate) mod diff_comments;
 pub mod diff_view;

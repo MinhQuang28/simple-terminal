@@ -2,12 +2,13 @@ use std::path::Path;
 use std::sync::Arc;
 
 use eframe::egui::{
-    Align, Align2, Button, FontId, Frame, Galley, Id, Key, Label, Layout, Popup, PopupCloseBehavior,
-    RichText, Sense, TextEdit, Ui, pos2, vec2,
+    Align, Align2, FontId, Frame, Galley, Id, Key, Label, Layout, Popup, PopupCloseBehavior, RichText, Sense,
+    TextEdit, Ui, pos2, vec2,
 };
 use uuid::Uuid;
 
 use super::Action;
+use super::dialog_kit::{self as kit, Tone};
 use super::widgets::{AGENT, accent, muted, right_aligned};
 
 /// A note the user attached to a line of a diff, to send to Claude in one go.
@@ -59,25 +60,20 @@ pub fn gutter(ui: &mut Ui, galley: &Arc<Galley>, file: &Path, comments: &mut Vec
         let edit = ui.add(TextEdit::multiline(&mut text).desired_rows(3).desired_width(f32::INFINITY));
         edit.request_focus();
         let submit = ui.input(|i| i.modifiers.command && i.key_pressed(Key::Enter));
-        let mut done = false;
-        ui.horizontal(|ui| {
-            if ui.add(Button::new("Add").shortcut_text("⌘↩")).clicked() || submit {
-                let text = text.trim().to_string();
-                match (existing, text.is_empty()) {
-                    (Some(index), true) => {
-                        comments.remove(index);
-                    }
-                    (Some(index), false) => comments[index].text = text,
-                    (None, false) => comments.push(Comment { line, text }),
-                    (None, true) => {}
+        let footer = kit::footer(ui, &[("Add", Tone::Primary)], false);
+        if footer.action.is_some() || submit {
+            let text = text.trim().to_string();
+            match (existing, text.is_empty()) {
+                (Some(index), true) => {
+                    comments.remove(index);
                 }
-                comments.sort_by_key(|c| c.line);
-                done = true;
+                (Some(index), false) => comments[index].text = text,
+                (None, false) => comments.push(Comment { line, text }),
+                (None, true) => {}
             }
-            if ui.button("Cancel").clicked() {
-                done = true;
-            }
-        });
+            comments.sort_by_key(|c| c.line);
+        }
+        let done = footer.action.is_some() || submit || footer.cancel;
         ui.data_mut(|d| d.insert_temp(text_id, text));
         done
     });
