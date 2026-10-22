@@ -77,6 +77,9 @@ fn tab_row(
             if busy {
                 spinner(ui, 11.0, muted(ui));
             }
+            if let Some(status) = tab_status(tab, pool).filter(|s| s.needs_attention()) {
+                agent_status::pill(ui, status);
+            }
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                 match tab.kind() {
                     PaneKind::Agent => claude_icon::icon(ui, ICON_SIZE),
@@ -88,9 +91,6 @@ fn tab_row(
                     ui.visuals().text_color().gamma_multiply(0.8)
                 };
                 ui.add(Label::new(RichText::new(title).size(12.5).color(color)).truncate().selectable(false));
-                if let Some(status) = tab_status(tab, pool).filter(|s| s.needs_attention()) {
-                    agent_status::pill(ui, status);
-                }
             });
             close
         })
@@ -187,6 +187,12 @@ fn branch_row(
                         .on_hover_text(format!("{} commits to pull", status.behind));
                 }
             }
+            if status.as_ref().is_some_and(|s| s.merged) {
+                tag(ui, "merged", muted(ui));
+            }
+            if let Some(attention) = attention.filter(|s| s.needs_attention()) {
+                agent_status::pill(ui, attention);
+            }
             ui.add_space(4.0);
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
@@ -199,14 +205,14 @@ fn branch_row(
                         actions.push(Action::ToggleRepoTabs(repo.id));
                     }
                 }
-                ui.add(Label::new(RichText::new(name).size(13.0).color(color)).truncate().selectable(false));
+                // Leave the star its room so a long branch name truncates instead of pushing it out.
+                let star_width = 16.0;
+                ui.scope(|ui| {
+                    ui.set_max_width((ui.available_width() - star_width).max(0.0));
+                    let label = Label::new(RichText::new(name).size(13.0).color(color));
+                    ui.add(label.truncate().selectable(false));
+                });
                 ui.label(RichText::new("★").color(muted(ui)).size(10.0));
-                if let Some(attention) = attention.filter(|s| s.needs_attention()) {
-                    agent_status::pill(ui, attention);
-                }
-                if status.as_ref().is_some_and(|s| s.merged) {
-                    tag(ui, "merged", muted(ui));
-                }
             });
         });
     });
