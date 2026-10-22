@@ -47,7 +47,14 @@ pub fn items(state: &AppState, pool: &SessionPool) -> Vec<Item> {
         if worktree::is_worktree(&repo.path) {
             push("Remove this worktree…", "", Action::OpenRemoveWorktree(repo.id));
         }
-        push("Find in terminal", "⌘F", Action::OpenFind);
+        match active_tab {
+            Some(tab) if tab.file.is_some() => {
+                push("Find in file", "⌘F", Action::OpenFind);
+                push("Go to line…", "⌘L", Action::OpenGoToLine);
+            }
+            Some(tab) if !tab.is_document() => push("Find in terminal", "⌘F", Action::OpenFind),
+            _ => {}
+        }
         push("Open file…", "⌘P", Action::OpenQuickOpen);
         push("Next tab", "⇧⌘]", Action::SelectAdjacentTab(1));
         push("Previous tab", "⇧⌘[", Action::SelectAdjacentTab(-1));

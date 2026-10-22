@@ -42,8 +42,15 @@ pub fn show(ui: &mut Ui, settings: &mut Settings) {
         });
     });
 
-    section_label(ui, "Links");
+    section_label(ui, "Editor");
     card(ui, |card| {
+        card.row(
+            "Word wrap",
+            "Wrap long lines in the built-in editor instead of scrolling sideways.",
+            |ui| {
+                toggle(ui, &mut settings.editor_word_wrap);
+            },
+        );
         card.row(
             "Open ⌘-clicked files with",
             "A shell command using {path}, {line} and {col}. Leave empty for the built-in editor.",

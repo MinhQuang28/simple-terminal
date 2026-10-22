@@ -83,6 +83,8 @@ pub struct Settings {
     /// Command for ⌘-clicked file paths, with `{path}`, `{line}` and `{col}` placeholders; empty
     /// opens the built-in editor.
     pub external_editor: String,
+    /// Wrap long lines in the built-in editor instead of scrolling sideways.
+    pub editor_word_wrap: bool,
     /// Reusable prompts shown in the Library panel.
     pub prompts: Vec<Prompt>,
 }
@@ -112,6 +114,7 @@ impl Default for Settings {
             notifications: true,
             notification_sound: true,
             external_editor: String::new(),
+            editor_word_wrap: false,
             prompts: Vec::new(),
         }
     }

@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::agent_events::AgentStatus;
 use crate::app::RepodeckApp;
+use crate::editor::{BarKind, EditorBar};
 use crate::finder_service::FolderRequest;
 use crate::library;
 use crate::model::{PaneKind, Project, Repo, Tab};
@@ -140,6 +141,10 @@ impl RepodeckApp {
             Action::ToggleSidePanel => self.state.show_side_panel = !self.state.show_side_panel,
             Action::OpenQuickOpen => self.palette = Some(Palette::files()),
             Action::OpenFind => {
+                if let Some(path) = self.active_file() {
+                    self.buffers.get(&path).bar = Some(EditorBar::new(BarKind::Find));
+                    return;
+                }
                 let terminal_tab = self
                     .selected_repo_mut()
                     .and_then(|r| r.active_tab_mut())
@@ -149,6 +154,12 @@ impl RepodeckApp {
                 }
                 self.focus_active_pane();
                 crate::terminal::view::request_find(ctx);
+            }
+            Action::OpenGoToLine => {
+                if let Some(path) = self.active_file() {
+                    self.buffers.get(&path).bar = Some(EditorBar::new(BarKind::GoToLine));
+                }
+                return;
             }
             Action::SetSidePanel(panel) => {
                 self.state.side_panel = panel;

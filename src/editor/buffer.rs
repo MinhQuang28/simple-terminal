@@ -6,6 +6,8 @@ use std::time::{Duration, Instant, SystemTime};
 use anyhow::{Context, Result};
 use egui_commonmark::CommonMarkCache;
 
+use super::find_bar::EditorBar;
+
 /// Files larger than this open read-only to keep editing and highlighting responsive.
 const MAX_EDITABLE_BYTES: u64 = 2 * 1024 * 1024;
 /// How often an open file is checked for changes on disk.
@@ -28,6 +30,8 @@ pub struct Buffer {
     pub markdown: CommonMarkCache,
     /// Line-number column for the current line count.
     gutter: (usize, String),
+    /// Find or go-to-line bar, while open.
+    pub bar: Option<EditorBar>,
 }
 
 /// Whether `path` is a Markdown document, which opens in preview.
@@ -57,6 +61,7 @@ impl Buffer {
             preview: is_markdown(path),
             markdown: CommonMarkCache::default(),
             gutter: (0, String::new()),
+            bar: None,
         }
     }
 

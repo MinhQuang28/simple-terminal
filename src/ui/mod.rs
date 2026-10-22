@@ -109,6 +109,8 @@ pub enum Action {
     OpenFind,
     /// Opens the palette listing the selected repo's files.
     OpenQuickOpen,
+    /// Opens the go-to-line bar in the active file editor.
+    OpenGoToLine,
     SetSidePanel(SidePanel),
     /// Shows the active pane alone, or restores the split.
     ToggleZoom,
