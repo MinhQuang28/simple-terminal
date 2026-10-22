@@ -1,5 +1,6 @@
 use eframe::egui::{
-    Align, CornerRadius, FontId, Layout, Rect, RichText, Sense, Stroke, StrokeKind, Ui, UiBuilder, pos2, vec2,
+    Align, CornerRadius, FontId, Label, Layout, Rect, RichText, Sense, Stroke, StrokeKind, Ui, UiBuilder,
+    pos2, vec2,
 };
 
 use super::{Page, page_icon};
@@ -48,8 +49,9 @@ fn back_row(ui: &mut Ui) -> bool {
     let mut child = ui.new_child(
         UiBuilder::new().max_rect(rect.shrink2(vec2(10.0, 0.0))).layout(Layout::left_to_right(Align::Center)),
     );
-    child.label(RichText::new("‹").size(16.0).color(muted(&child)));
-    child.label(RichText::new("Back to app").size(14.0));
+    // Selectable labels would be interactive and steal the row's hover where the text is.
+    child.add(Label::new(RichText::new("‹").size(16.0).color(muted(&child))).selectable(false));
+    child.add(Label::new(RichText::new("Back to app").size(14.0)).selectable(false));
     let galley = ui.painter().layout_no_wrap("esc".into(), FontId::proportional(11.5), muted(ui));
     let badge = Rect::from_center_size(
         pos2(rect.right() - 10.0 - galley.size().x / 2.0 - 6.0, rect.center().y),
@@ -86,6 +88,6 @@ fn item(ui: &mut Ui, page: Page, selected: bool) -> bool {
             .layout(Layout::centered_and_justified(eframe::egui::Direction::LeftToRight)),
         |ui| page_icon(ui, page, 18.0),
     );
-    child.label(RichText::new(page.title()).size(14.0));
+    child.add(Label::new(RichText::new(page.title()).size(14.0)).selectable(false));
     response.clicked()
 }

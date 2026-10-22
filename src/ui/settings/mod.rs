@@ -123,5 +123,6 @@ fn page_icon(ui: &mut Ui, page: Page, size: f32) {
         Page::Terminal => (">_", egui::FontId::monospace(size * 0.65)),
         Page::Agents => return claude_icon::icon(ui, size * 0.6),
     };
-    ui.label(RichText::new(glyph).font(font).color(ui.visuals().text_color()));
+    let icon = egui::Label::new(RichText::new(glyph).font(font).color(ui.visuals().text_color()));
+    ui.add(icon.selectable(false));
 }
