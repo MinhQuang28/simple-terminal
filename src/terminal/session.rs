@@ -32,7 +32,9 @@ use crate::shell_env;
 use crate::shell_events::ShellEvents;
 use crate::shell_integration;
 use crate::socket_api;
+use crate::tab_title::{self, task_summary};
 use crate::theme::Theme;
+use crate::{agent_launch, store};
 
 /// Output within this window counts as busy; typed echo within it doesn't.
 const BUSY_WINDOW: Duration = Duration::from_millis(1500);
@@ -86,7 +88,12 @@ pub struct TerminalSession {
     notifications: Receiver<String>,
     visible: Arc<AtomicBool>,
     size: (u16, u16),
-    pub title: Option<String>,
+    title: Option<String>,
+    /// The agent's own title summary when the current turn's prompt was submitted; while the
+    /// live title still says this, it is stale and the prompt names the tab instead.
+    stale_summary: Option<String>,
+    /// Title made from the prompt of the last finished turn whose live title went stale.
+    prompt_title: Option<String>,
     pub exited: bool,
     pub last_output: Instant,
     last_user_input: Instant,
@@ -180,6 +187,16 @@ impl TerminalSession {
             if let Some((key, value)) = agent_renderer.env() {
                 env.insert(key.into(), value.into());
             }
+            if let Launch::Agent(command) = launch
+                && agent_launch::uses(command, agent_launch::Agent::OpenCode)
+                && let Some(dir) = store::data_dir()
+                && let Some(config) = agent_launch::opencode_config(
+                    &dir,
+                    env.get(agent_launch::OPENCODE_CONFIG_VAR).map(String::as_str),
+                )
+            {
+                env.insert(agent_launch::OPENCODE_CONFIG_VAR.into(), config);
+            }
         }
         let shell_events = ShellEvents::create(pane);
         if let Some(events) = &shell_events {
@@ -211,6 +228,8 @@ impl TerminalSession {
             frame: Frame::default(),
             agent,
             status_change: None,
+            stale_summary: None,
+            prompt_title: None,
             done_seen_at: None,
             shell: shell_events,
             queued: VecDeque::new(),
@@ -282,6 +301,21 @@ impl TerminalSession {
         self.agent.as_ref()?.session_id()
     }
 
+    /// The terminal title as the program set it.
+    pub fn raw_title(&self) -> Option<&str> {
+        self.title.as_deref()
+    }
+
+    /// The title to show: the program's, unless an agent left it stale across a turn, in which
+    /// case the prompt that turn answered.
+    pub fn title(&self) -> Option<&str> {
+        let live = self.title.as_deref();
+        match &self.prompt_title {
+            Some(prompt) if live.and_then(task_summary) == self.stale_summary => Some(prompt),
+            _ => live,
+        }
+    }
+
     /// The agent status if it changed since the last call, with the text that came with it.
     pub fn take_status_change(&mut self) -> Option<(AgentStatus, String)> {
         self.status_change.take()
@@ -345,6 +379,16 @@ impl TerminalSession {
         if let Some(agent) = &mut self.agent
             && let Some(status) = agent.poll()
         {
+            let live_summary = self.title.as_deref().and_then(task_summary);
+            match status {
+                AgentStatus::Working => self.stale_summary = live_summary,
+                // The agent didn't retitle the terminal during the turn, so the prompt names it.
+                AgentStatus::Done if live_summary == self.stale_summary => {
+                    self.prompt_title = agent.prompt().map(tab_title::from_prompt);
+                }
+                AgentStatus::Done => self.prompt_title = None,
+                _ => {}
+            }
             self.status_change = Some((status, agent.message().unwrap_or_default().to_owned()));
         }
         if let Some(shell) = &mut self.shell {

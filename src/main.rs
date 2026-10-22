@@ -3,6 +3,7 @@
 pub const BUNDLE_ID: &str = "co.egohub.repodeck";
 
 mod agent_events;
+mod agent_launch;
 mod app;
 mod app_actions;
 mod app_files;
@@ -20,6 +21,7 @@ mod attention;
 mod claude_history;
 mod claude_status_line;
 mod clipboard_image;
+mod codex_launch;
 mod diff;
 mod editor;
 mod event_log;
@@ -68,8 +70,7 @@ fn drop_parent_agent_env() {
     }
 }
 
-const CLI_USAGE: &str =
-    "usage: repodeck notify <text> | open <folder> | claude <folder> | focus [pane] | list";
+const CLI_USAGE: &str = "usage: repodeck notify <text> | open <folder> | claude <folder> | focus [pane] | list | run-codex <codex> [args…]";
 
 /// Command-line mode, used by scripts and hooks inside panes. `notify` emits an OSC 9 sequence
 /// on stdout, which Repodeck (and most other terminals) show as a notification for the pane it
@@ -78,6 +79,9 @@ fn run_cli() -> bool {
     use std::io::Write;
     let mut args = std::env::args_os().skip(1).map(|a| a.to_string_lossy().into_owned());
     let Some(verb) = args.next() else { return false };
+    if verb == agent_launch::CODEX_VERB {
+        codex_launch::run(args);
+    }
     let rest: String = args.collect::<Vec<_>>().join(" ").chars().filter(|c| !c.is_control()).collect();
     let command = match verb.as_str() {
         "notify" => {

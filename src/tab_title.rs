@@ -37,6 +37,24 @@ pub fn task_summary(raw: &str) -> Option<String> {
     (!generic).then(|| text.to_string())
 }
 
+/// Longest title made from a prompt, in characters.
+const PROMPT_TITLE_CHARS: usize = 48;
+
+/// A tab title made from the prompt a turn answered: its words, cut to fit.
+pub fn from_prompt(prompt: &str) -> String {
+    let words: Vec<&str> = prompt.split_whitespace().collect();
+    let text = words.join(" ");
+    if text.chars().count() <= PROMPT_TITLE_CHARS {
+        return text;
+    }
+    let mut out: String = text.chars().take(PROMPT_TITLE_CHARS).collect();
+    if let Some(space) = out.rfind(' ').filter(|&i| i > PROMPT_TITLE_CHARS / 2) {
+        out.truncate(space);
+    }
+    out.push('…');
+    out
+}
+
 /// What a tab shows: the file name, the running task's summary, or `fallback` (the branch).
 pub fn display(tab: &Tab, live_title: Option<&str>, fallback: &str) -> String {
     if let Some(name) = &tab.name {
@@ -52,6 +70,14 @@ pub fn display(tab: &Tab, live_title: Option<&str>, fallback: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prompt_titles_cut_at_a_word() {
+        assert_eq!(from_prompt("  fix the\n login bug "), "fix the login bug");
+        let long = from_prompt("please investigate why the classic renderer scrolls one line per wheel step");
+        assert_eq!(long, "please investigate why the classic renderer…");
+        assert!(from_prompt(&"x".repeat(80)).ends_with('…'));
+    }
 
     #[test]
     fn keeps_task_summaries() {

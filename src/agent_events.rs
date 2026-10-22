@@ -76,21 +76,6 @@ pub fn hooks_settings(cwd: &Path, hide_api_keys: bool) -> String {
     settings.to_string()
 }
 
-/// Rewrites each `claude` invocation in a shell command line to load the hook settings.
-pub fn with_hooks(command: &str) -> String {
-    let mut out = Vec::new();
-    let mut command_start = true;
-    for token in command.split_whitespace() {
-        if command_start && Path::new(token).file_name().is_some_and(|name| name == "claude") {
-            out.push(format!("{token} --settings \"${HOOKS_VAR}\""));
-        } else {
-            out.push(token.to_string());
-        }
-        command_start = matches!(token, "||" | "&&" | ";" | "|") || token.ends_with(';');
-    }
-    out.join(" ")
-}
-
 /// Tracks what the agent in a pane is doing from the events its hooks append.
 pub struct AgentEvents {
     log: EventLog,
@@ -101,6 +86,8 @@ pub struct AgentEvents {
     request: Option<String>,
     /// What the agent said with its latest status: its last reply, a notification, or an error.
     message: Option<String>,
+    /// The first line of the prompt the current turn answers.
+    prompt: Option<String>,
 }
 
 impl AgentEvents {
@@ -112,6 +99,7 @@ impl AgentEvents {
             session_id: None,
             request: None,
             message: None,
+            prompt: None,
         })
     }
 
@@ -148,6 +136,11 @@ impl AgentEvents {
         self.message.as_deref()
     }
 
+    /// The prompt that started the current turn, once a hook has reported it.
+    pub fn prompt(&self) -> Option<&str> {
+        self.prompt.as_deref()
+    }
+
     /// Applies newly appended events; returns the status if it changed.
     pub fn poll(&mut self) -> Option<AgentStatus> {
         let before = self.status;
@@ -159,6 +152,9 @@ impl AgentEvents {
             }
             if let Some(request) = request_from_event(&event) {
                 self.request = Some(request);
+            }
+            if let Some(prompt) = event["prompt"].as_str().and_then(first_line) {
+                self.prompt = Some(prompt);
             }
             if let Some(status) = status_from_event(&event) {
                 self.status = status;
@@ -209,7 +205,11 @@ fn message_from_event(event: &Value) -> Option<String> {
         "StopFailure" => "error",
         _ => return None,
     };
-    let text = event[key].as_str()?;
+    first_line(event[key].as_str()?)
+}
+
+/// The first non-blank line of `text`, trimmed to fit a notice.
+fn first_line(text: &str) -> Option<String> {
     let line = text.lines().map(str::trim).find(|line| !line.is_empty())?;
     Some(line.chars().take(MESSAGE_CHARS).collect())
 }
@@ -224,8 +224,11 @@ fn status_from_event(event: &Value) -> Option<AgentStatus> {
             Some("idle_prompt" | "elicitation_dialog") => AgentStatus::NeedsInput,
             _ => return None,
         },
+        // Codex asks questions through a tool; its hook is registered for that tool only.
+        "PreToolUse" if event["tool_name"] == "request_user_input" => AgentStatus::NeedsInput,
         "Stop" => AgentStatus::Done,
         "StopFailure" => AgentStatus::Error,
+        "Interrupt" => AgentStatus::Idle,
         _ => return None,
     })
 }
@@ -233,21 +236,6 @@ fn status_from_event(event: &Value) -> Option<AgentStatus> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn hooks_only_the_first_word_of_each_command() {
-        let out = with_hooks("claude --continue || claude");
-        assert_eq!(
-            out,
-            "claude --settings \"$REPODECK_AGENT_HOOKS\" --continue || claude --settings \"$REPODECK_AGENT_HOOKS\""
-        );
-        assert_eq!(with_hooks("echo claude"), "echo claude");
-        assert_eq!(
-            with_hooks("/opt/bin/claude --model opus"),
-            "/opt/bin/claude --settings \"$REPODECK_AGENT_HOOKS\" --model opus"
-        );
-        assert_eq!(with_hooks("claude-foo"), "claude-foo");
-    }
 
     #[test]
     fn settings_register_every_hooked_event() {
@@ -318,6 +306,12 @@ mod tests {
             Some(AgentStatus::NeedsApproval)
         );
         assert_eq!(status(r#"{"hook_event_name":"Notification","notification_type":"auth_success"}"#), None);
+        assert_eq!(
+            status(r#"{"hook_event_name":"PreToolUse","tool_name":"request_user_input"}"#),
+            Some(AgentStatus::NeedsInput)
+        );
+        assert_eq!(status(r#"{"hook_event_name":"PreToolUse","tool_name":"Bash"}"#), None);
+        assert_eq!(status(r#"{"hook_event_name":"Interrupt"}"#), Some(AgentStatus::Idle));
         assert_eq!(status("not json"), None);
     }
 }

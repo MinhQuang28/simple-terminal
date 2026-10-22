@@ -6,13 +6,20 @@ use crate::model::{AgentRenderer, Settings};
 const COMMAND_WIDTH: f32 = 300.0;
 
 pub fn show(ui: &mut Ui, settings: &mut Settings) {
-    section_label(ui, "Claude");
+    section_label(ui, "Agent");
     card(ui, |card| {
-        card.row("New session command", "Runs in tabs opened with “New Claude session”.", |ui| {
-            ui.add(
-                TextEdit::singleline(&mut settings.agent_command).code_editor().desired_width(COMMAND_WIDTH),
-            );
-        });
+        card.row(
+            "New session command",
+            "Runs in tabs opened with “New Claude session”. Claude Code, Codex and OpenCode are \
+             recognised: their status, prompts and replies reach the sidebar and inbox.",
+            |ui| {
+                ui.add(
+                    TextEdit::singleline(&mut settings.agent_command)
+                        .code_editor()
+                        .desired_width(COMMAND_WIDTH),
+                );
+            },
+        );
         card.row(
             "Restored session command",
             "Runs for Claude tabs restored after restarting Repodeck, to resume their conversation.",

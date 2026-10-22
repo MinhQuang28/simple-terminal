@@ -25,11 +25,15 @@ CLI (`claude`), never calls an LLM API itself, and runs as one Rust process.
   Solarized, GitHub Light…); any installed monospace font for the terminal, and the macOS
   interface font (SF Pro) or any installed font, at its own size, for the interface.
 
-### Claude Code agents
+### Coding agents
 
-- **Agent status at a glance** — each Claude pane shows *Working*, *Done*, *Your turn*, *Approve?*
-  or *Error*, read from Claude Code hooks injected per launch with `claude --settings` (your global
-  `~/.claude/settings.json` is never edited).
+- **Agent status at a glance** — each agent pane shows *Working*, *Done*, *Your turn*, *Approve?*
+  or *Error*, read from the agent's own lifecycle hooks, injected per launch so no global config
+  is edited: Claude Code through `claude --settings`, Codex through `-c hooks.…` overrides
+  (pre-trusted via `codex app-server`, so no review screen), OpenCode through a plugin named in
+  `OPENCODE_CONFIG_CONTENT`.
+- **Tabs named after the work** — a tab takes Claude's own summary of the task, and when the
+  agent leaves that stale across a turn, the prompt the turn answered.
 - **Inbox & notifications** — a bell lists every agent that finished or needs you, with what it
   said; allow or deny
   permission prompts without switching panes; ⌃⌘N jumps to the next pane needing attention.
@@ -68,8 +72,9 @@ Programs can also raise notifications with the OSC 9 / OSC 777 escape sequences.
 ## Requirements
 
 - macOS 12 (Monterey) or later.
-- [Claude Code](https://code.claude.com) (`claude`) on your `PATH` for agent tabs. Plain terminal
-  tabs work without it.
+- [Claude Code](https://code.claude.com) (`claude`) on your `PATH` for agent tabs; set the agent
+  command to `codex` or `opencode` to use those instead (usage and history stay Claude-only, and
+  the OpenCode plugin is untested against a real install). Plain terminal tabs work without any.
 - Optional: `git` for repo status and worktrees, [`gh`](https://cli.github.com) (logged in) for
   pull request and CI status.
 
@@ -180,7 +185,9 @@ script/package-release.sh --publish
 | `src/terminal/`                | Terminal panes: PTY session, rendering, input, search, scrolling |
 | `src/ui/`                      | Sidebar, tab bar, inbox, palette, settings and other UI          |
 | `src/editor/`                  | File editor and Markdown preview                                 |
-| `src/agent_events.rs`          | Claude Code hook injection and agent status                      |
+| `src/agent_events.rs`          | Hook event parsing and agent status                              |
+| `src/agent_launch.rs`          | Per-agent hook injection (Claude, Codex, OpenCode)               |
+| `src/codex_launch.rs`          | `repodeck run-codex`: starts Codex with pre-trusted hooks        |
 | `src/claude_status_line.rs`    | Subscription limits from Claude Code's status line               |
 | `src/claude_history.rs`        | Past Claude conversations per repo                               |
 | `src/worktree.rs`              | Git worktree creation and removal                                |

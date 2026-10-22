@@ -43,7 +43,7 @@ impl Page {
             Page::Typography => "Fonts and spacing for terminals, the editor and the app.",
             Page::Notifications => "System notifications and sounds when a pane needs you.",
             Page::Terminal => "Cursor and shell behaviour of terminal panes.",
-            Page::Agents => "Commands Repodeck runs for Claude tabs.",
+            Page::Agents => "Commands Repodeck runs in agent tabs.",
         }
     }
 }

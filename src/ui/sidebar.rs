@@ -142,7 +142,7 @@ pub fn tab_menu(ui: &mut Ui, repo: Uuid, tab: Uuid, actions: &mut Vec<Action>) {
 /// Tab label: the running task's summary, else `fallback`.
 pub fn tab_title(tab: &Tab, pool: &SessionPool, fallback: &str) -> String {
     let pane = tab.active_pane.or_else(|| tab.panes.first().map(|p| p.id));
-    let live = pane.and_then(|id| pool.get(id)).and_then(|s| s.title.as_deref());
+    let live = pane.and_then(|id| pool.get(id)).and_then(|s| s.title());
     tab_title::display(tab, live, fallback)
 }
 
@@ -151,7 +151,7 @@ pub fn tab_title(tab: &Tab, pool: &SessionPool, fallback: &str) -> String {
 pub fn tab_busy(tab: &Tab, pool: &SessionPool) -> bool {
     tab.panes.iter().filter_map(|p| pool.get(p.id)).any(|s| {
         s.agent_status() == Some(AgentStatus::Working)
-            || s.title.as_deref().is_some_and(tab_title::is_working)
+            || s.raw_title().is_some_and(tab_title::is_working)
             || s.is_busy()
     })
 }

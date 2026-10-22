@@ -346,7 +346,7 @@ impl RepodeckApp {
                         report(Report::Message(text));
                     }
                     let summary = (pane.kind == PaneKind::Agent)
-                        .then(|| session.title.as_deref().and_then(task_summary))
+                        .then(|| session.title().and_then(task_summary))
                         .flatten();
                     if let Some(summary) = summary.filter(|s| *s != tab.title) {
                         tab.title = summary;

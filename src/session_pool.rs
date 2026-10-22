@@ -5,7 +5,8 @@ use std::sync::Arc;
 use eframe::egui;
 use uuid::Uuid;
 
-use crate::agent_events::{AgentEvents, AgentStatus, with_hooks};
+use crate::agent_events::{AgentEvents, AgentStatus};
+use crate::agent_launch::with_hooks;
 use crate::claude_history::is_session_id;
 use crate::claude_status_line::StatusLine;
 use crate::model::{Pane, PaneKind, Settings};
