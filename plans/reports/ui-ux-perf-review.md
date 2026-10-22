@@ -132,3 +132,21 @@ Thiếu so với Warp
 - Split kế thừa cwd pane hiện và cho phép Claude. cwd shell lưu vào `pane.cwd` khi đổi (qua shell hook). `closed_tabs` vẫn chưa persist.
 
 Còn mở (ưu tiên tiếp): Perf 1 (dirty flag + cache galley terminal), 6-9; UX 5 (menu bar), 8 (context menu Files/editor), 11; Gap 4, 5, 8, 9, 11, 12; Polish 1-12.
+
+## 7. Đã sửa ngày 2026-10-22
+
+Hiệu năng
+- Perf 1: `Frame::refresh` bỏ qua capture khi terminal không đổi (damage tracking của alacritty + `Seen` cho cursor/mode/selection); `generation` tăng mỗi lần capture. `render_cache::PaintCache` giữ layout (background, text run, decoration) theo `(generation, style)` và replay mỗi frame; galley lấy từ cache của egui.
+- Perf 6: chỉ còn `refresh` giữ lock mỗi frame (các chỗ khác chỉ lock khi có tương tác).
+- Perf 8: `visible_matches` cache theo `(generation, offset, pattern)`.
+- Perf 9: ⌘-hover link cache theo `(generation, row, col)`.
+- Perf 19: `ViewState` nằm trong `TerminalSession`, không clone qua egui memory mỗi frame.
+- Perf 7: bỏ qua — các hàm `tab_*` chỉ là lookup HashMap theo tab, không đáng kể.
+
+Tính năng
+- Gap 4: quick open ⌘P (`file_index.rs` walk nền, `.gitignore`-aware, tối đa 50k file; palette chế độ file, rank cache theo query).
+- Gap 5: "Move to" trong menu tab chuyển tab sang repo khác (`Action::MoveTabToRepo`).
+- Gap 7: `closed_tabs` lưu trong `AppState`.
+- Gap 11: editor có find ⌘F (smart case, highlight match trên view), go to line ⌘L, tuỳ chọn word wrap.
+
+Còn mở: UX 5 (menu bar đầy đủ), UX 8 (context menu editor/diff), UX 11; Gap 8 (DnD), 9 (link không cần ⌘), 12; Polish 1–12.

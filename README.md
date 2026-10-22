@@ -10,14 +10,17 @@ CLI (`claude`), never calls an LLM API itself, and runs as one Rust process.
 
 ### Projects & terminals
 
-- **Projects → repos → tabs → panes** — group related repositories, give each repo its own tabs,
-  and split any tab into panes (⌘D right, ⇧⌘D down, ⇧⌘↩ to zoom one).
+- **Projects → repos → tabs → panes** — group related repositories, give each repo its own tabs
+  (movable to another repo from the tab's menu), and split any tab into panes (⌘D right, ⇧⌘D
+  down, ⇧⌘↩ to zoom one). Closed tabs can be reopened (⌥⌘T), even after a restart.
 - **Fast, faithful terminal** — GPU-drawn grid on `alacritty_terminal`, true color, mouse reporting,
   clickable links, in-pane search (⌘F), box-drawing and powerline glyphs drawn as seamless shapes.
 - **Shell integration** — knows each command's start, end and exit status; long commands report
   when they finish.
-- **Command palette** (⌘K) — fuzzy-run any command or jump to any tab.
-- **Files panel** (⌘B) with a built-in editor, syntax highlighting, and a rendered **Markdown preview**.
+- **Command palette** (⌘K) — fuzzy-run any command or jump to any tab; **quick open** (⌘P)
+  fuzzy-finds any file in the repo.
+- **Files panel** (⌘B) with a built-in editor — syntax highlighting, find (⌘F), go to line (⌘L),
+  optional word wrap — and a rendered **Markdown preview**.
 - **Paste images** straight into a pane; they are saved to a temp file whose path is typed for you.
 - **Finder integration** — drop folders on the sidebar, or use Finder's Services menu
   ("New Repodeck Terminal at Folder").
@@ -140,7 +143,8 @@ For a quick unbundled run while developing: `cargo run`.
 | ⌘T       | New terminal                 | ⌘D       | Split pane right           |
 | ⇧⌘T      | New Claude session           | ⇧⌘D      | Split pane down            |
 | ⌘K       | Command palette              | ⇧⌘↩      | Zoom pane                  |
-| ⌘F       | Find in terminal             | ⌥⌘←↑→↓   | Focus neighbouring pane    |
+| ⌘F       | Find in terminal / file      | ⌥⌘←↑→↓   | Focus neighbouring pane    |
+| ⌘P       | Open file in the repo        | ⌘L       | Go to line (editor)        |
 | ⇧⌘[ ⇧⌘]  | Previous / next tab          | ⌘W       | Close pane                 |
 | ⌥⌘T      | Reopen closed tab            | ⇧⌘W      | Close tab                  |
 | ⌃⌘N      | Next pane needing attention  | ⌘B       | Toggle files panel         |
@@ -149,11 +153,14 @@ For a quick unbundled run while developing: `cargo run`.
 **Settings** (⌘,) covers appearance (theme, ANSI palette), typography (terminal font and size,
 a separate interface font and size, line height), notifications (on/off, sound, and whether
 macOS allows them), terminal
-behaviour (shell, cursor, scrollback, Option as Meta, copy on select) and the agent (the command
+behaviour (shell, cursor, scrollback, Option as Meta, copy on select), the editor (word wrap, an
+external editor for ⌘-clicked paths) and the agent (the command
 that starts new Claude sessions, whether API key variables are hidden from it so it uses your
 subscription, and its renderer: **Classic**, the default, where Claude writes into the pane's
 scrollback so it scrolls smoothly, is searchable, and stays after Claude exits, or **Fullscreen**,
-where Claude scrolls its own transcript a line at a time).
+where Claude scrolls its own transcript a line at a time). With the Classic renderer, **Prompt at
+the bottom** (on by default) draws the pane's content against its bottom edge, so Claude's prompt
+box stays put while the conversation above it grows.
 
 Per repo, a **setup command** runs in each new worktree, and a `.worktreeinclude` file at the repo
 root lists gitignored paths (one per line, e.g. `.env`) to copy into new worktrees.
