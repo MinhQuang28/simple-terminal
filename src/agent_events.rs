@@ -51,13 +51,20 @@ impl AgentStatus {
 
 /// Settings JSON for `claude --settings` that makes every hooked event append its JSON payload,
 /// newline-terminated, to the file named by `EVENTS_VAR`, and saves the status line JSON of an
-/// agent started in `cwd`.
+/// agent started in `cwd`. It also turns off Claude Code's wheel acceleration: it ramps the step
+/// up with every consecutive wheel event, which turns a trackpad's stream of small events into
+/// ever larger jumps the longer a flick lasts.
 pub fn hooks_settings(cwd: &Path) -> String {
     let hook =
         json!([{ "hooks": [{ "type": "command", "command": format!("(cat; echo) >> \"${EVENTS_VAR}\"") }] }]);
     let hooks: serde_json::Map<String, Value> =
         HOOKED_EVENTS.iter().map(|event| (event.to_string(), hook.clone())).collect();
-    json!({ "hooks": hooks, "statusLine": claude_status_line::settings(cwd) }).to_string()
+    json!({
+        "hooks": hooks,
+        "statusLine": claude_status_line::settings(cwd),
+        "wheelScrollAccelerationEnabled": false,
+    })
+    .to_string()
 }
 
 /// Rewrites each `claude` invocation in a shell command line to load the hook settings.
@@ -219,6 +226,7 @@ mod tests {
             assert!(command.contains(EVENTS_VAR), "{event}");
         }
         assert!(settings["statusLine"]["command"].as_str().unwrap().contains(claude_status_line::STATUS_VAR));
+        assert_eq!(settings["wheelScrollAccelerationEnabled"], false);
     }
 
     #[test]

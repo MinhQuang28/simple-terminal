@@ -64,15 +64,6 @@ fn encodes_wheel_reports() {
 }
 
 #[test]
-fn trackpad_motion_becomes_one_notch_per_three_lines_for_mouse_reports() {
-    assert_eq!(wheel_units(6.0, true), 2.0);
-    assert_eq!(wheel_units(6.0, false), 6.0);
-    let mut state = ScrollState::default();
-    assert_eq!(whole_lines(&mut state, wheel_units(2.0, true)), 0, "under a notch is held back");
-    assert_eq!(whole_lines(&mut state, wheel_units(1.0, true)), 1);
-}
-
-#[test]
 fn accumulates_whole_lines() {
     let mut state = ScrollState::default();
     assert_eq!(whole_lines(&mut state, 0.6), 0);
