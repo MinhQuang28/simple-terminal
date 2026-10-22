@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::time::Duration;
 
+use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::index::{Column, Line, Point, Side};
 use alacritty_terminal::selection::{Selection, SelectionType};
 use alacritty_terminal::term::TermMode;
@@ -13,18 +14,22 @@ use super::input::{key_to_bytes, paste_bytes};
 use super::links::Link;
 use super::mouse::{self, MouseReportState};
 use super::render::{self, CursorState, Grid};
+use super::render_cache::PaintCache;
 use super::scroll::{self, ScrollState};
 use super::session::TerminalSession;
+use super::snapshot::Frame;
 use super::style::TerminalStyle;
-use super::view_chrome::{cursor_visible, exit_badge, hover_link, report_focus, starting_indicator};
+use super::view_chrome::{
+    LinkCache, cursor_visible, exit_badge, hover_link, report_focus, starting_indicator,
+};
 
 const BELL_FLASH: Duration = Duration::from_millis(150);
 /// How soon a pane showing a stale frame tries again to capture the terminal.
 const REFRESH_RETRY: Duration = Duration::from_millis(8);
 
-/// Per-view UI state kept in egui memory between frames.
-#[derive(Clone, Default)]
-struct ViewState {
+/// Per-view UI state, kept on the session between frames.
+#[derive(Default)]
+pub struct ViewState {
     scroll: ScrollState,
     mouse: MouseReportState,
     find: FindState,
@@ -33,6 +38,8 @@ struct ViewState {
     reported_focus: Option<bool>,
     /// egui time of the last keystroke; the cursor stays solid right after typing.
     last_input: f64,
+    paint: PaintCache,
+    link: LinkCache,
 }
 
 /// What a frame of the terminal view produced for its caller.
@@ -80,7 +87,7 @@ pub fn show(
         ui.ctx().copy_text(text);
     }
 
-    let mut state: ViewState = ui.data(|d| d.get_temp(id)).unwrap_or_default();
+    let mut state = std::mem::take(&mut session.view);
     let focused = response.has_focus();
     state.find.shortcut(ui, focused);
     if focused && ui.data_mut(|d| d.remove_temp::<bool>(find_request_id())).is_some() {
@@ -100,7 +107,8 @@ pub fn show(
     // The previous frame's mode; reading the live one would wait on the PTY thread.
     let mode = session.frame.mode;
     report_focus(ui, session, mode, focused, &mut state.reported_focus);
-    let grid = Grid { origin: inner.min, cell, text_offset };
+    let band_height = |frame: &Frame| frame.band_rows as f32 * cell.y;
+    let grid = Grid { origin: inner.min + vec2(0.0, band_height(&session.frame)), cell, text_offset };
     match response.hover_pos() {
         Some(pointer) => scroll::handle_wheel(ui, session, &mut state.scroll, grid, pointer),
         None => scroll::scroll_scrollback(ui, session, &mut state.scroll, 0.0),
@@ -108,15 +116,22 @@ pub fn show(
     if mode.contains(TermMode::ALT_SCREEN) {
         state.scroll.clear_pixel_offset();
     }
-    let grid = Grid { origin: inner.min + vec2(0.0, state.scroll.pixel_offset(cell.y)), ..grid };
 
     painter.rect_filled(rect, 0.0, style.theme.background.color());
     let cursor_state = CursorState { focused, visible: cursor_visible(ui, style, focused, state.last_input) };
-    if !session.frame.refresh(&session.term, style.theme) {
+    if !session.frame.refresh(&session.term, style.theme, anchored(session, style)) {
         ui.ctx().request_repaint_after(REFRESH_RETRY);
     }
+    // The capture may have moved the scroll position itself (keeping an anchored view still), so
+    // a sub-line offset left past either end is dropped as wheel scrolling would drop it.
+    let frame = &session.frame;
+    state.scroll.clamp_remainder(frame.display_offset, frame.history_size.saturating_sub(frame.band_rows));
+    // Placed from the frame just captured, so content that grew this frame still lands in view.
+    let shift = state.scroll.pixel_offset(cell.y) + band_height(&session.frame);
+    let grid = Grid { origin: inner.min + vec2(0.0, shift), ..grid };
     let preedit = focused.then_some(state.preedit.as_str());
-    let cursor_rect = render::paint(&painter, grid, style, &session.frame, cursor_state, preedit);
+    let cursor_rect =
+        render::paint(&painter, grid, style, &session.frame, &mut state.paint, cursor_state, preedit);
     if !scroll::overlay(ui, session, &mut state.scroll, rect, id)
         && !mouse::report(ui, &response, session, mode, grid, (cols, rows), &mut state.mouse)
     {
@@ -130,7 +145,7 @@ pub fn show(
     }
     exit_badge(ui, session, rect, style);
     starting_indicator(ui, session, rect);
-    let open_file = hover_link(ui, &response, session, grid, (cols, rows), cwd);
+    let open_file = hover_link(ui, &response, session, &mut state.link, grid, (cols, rows), cwd);
     if state.find.open {
         find::overlay(ui, session, &mut state.find, rect, grid, &response, style);
     }
@@ -149,8 +164,16 @@ pub fn show(
             });
         });
     }
-    ui.data_mut(|d| d.insert_temp(id, state));
+    session.view = state;
     Shown { response, open_file }
+}
+
+/// Whether the pane's content is kept against its bottom edge, with history filling in above:
+/// Claude's classic renderer draws its prompt box right under the conversation, which would
+/// otherwise walk down the pane until the screen fills. (The frame itself leaves full-screen
+/// programs alone.)
+fn anchored(session: &TerminalSession, style: &TerminalStyle<'_>) -> bool {
+    style.agent_prompt_at_bottom && session.is_agent()
 }
 
 /// Returns whether anything was sent to the PTY.
@@ -231,9 +254,12 @@ fn handle_keyboard(
 
 fn handle_selection(response: &Response, session: &mut TerminalSession, grid: Grid, size: (u16, u16)) {
     let Some(pos) = response.interact_pointer_pos() else { return };
+    let band = session.frame.band_rows as i32;
     let mut term = session.term.lock();
     let offset = term.grid().display_offset() as i32;
-    let (point, side) = grid_point(grid, pos, size, offset);
+    // History rows shown above the viewport, as far as history reaches.
+    let above = band.min(term.grid().history_size() as i32 - offset);
+    let (point, side) = grid_point(grid, pos, size, offset, above);
 
     if response.double_clicked() {
         term.selection = Some(Selection::new(SelectionType::Semantic, point, side));
@@ -252,10 +278,17 @@ fn handle_selection(response: &Response, session: &mut TerminalSession, grid: Gr
     session.frame.has_selection = term.selection.is_some();
 }
 
-fn grid_point(grid: Grid, pos: Pos2, (cols, rows): (u16, u16), display_offset: i32) -> (Point, Side) {
+/// The cell under `pos`, clamped to the viewport plus `above` rows of history drawn over it.
+fn grid_point(
+    grid: Grid,
+    pos: Pos2,
+    (cols, rows): (u16, u16),
+    display_offset: i32,
+    above: i32,
+) -> (Point, Side) {
     let rel = pos - grid.origin;
     let col_f = (rel.x / grid.cell.x).clamp(0.0, cols as f32 - 0.01);
-    let row = ((rel.y / grid.cell.y).floor() as i32).clamp(0, rows as i32 - 1);
+    let row = ((rel.y / grid.cell.y).floor() as i32).clamp(-above.max(0), rows as i32 - 1);
     let side = if col_f.fract() < 0.5 { Side::Left } else { Side::Right };
     (Point::new(Line(row - display_offset), Column(col_f as usize)), side)
 }

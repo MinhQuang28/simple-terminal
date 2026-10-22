@@ -45,6 +45,14 @@ pub fn show(ui: &mut Ui, settings: &mut Settings) {
             },
         );
         card.row(
+            "Prompt at the bottom",
+            "Draws the pane's content against its bottom edge, so with the Classic renderer \
+             Claude's prompt box stays put while the conversation above it grows.",
+            |ui| {
+                toggle(ui, &mut settings.agent_prompt_at_bottom);
+            },
+        );
+        card.row(
             "Use subscription",
             "Hides ANTHROPIC_API_KEY and ANTHROPIC_AUTH_TOKEN from Claude so it signs in with your \
              Claude subscription instead of billing an API key per token. Turn off to keep using \

@@ -1,6 +1,7 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
+use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::grid::Row;
 use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::Term;
@@ -29,6 +30,10 @@ const TRAILING_PUNCTUATION: &[char] = &['.', ',', ';', ':', '!', '?', ')', ']', 
 /// URL or an existing file path (optionally `:line:col`) written in the row's text.
 pub fn at(term: &Term<EventProxy>, row: i32, col: usize, cwd: &Path) -> Option<Span> {
     let line = Line(row - term.grid().display_offset() as i32);
+    // A row above the viewport may lie past the start of history in a fresh pane.
+    if line < term.grid().topmost_line() {
+        return None;
+    }
     let grid_row = &term.grid()[line];
     if let Some(hyperlink) = grid_row[Column(col)].hyperlink() {
         let same = |c: usize| grid_row[Column(c)].hyperlink().as_ref() == Some(&hyperlink);

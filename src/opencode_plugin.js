@@ -28,11 +28,16 @@ export const RepodeckEvents = async () => {
         if (!root) {
           root = info.id || session;
           emit("SessionStart", root);
+          // appendFileSync is synchronous, so the exit handler gets its line out.
+          process.once("exit", () => emit("SessionEnd", root));
         }
         return;
       }
       if (root && session && session !== root) return;
       switch (event.type) {
+        case "session.deleted":
+          if ((p.info?.id || session) === root) emit("SessionEnd", root);
+          return;
         case "message.updated":
           if (p.info?.id && p.info?.role) roles.set(p.info.id, p.info.role);
           return;

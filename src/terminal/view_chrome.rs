@@ -5,7 +5,7 @@ use std::time::Duration;
 use alacritty_terminal::term::TermMode;
 use eframe::egui::{self, CursorIcon, Response, Stroke, Ui, vec2};
 
-use super::links::{self, Link};
+use super::links::{self, Link, Span};
 use super::render::Grid;
 use super::session::TerminalSession;
 use super::style::TerminalStyle;
@@ -18,10 +18,14 @@ const STARTING_FOR: Duration = Duration::from_secs(30);
 
 /// With ⌘ held, underlines the link under the pointer; a click opens URLs directly and returns
 /// file links for the caller to open.
+/// The link last looked up under the pointer, keyed by frame generation, row and column.
+pub(super) type LinkCache = Option<((u64, i32, usize), Option<Span>)>;
+
 pub(super) fn hover_link(
     ui: &Ui,
     response: &Response,
     session: &TerminalSession,
+    cache: &mut LinkCache,
     grid: Grid,
     size: (u16, u16),
     cwd: &Path,
@@ -32,8 +36,19 @@ pub(super) fn hover_link(
     }
     let rel = pos - grid.origin;
     let col = ((rel.x / grid.cell.x).floor() as i64).clamp(0, size.0 as i64 - 1) as usize;
-    let row = ((rel.y / grid.cell.y).floor() as i64).clamp(0, size.1 as i64 - 1) as i32;
-    let span = links::at(&session.term.lock(), row, col, cwd)?;
+    // History rows drawn above the viewport count too.
+    let above = session.frame.band_rows as i64;
+    let row = ((rel.y / grid.cell.y).floor() as i64).clamp(-above, size.1 as i64 - 1) as i32;
+    // Looked up once per cell and frame: finding a file path stats the disk.
+    let key = (session.frame.generation, row, col);
+    let span = match cache {
+        Some((k, span)) if *k == key => span.clone(),
+        _ => {
+            let span = links::at(&session.term.lock(), row, col, cwd);
+            *cache = Some((key, span.clone()));
+            span
+        }
+    }?;
     let underline = grid.cell_rect(span.row, span.cols.start, span.cols.len());
     let color = ui.visuals().hyperlink_color;
     ui.painter().hline(underline.x_range(), underline.bottom() - 1.0, Stroke::new(1.0, color));

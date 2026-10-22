@@ -15,6 +15,7 @@ pub struct TerminalStyle<'a> {
     pub cursor_blink: bool,
     pub option_as_meta: bool,
     pub copy_on_select: bool,
+    pub agent_prompt_at_bottom: bool,
 }
 
 impl<'a> TerminalStyle<'a> {
@@ -30,6 +31,7 @@ impl<'a> TerminalStyle<'a> {
             cursor_blink: settings.cursor_blink,
             option_as_meta: settings.option_as_meta,
             copy_on_select: settings.copy_on_select,
+            agent_prompt_at_bottom: settings.agent_prompt_at_bottom,
         }
     }
 }

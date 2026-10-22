@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use alacritty_terminal::grid::Dimensions;
+use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::index::{Column, Direction, Line, Point, Side};
 use alacritty_terminal::selection::{Selection, SelectionType};
 use alacritty_terminal::term::Term;
@@ -17,7 +17,7 @@ const MAX_COUNTED: usize = 999;
 const BAR_WIDTH: f32 = 320.0;
 
 /// In-pane search; the current match becomes the terminal selection so ⌘C copies it.
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct FindState {
     pub open: bool,
     query: String,
@@ -26,6 +26,8 @@ pub struct FindState {
     total: usize,
     /// Set by a keystroke, cleared once the matches were counted for it.
     unsearched: bool,
+    /// Matches on view, for the frame generation, scroll offset and pattern they were found with.
+    visible: Option<((u64, usize, String), Vec<Match>)>,
 }
 
 impl FindState {
@@ -126,7 +128,7 @@ pub fn overlay(
     if let Some(direction) = step.filter(|_| !state.query.is_empty()) {
         state.current = next_match(&term, &mut regex.1, state.current.as_ref(), direction);
         if let Some(m) = &state.current {
-            term.scroll_to_point(*m.start());
+            scroll_into_pane(&mut term, *m.start(), session.frame.band_rows);
             let mut selection = Selection::new(SelectionType::Simple, *m.start(), Side::Left);
             selection.update(*m.end(), Side::Right);
             term.selection = Some(selection);
@@ -134,14 +136,29 @@ pub fn overlay(
     }
     if !state.query.is_empty() {
         let color = style.theme.accent().gamma_multiply(0.35);
-        for m in visible_matches(&term, &mut regex.1) {
-            if state.current.as_ref() == Some(&m) {
-                continue;
-            }
-            for (row, cols) in rows_of(&term, &m) {
+        // Searched again only when the screen, the scroll position or the pattern changed.
+        let key = (session.frame.generation, term.grid().display_offset(), regex.0.clone());
+        let visible = match &mut state.visible {
+            Some((k, matches)) if *k == key => matches,
+            slot => &mut slot.insert((key, visible_matches(&term, &mut regex.1, session.frame.band_rows))).1,
+        };
+        for m in visible.iter().filter(|m| state.current.as_ref() != Some(m)) {
+            for (row, cols) in rows_of(&term, m) {
                 ui.painter().rect_filled(grid.cell_rect(row, cols.0, cols.1 - cols.0), 2.0, color);
             }
         }
+    }
+}
+
+/// Scrolls so `point` is on a pane row: the viewport plus the `band` history rows drawn above it.
+/// `Term::scroll_to_point` only knows the viewport, whose last `band` rows lie below the pane.
+fn scroll_into_pane(term: &mut Term<EventProxy>, point: Point, band: usize) {
+    let (band, lines) = (band as i32, term.screen_lines() as i32);
+    let row = point.line.0 + term.grid().display_offset() as i32;
+    if row < -band {
+        term.scroll_display(Scroll::Delta(-band - row));
+    } else if row >= lines - band {
+        term.scroll_display(Scroll::Delta(lines - band - 1 - row));
     }
 }
 
@@ -180,16 +197,16 @@ fn count_matches(term: &Term<EventProxy>, regex: &mut RegexSearch) -> usize {
     count
 }
 
-fn visible_matches(term: &Term<EventProxy>, regex: &mut RegexSearch) -> Vec<Match> {
+/// Matches on the viewport and the `above` rows of history drawn over it.
+fn visible_matches(term: &Term<EventProxy>, regex: &mut RegexSearch, above: usize) -> Vec<Match> {
     let offset = term.grid().display_offset() as i32;
-    let top = Line(-offset);
+    let top = Line(-offset - above as i32).max(term.topmost_line());
     let bottom = Line(term.screen_lines() as i32 - 1 - offset);
     let mut origin = Point::new(top, Column(0));
     let mut matches = Vec::new();
     while matches.len() < 500 {
-        let Some(m) =
-            term.search_next(regex, origin, Direction::Right, Side::Left, Some(term.screen_lines()))
-        else {
+        let limit = Some(term.screen_lines() + above);
+        let Some(m) = term.search_next(regex, origin, Direction::Right, Side::Left, limit) else {
             break;
         };
         if m.start().line > bottom || (!matches.is_empty() && *m.start() <= origin) {

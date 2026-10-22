@@ -22,6 +22,7 @@ const CODEX_HOOKS: &[(&str, Option<&str>)] = &[
     ("PreToolUse", Some("^request_user_input$")),
     ("Stop", None),
     ("Interrupt", None),
+    ("SessionEnd", None),
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

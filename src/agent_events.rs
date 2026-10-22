@@ -88,6 +88,8 @@ pub struct AgentEvents {
     message: Option<String>,
     /// The first line of the prompt the current turn answers.
     prompt: Option<String>,
+    /// The agent reported its session over and hasn't started another since.
+    ended: bool,
 }
 
 impl AgentEvents {
@@ -100,6 +102,7 @@ impl AgentEvents {
             request: None,
             message: None,
             prompt: None,
+            ended: false,
         })
     }
 
@@ -119,6 +122,20 @@ impl AgentEvents {
 
     pub fn status(&self) -> AgentStatus {
         self.status
+    }
+
+    /// Whether the agent's session has ended, leaving the pane to whatever runs after it.
+    pub fn ended(&self) -> bool {
+        self.ended
+    }
+
+    /// The shell printed a prompt again: whatever agent ran from it is gone, whether or not it
+    /// got to report so (a crash, a kill). Before any hook arrived the prompt is the one the agent
+    /// was started from.
+    pub fn note_shell_prompt(&mut self) {
+        if self.session_id.is_some() {
+            self.ended = true;
+        }
     }
 
     /// The Claude Code conversation the pane is in, once a hook has reported it.
@@ -159,6 +176,10 @@ impl AgentEvents {
             if let Some(status) = status_from_event(&event) {
                 self.status = status;
                 self.message = message_from_event(&event);
+            }
+            // Any hook but the last one means an agent is alive in the pane again.
+            if event["hook_event_name"].is_string() {
+                self.ended = ends_session(&event);
             }
         }
         (self.status != before).then_some(self.status)
@@ -214,6 +235,12 @@ fn first_line(text: &str) -> Option<String> {
     Some(line.chars().take(MESSAGE_CHARS).collect())
 }
 
+/// Whether the event leaves the pane to whatever runs after the agent: `/clear` and an in-session
+/// `/resume` also end a session, but start another in the same process right away.
+fn ends_session(event: &Value) -> bool {
+    event["hook_event_name"] == "SessionEnd" && !matches!(event["reason"].as_str(), Some("clear" | "resume"))
+}
+
 fn status_from_event(event: &Value) -> Option<AgentStatus> {
     Some(match event["hook_event_name"].as_str()? {
         "SessionStart" | "SessionEnd" => AgentStatus::Idle,
@@ -255,6 +282,26 @@ mod tests {
         for var in API_KEY_VARS {
             assert_eq!(settings["env"][var], "", "{var}");
         }
+    }
+
+    #[test]
+    fn only_a_real_exit_ends_the_agent() {
+        let ends = |json: &str| serde_json::from_str(json).ok().is_some_and(|e| ends_session(&e));
+        assert!(ends(r#"{"hook_event_name":"SessionEnd","reason":"prompt_input_exit"}"#));
+        assert!(ends(r#"{"hook_event_name":"SessionEnd"}"#));
+        assert!(!ends(r#"{"hook_event_name":"SessionEnd","reason":"clear"}"#));
+        assert!(!ends(r#"{"hook_event_name":"SessionEnd","reason":"resume"}"#));
+        assert!(!ends(r#"{"hook_event_name":"SessionStart","source":"clear"}"#));
+    }
+
+    #[test]
+    fn a_shell_prompt_ends_an_agent_that_had_started() {
+        let mut agent = AgentEvents::create(Uuid::new_v4()).unwrap();
+        agent.note_shell_prompt();
+        assert!(!agent.ended(), "the prompt the agent is started from");
+        agent.session_id = Some("s".into());
+        agent.note_shell_prompt();
+        assert!(agent.ended());
     }
 
     #[test]

@@ -20,10 +20,10 @@ fn term_with_history() -> Term<EventProxy> {
 fn whole_lines_move_the_grid_and_fractions_stay_pending() {
     let mut term = term_with_history();
     let mut state = ScrollState::default();
-    state.scroll_lines(&mut term, 2.4);
+    state.scroll_lines(&mut term, 2.4, 0);
     assert_eq!(term.grid().display_offset(), 2);
     assert!((state.remainder - 0.4).abs() < 1e-5);
-    state.scroll_lines(&mut term, 0.7);
+    state.scroll_lines(&mut term, 0.7, 0);
     assert_eq!(term.grid().display_offset(), 3);
     assert!((state.remainder - 0.1).abs() < 1e-5);
     assert!((state.pixel_offset(16.0) - 1.6).abs() < 1e-4);
@@ -33,11 +33,11 @@ fn whole_lines_move_the_grid_and_fractions_stay_pending() {
 fn clamps_at_bottom_and_top() {
     let mut term = term_with_history();
     let mut state = ScrollState::default();
-    state.scroll_lines(&mut term, -0.6);
+    state.scroll_lines(&mut term, -0.6, 0);
     assert_eq!(term.grid().display_offset(), 0);
     assert_eq!(state.remainder, 0.0);
 
-    state.scroll_lines(&mut term, 100.0);
+    state.scroll_lines(&mut term, 100.0, 0);
     assert_eq!(term.grid().display_offset(), 21);
     assert_eq!(state.remainder, 0.0);
 
@@ -46,12 +46,26 @@ fn clamps_at_bottom_and_top() {
 }
 
 #[test]
+fn history_shown_above_the_viewport_comes_off_the_top() {
+    let mut term = term_with_history();
+    let mut state = ScrollState::default();
+    // Four history rows already drawn above the viewport: the top is four lines nearer.
+    state.scroll_lines(&mut term, 100.0, 4);
+    assert_eq!(term.grid().display_offset(), 17);
+    assert_eq!(state.remainder, 0.0);
+    state.scroll_lines(&mut term, 0.5, 4);
+    assert_eq!(state.remainder, 0.0, "no sub-line movement past the top either");
+    state.scroll_lines(&mut term, -1.0, 4);
+    assert_eq!(term.grid().display_offset(), 16);
+}
+
+#[test]
 fn resize_keeps_scroll_state_valid() {
     let mut term = term_with_history();
     let mut state = ScrollState::default();
-    state.scroll_lines(&mut term, 5.5);
+    state.scroll_lines(&mut term, 5.5, 0);
     term.resize(TermSize::new(20, 30));
-    state.scroll_lines(&mut term, 0.0);
+    state.scroll_lines(&mut term, 0.0, 0);
     assert_eq!(term.grid().display_offset(), 0);
     assert_eq!(state.remainder, 0.0);
 }

@@ -75,6 +75,38 @@ fn input_typed_after_a_pasted_image_lands_after_its_path() {
     assert!(path < after, "{text}");
 }
 
+/// Claude Code only wraps its frames in synchronized updates (DEC 2026) when the terminal
+/// reports the mode as supported; without that every frame can be shown half drawn.
+#[test]
+fn the_terminal_reports_synchronized_updates_as_supported() {
+    let ctx = egui::Context::default();
+    let theme = Theme::default();
+    let cwd = std::env::temp_dir();
+    let script = "stty raw -echo min 0 time 30; printf '\\033[?2026$p'; \
+        r=$(dd bs=64 count=1 2>/dev/null | od -An -c | tr -d ' \\n'); stty sane; \
+        printf '\\033]9;R=%s\\007' \"$r\"; exit";
+    let config = SessionConfig {
+        pane: Uuid::new_v4(),
+        cwd: &cwd,
+        launch: Launch::Command(script),
+        shell: "/bin/sh",
+        cursor: CursorShape::Block,
+        scrollback_lines: 100,
+        theme: &theme,
+        agent_renderer: AgentRenderer::default(),
+        agent_hide_api_keys: false,
+    };
+    let mut session = TerminalSession::spawn(config, None, Arc::default(), &ctx).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut got = Vec::new();
+    while got.is_empty() && Instant::now() < deadline {
+        session.process_events();
+        got.extend(session.take_notifications());
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(got, ["R=033[?2026;2$y"]);
+}
+
 #[test]
 fn the_classic_renderer_reaches_agent_panes_through_the_environment() {
     let ctx = egui::Context::default();

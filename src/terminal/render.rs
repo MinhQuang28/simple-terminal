@@ -7,9 +7,10 @@ use alacritty_terminal::vte::ansi::CursorShape;
 use eframe::egui::text::{LayoutJob, TextFormat};
 use eframe::egui::{Color32, FontFamily, FontId, Painter, Pos2, Rect, Stroke, StrokeKind, Vec2, vec2};
 
+use super::box_drawing;
+use super::render_cache::{Item, PaintCache};
 use super::snapshot::{Cell, Frame};
 use super::style::TerminalStyle;
-use super::{box_drawing, decorations};
 
 thread_local! {
     /// Whether a glyph's advance matches the cell width, so it can share a text run with ASCII
@@ -62,8 +63,9 @@ struct BgRun {
 
 struct Painting<'a> {
     painter: &'a Painter,
-    grid: Grid,
     style: &'a TerminalStyle<'a>,
+    /// Geometry with the origin at zero, so what is laid out can be replayed anywhere.
+    grid: Grid,
 }
 
 impl Painting<'_> {
@@ -77,22 +79,23 @@ impl Painting<'_> {
         }
     }
 
-    fn text(&self, cell: Rect, text: String, bold: bool, color: Color32) {
-        let galley = self.painter.layout_job(LayoutJob::single_section(text, self.format(bold, color)));
-        self.painter.galley(cell.min + vec2(0.0, self.grid.text_offset), galley, color);
+    /// Lays out `text` on its own cell.
+    fn glyph(&self, cache: &mut PaintCache, cell: Rect, text: String, bold: bool, color: Color32) {
+        let job = LayoutJob::single_section(text, self.format(bold, color));
+        let pos = cell.min.to_vec2() + vec2(0.0, self.grid.text_offset);
+        cache.items.push(Item::Glyph { pos, job, color });
     }
 
-    fn flush_text(&self, run: &mut Option<TextRun>) {
+    fn flush_text(&self, cache: &mut PaintCache, run: &mut Option<TextRun>) {
         let Some(mut r) = run.take() else { return };
         r.job.append(&r.pending, 0.0, self.format(r.bold, r.color));
-        let galley = self.painter.layout_job(r.job);
-        let pos = self.grid.cell_rect(r.row, r.col, 1).min + vec2(0.0, self.grid.text_offset);
-        self.painter.galley(pos, galley, r.color);
+        let pos = self.grid.cell_rect(r.row, r.col, 1).min.to_vec2() + vec2(0.0, self.grid.text_offset);
+        cache.runs.push((pos, r.job, r.color));
     }
 
-    fn flush_bg(&self, run: &mut Option<BgRun>) {
+    fn flush_bg(&self, cache: &mut PaintCache, run: &mut Option<BgRun>) {
         if let Some(r) = run.take() {
-            self.painter.rect_filled(self.grid.cell_rect(r.row, r.col, r.end - r.col), 0.0, r.color);
+            cache.backgrounds.push((self.grid.cell_rect(r.row, r.col, r.end - r.col), r.color));
         }
     }
 
@@ -112,7 +115,7 @@ impl Painting<'_> {
 }
 
 /// Backgrounds go down before any text so a row's rect never covers glyphs painted earlier.
-fn paint_backgrounds(p: &Painting<'_>, frame: &Frame) {
+fn layout_backgrounds(p: &Painting<'_>, frame: &Frame, cache: &mut PaintCache) {
     let background = p.style.theme.background.color();
     let mut bg_run: Option<BgRun> = None;
     for cell in &frame.cells {
@@ -121,34 +124,28 @@ fn paint_backgrounds(p: &Painting<'_>, frame: &Frame) {
         match bg_run.as_mut() {
             Some(r) if continues => r.end = col + width,
             _ => {
-                p.flush_bg(&mut bg_run);
+                p.flush_bg(cache, &mut bg_run);
                 if bg != background {
                     bg_run = Some(BgRun { row, col, end: col + width, color: bg });
                 }
             }
         }
     }
-    p.flush_bg(&mut bg_run);
+    p.flush_bg(cache, &mut bg_run);
 }
 
-/// Paints the captured frame and cursor; returns the cursor rect for IME placement.
-pub fn paint(
-    painter: &Painter,
-    grid: Grid,
-    style: &TerminalStyle<'_>,
-    frame: &Frame,
-    cursor_state: CursorState,
-    preedit: Option<&str>,
-) -> Rect {
-    let p = Painting { painter, grid, style };
-    paint_backgrounds(&p, frame);
+/// Lays the frame's cells out into `cache`: backgrounds, decorations, box-drawing glyphs, and
+/// text runs of consecutive cells sharing a weight.
+fn layout(p: &Painting<'_>, frame: &Frame, cache: &mut PaintCache) {
+    layout_backgrounds(p, frame, cache);
     let mut run: Option<TextRun> = None;
-
     for cell in &frame.cells {
         let Cell { row, col, c, fg, flags, width, .. } = *cell;
         let bold = flags.contains(Flags::BOLD);
-        let rect = grid.cell_rect(row, col, width);
-        decorations::paint(painter, rect, flags, fg);
+        let rect = p.grid.cell_rect(row, col, width);
+        if flags.intersects(Flags::ALL_UNDERLINES | Flags::STRIKEOUT) {
+            cache.items.push(Item::Decoration { rect, flags, color: fg });
+        }
         if c == ' ' && cell.zerowidth.is_none() {
             // Spaces only extend an open run; one that ends in spaces is simply shorter.
             if let Some(r) = run.as_mut().filter(|r| r.row == row && r.col + r.len == col) {
@@ -157,8 +154,9 @@ pub fn paint(
             }
             continue;
         }
-        if box_drawing::paint(painter, rect, c, fg) {
-            p.flush_text(&mut run);
+        if box_drawing::handles(c) {
+            p.flush_text(cache, &mut run);
+            cache.items.push(Item::Box { rect, c, color: fg });
             continue;
         }
 
@@ -166,7 +164,7 @@ pub fn paint(
             run.as_ref().is_some_and(|r| r.row == row && r.bold == bold && r.col + r.len == col);
         if width == 1 && cell.zerowidth.is_none() && p.fits_cell(c, bold) {
             if !continues_run {
-                p.flush_text(&mut run);
+                p.flush_text(cache, &mut run);
                 run = Some(TextRun {
                     row,
                     col,
@@ -188,16 +186,38 @@ pub fn paint(
             }
         } else {
             // Wide glyphs and ones with other advances are placed on their own cell.
-            p.flush_text(&mut run);
+            p.flush_text(cache, &mut run);
             let mut text = c.to_string();
             text.extend(cell.zerowidth.iter().flat_map(|z| z.iter()));
-            p.text(rect, text, bold, fg);
+            p.glyph(cache, rect, text, bold, fg);
         }
     }
-    p.flush_text(&mut run);
+    p.flush_text(cache, &mut run);
+}
 
+/// Paints the captured frame and cursor; returns the cursor rect for IME placement. The cells
+/// are laid out once per frame generation and style, and replayed from `cache` otherwise.
+pub fn paint(
+    painter: &Painter,
+    grid: Grid,
+    style: &TerminalStyle<'_>,
+    frame: &Frame,
+    cache: &mut PaintCache,
+    cursor_state: CursorState,
+    preedit: Option<&str>,
+) -> Rect {
+    if !cache.reuse(frame.generation, style, grid) {
+        let p = Painting { painter, style, grid: Grid { origin: Pos2::ZERO, ..grid } };
+        layout(&p, frame, cache);
+    }
+    cache.replay(painter, grid);
+
+    let p = Painting { painter, style, grid };
     let cursor = &frame.cursor;
-    let cursor_rect = grid.cell_rect(cursor.row, cursor.col, 1);
+    // The band pushes the screen's empty bottom rows off the pane; a hidden cursor parked there
+    // still has to give the IME window and preedit text a row inside the pane.
+    let last_row = (frame.screen_lines as i32 - 1 - frame.band_rows as i32).max(0);
+    let cursor_rect = grid.cell_rect(cursor.row.min(last_row), cursor.col, 1);
     if let Some(text) = preedit.filter(|t| !t.is_empty()) {
         paint_preedit(&p, cursor_rect, text);
     } else if cursor.shape != CursorShape::Hidden
@@ -207,6 +227,12 @@ pub fn paint(
         paint_cursor(&p, cursor_rect, cursor.shape, cursor_state.focused, cursor.under);
     }
     cursor_rect
+}
+
+/// Lays out and paints `text` at `cell` right away, for the cursor and preedit.
+fn paint_text(p: &Painting<'_>, cell: Rect, text: String, bold: bool, color: Color32) {
+    let galley = p.painter.layout_job(LayoutJob::single_section(text, p.format(bold, color)));
+    p.painter.galley(cell.min + vec2(0.0, p.grid.text_offset), galley, color);
 }
 
 fn paint_cursor(
@@ -224,7 +250,7 @@ fn paint_cursor(
             if let Some((c, bg, bold)) = under.filter(|(c, _, _)| !c.is_whitespace()) {
                 let text_color = if bg == theme.selection.color() { theme.background.color() } else { bg };
                 if !box_drawing::paint(p.painter, rect, c, text_color) {
-                    p.text(rect, c.to_string(), bold, text_color);
+                    paint_text(p, rect, c.to_string(), bold, text_color);
                 }
             }
         }
@@ -246,7 +272,7 @@ fn paint_preedit(p: &Painting<'_>, cursor: Rect, text: &str) {
     let width = p.grid.cell.x * text.chars().count() as f32;
     let rect = Rect::from_min_size(cursor.min, vec2(width, p.grid.cell.y));
     p.painter.rect_filled(rect, 0.0, theme.background.color());
-    p.text(rect, text.to_string(), false, theme.foreground.color());
+    paint_text(p, rect, text.to_string(), false, theme.foreground.color());
     p.painter.hline(rect.x_range(), rect.bottom() - 1.0, Stroke::new(1.0, theme.cursor.color()));
 }
 

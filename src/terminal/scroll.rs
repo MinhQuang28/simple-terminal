@@ -62,18 +62,26 @@ impl ScrollState {
     }
 
     /// Scrolls the view by fractional lines, applying whole lines to the terminal and keeping the
-    /// rest, clamped so the view never shows past the first or last line.
-    pub fn scroll_lines(&mut self, term: &mut Term<EventProxy>, delta: f32) {
+    /// rest, clamped so the view never shows past the first or last line. `band` history rows
+    /// already show above the viewport, so the top comes that much sooner.
+    pub fn scroll_lines(&mut self, term: &mut Term<EventProxy>, delta: f32, band: usize) {
         self.remainder += delta;
         let lines = self.remainder.trunc() as i32;
         if lines != 0 {
             term.scroll_display(Scroll::Delta(lines));
             self.remainder -= lines as f32;
         }
+        let top = term.grid().history_size().saturating_sub(band);
         let offset = term.grid().display_offset();
-        let at_bottom = offset == 0;
-        let at_top = offset >= term.grid().history_size();
-        if (at_bottom && self.remainder < 0.0) || (at_top && self.remainder > 0.0) {
+        if offset > top {
+            term.scroll_display(Scroll::Delta(top as i32 - offset as i32));
+        }
+        self.clamp_remainder(offset.min(top), top);
+    }
+
+    /// Drops a sub-line offset that would show past the first or last line.
+    pub fn clamp_remainder(&mut self, offset: usize, top: usize) {
+        if (offset == 0 && self.remainder < 0.0) || (offset >= top && self.remainder > 0.0) {
             self.remainder = 0.0;
         }
     }
@@ -89,7 +97,7 @@ pub fn scroll_scrollback(ui: &Ui, session: &TerminalSession, state: &mut ScrollS
         return;
     }
     match session.term.try_lock_unfair() {
-        Some(mut term) => state.scroll_lines(&mut term, lines),
+        Some(mut term) => state.scroll_lines(&mut term, lines, session.frame.band_rows),
         None => {
             state.pending = lines;
             ui.ctx().request_repaint_after(Duration::from_millis(8));
@@ -193,8 +201,9 @@ pub fn overlay(
     id: Id,
 ) -> bool {
     let frame = &session.frame;
-    let extent =
-        Extent { offset: frame.display_offset, history: frame.history_size, rows: frame.screen_lines };
+    // History already drawn above the viewport isn't left to scroll to.
+    let history = frame.history_size.saturating_sub(frame.band_rows);
+    let extent = Extent { offset: frame.display_offset, history, rows: frame.screen_lines };
     if extent.history == 0 {
         return false;
     }

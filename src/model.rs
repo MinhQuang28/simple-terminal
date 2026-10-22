@@ -73,6 +73,9 @@ pub struct Settings {
     /// Hide `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` from Claude so it signs in with the
     /// user's subscription instead of billing an API key per token.
     pub agent_hide_api_keys: bool,
+    /// Draw an agent pane's content against its bottom edge, so Claude's prompt box stays put
+    /// instead of moving down as the conversation above it grows.
+    pub agent_prompt_at_bottom: bool,
     /// Post system notifications for panes the user isn't watching.
     pub notifications: bool,
     /// Play the system alert sound with each notification.
@@ -105,6 +108,7 @@ impl Default for Settings {
             agent_resume_command: "claude --continue || claude".into(),
             agent_renderer: AgentRenderer::default(),
             agent_hide_api_keys: true,
+            agent_prompt_at_bottom: true,
             notifications: true,
             notification_sound: true,
             external_editor: String::new(),

@@ -2,6 +2,11 @@ use eframe::egui::{Color32, Painter, Pos2, Rect, Shape, Stroke, pos2, vec2};
 
 use super::box_arms::{Weight, arms};
 
+/// Whether `c` is drawn as shapes by [`paint`].
+pub fn handles(c: char) -> bool {
+    matches!(c, '\u{2500}'..='\u{257F}' | '\u{2580}'..='\u{259F}' | '\u{E0B0}'..='\u{E0B3}')
+}
+
 /// Paints box-drawing, block, shade and powerline glyphs as shapes so they join seamlessly
 /// across cells at any font size. Returns false for characters it doesn't cover.
 pub fn paint(painter: &Painter, rect: Rect, c: char, color: Color32) -> bool {

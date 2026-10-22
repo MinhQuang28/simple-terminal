@@ -56,7 +56,9 @@ impl ShellEvents {
     }
 
     /// Applies new events; `prompt_line` is where the next prompt is being drawn right now.
-    pub fn poll(&mut self, prompt_line: impl Fn() -> usize) {
+    /// Returns whether the shell printed a prompt.
+    pub fn poll(&mut self, prompt_line: impl Fn() -> usize) -> bool {
+        let mut prompted = false;
         for line in self.log.poll_lines() {
             let mut fields = line.split('\t');
             match (fields.next(), fields.next().and_then(|t| t.parse::<f64>().ok())) {
@@ -80,10 +82,12 @@ impl ShellEvents {
                     if self.marks.len() > MAX_MARKS {
                         self.marks.remove(0);
                     }
+                    prompted = true;
                 }
                 _ => {}
             }
         }
+        prompted
     }
 
     /// A long-running command that finished since the last call.

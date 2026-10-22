@@ -103,6 +103,8 @@ pub struct TerminalSession {
     theme: Theme,
     /// Last captured grid contents; kept so its buffer is reused.
     pub frame: Frame,
+    /// UI state of the pane showing this session.
+    pub(super) view: super::view::ViewState,
     agent: Option<AgentEvents>,
     /// Which agent the pane was started with, for its icon and label.
     agent_kind: Option<agent_launch::Agent>,
@@ -228,6 +230,7 @@ impl TerminalSession {
             bell_at: None,
             theme: theme.clone(),
             frame: Frame::default(),
+            view: Default::default(),
             agent,
             agent_kind: match launch {
                 Launch::Agent(command) => agent_launch::agent_of(command),
@@ -264,6 +267,7 @@ impl TerminalSession {
     pub fn sync_theme(&mut self, theme: &Theme) {
         if self.theme != *theme {
             self.theme = theme.clone();
+            self.frame.invalidate();
         }
     }
 
@@ -337,6 +341,12 @@ impl TerminalSession {
         self.notifications.try_iter().collect()
     }
 
+    /// Running a coding agent whose lifecycle hooks report to this pane; false again once it
+    /// reports its session over and the shell that follows it takes the pane.
+    pub fn is_agent(&self) -> bool {
+        self.agent.as_ref().is_some_and(|agent| !agent.ended())
+    }
+
     /// Producing output the user didn't just type (e.g. an agent working or a build running).
     pub fn is_busy(&self) -> bool {
         self.last_output.elapsed() < BUSY_WINDOW && self.last_user_input.elapsed() > BUSY_WINDOW
@@ -366,7 +376,14 @@ impl TerminalSession {
         let mut clipboard = None;
         while let Ok(event) = self.events.try_recv() {
             match event {
-                Event::Wakeup => self.last_output = Instant::now(),
+                Event::Wakeup => {
+                    self.last_output = Instant::now();
+                    // Damage tracking covers the viewport; scrolled up, the row below it shows
+                    // partially too, so any output recaptures.
+                    if self.frame.display_offset > 0 {
+                        self.frame.invalidate();
+                    }
+                }
                 Event::Title(title) => self.title = Some(title),
                 Event::ResetTitle => self.title = None,
                 Event::PtyWrite(text) => self.write(text),
@@ -404,10 +421,13 @@ impl TerminalSession {
         }
         if let Some(shell) = &mut self.shell {
             let term = &self.term;
-            shell.poll(|| {
+            let prompted = shell.poll(|| {
                 let term = term.lock();
                 term.grid().history_size() + term.grid().cursor.point.line.0.max(0) as usize
             });
+            if prompted && let Some(agent) = &mut self.agent {
+                agent.note_shell_prompt();
+            }
         }
         clipboard
     }
