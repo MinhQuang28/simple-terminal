@@ -63,8 +63,17 @@ if pgrep -xq "$(basename "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutabl
     echo "==> note: Repodeck is running; quit it (⌘Q) and reopen to use the new build"
 fi
 echo "==> installing into ${INSTALL_DIR}"
-rm -rf "${INSTALL_DIR:?}/${APP_NAME}.app"
-ditto "$APP" "${INSTALL_DIR}/${APP_NAME}.app"
+# Stage the copy next to the old bundle and swap with renames, so the Dock and LaunchServices
+# never see a half-copied bundle (one without its icon yet) and cache a placeholder icon for it.
+STAGING="${INSTALL_DIR}/.${APP_NAME}.app.staging"
+OLD="${INSTALL_DIR}/.${APP_NAME}.app.old"
+rm -rf "$STAGING" "$OLD"
+ditto "$APP" "$STAGING"
+if [ -e "${INSTALL_DIR}/${APP_NAME}.app" ]; then
+    mv "${INSTALL_DIR}/${APP_NAME}.app" "$OLD"
+fi
+mv "$STAGING" "${INSTALL_DIR}/${APP_NAME}.app"
+rm -rf "$OLD"
 
 # One LaunchServices record per bundle id: a second one (the build output) makes the Services menu
 # and `open -b` pick either copy.
