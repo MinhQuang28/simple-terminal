@@ -2,10 +2,11 @@
 //! the actions right-aligned, the default one filled in the accent color.
 
 use eframe::egui::{
-    Align, Color32, Context, CornerRadius, FontId, Frame, Id, Key, Layout, Margin, Modal, ModalResponse,
-    Response, RichText, Sense, Stroke, StrokeKind, TextEdit, Ui, vec2,
+    Align, Color32, Context, CornerRadius, FontId, Id, Key, Layout, Modal, ModalResponse, Response, RichText,
+    Sense, Stroke, StrokeKind, TextEdit, Ui, vec2,
 };
 
+use super::design::{self, TEXT_BODY, TEXT_SECONDARY, TEXT_TITLE};
 use super::widgets::{accent, muted};
 
 const WIDTH: f32 = 400.0;
@@ -33,13 +34,7 @@ pub struct Footer {
 
 /// Shows a centered modal with the dialog frame; `Esc` and clicks outside ask to close it.
 pub fn modal<R>(ctx: &Context, add_contents: impl FnOnce(&mut Ui) -> R) -> ModalResponse<R> {
-    let visuals = ctx.global_style().visuals.clone();
-    let frame = Frame::new()
-        .fill(visuals.window_fill)
-        .stroke(Stroke::new(1.0, visuals.widgets.noninteractive.bg_stroke.color))
-        .corner_radius(CornerRadius::same(12))
-        .inner_margin(Margin::same(20))
-        .shadow(visuals.window_shadow);
+    let frame = design::surface_frame(&ctx.global_style().visuals, 20);
     Modal::new(Id::unique("repodeck-dialog")).frame(frame).show(ctx, |ui| {
         ui.set_width(WIDTH);
         ui.spacing_mut().item_spacing.y = 8.0;
@@ -50,16 +45,16 @@ pub fn modal<R>(ctx: &Context, add_contents: impl FnOnce(&mut Ui) -> R) -> Modal
 }
 
 pub fn title(ui: &mut Ui, text: &str) {
-    ui.label(RichText::new(text).size(15.5).strong());
+    ui.label(RichText::new(text).size(TEXT_TITLE).strong());
 }
 
 pub fn description(ui: &mut Ui, text: &str) {
-    ui.label(RichText::new(text).size(12.5).color(muted(ui)));
+    ui.label(RichText::new(text).size(TEXT_SECONDARY).color(muted(ui)));
 }
 
 /// A full-width single-line field; `code` sets a monospace font.
 pub fn field(ui: &mut Ui, value: &mut String, hint: &str, code: bool) -> Response {
-    let font = if code { FontId::monospace(13.0) } else { FontId::proportional(13.5) };
+    let font = if code { FontId::monospace(13.0) } else { FontId::proportional(TEXT_BODY) };
     let edit = TextEdit::singleline(value)
         .hint_text(hint)
         .font(font)
@@ -72,7 +67,7 @@ pub fn field(ui: &mut Ui, value: &mut String, hint: &str, code: bool) -> Respons
 pub fn text_area(ui: &mut Ui, value: &mut String, hint: &str, rows: usize) -> Response {
     let edit = TextEdit::multiline(value)
         .hint_text(hint)
-        .font(FontId::proportional(13.5))
+        .font(FontId::proportional(TEXT_BODY))
         .margin(vec2(10.0, 7.0))
         .desired_rows(rows)
         .desired_width(f32::INFINITY);

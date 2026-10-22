@@ -1,10 +1,11 @@
 use eframe::egui::{
-    Align, CornerRadius, Label, Layout, Popup, PopupCloseBehavior, RectAlign, Response, RichText, ScrollArea,
-    Sense, Stroke, Ui, UiBuilder, pos2, vec2,
+    Align, CornerRadius, Label, Layout, Popup, Response, RichText, ScrollArea, Sense, Stroke, Ui, UiBuilder,
+    pos2, vec2,
 };
 
 use super::Action;
 use super::claude_icon;
+use super::design::{self, RADIUS_ROW, TEXT_BODY, TEXT_SECONDARY};
 use super::widgets::{AGENT, ago, icon_button_frame, muted, spinner};
 use crate::claude_history::{ClaudeHistory, Session};
 use crate::model::{Repo, now_secs};
@@ -19,59 +20,53 @@ const DOT_STEPS: [u64; 7] = [16 << 10, 64 << 10, 256 << 10, 1 << 20, 4 << 20, 16
 /// Clock button that lists the repo's past Claude conversations; picking one resumes it in a tab.
 pub fn show(ui: &mut Ui, repo: &Repo, history: &ClaudeHistory, actions: &mut Vec<Action>) {
     let button = clock_button(ui).on_hover_text("Claude conversation history");
-    // The button sits in a right-to-left row; the popup must not inherit that layout.
-    Popup::from_toggle_button_response(&button)
-        .align(RectAlign::BOTTOM_END)
-        .layout(Layout::top_down(Align::Min))
-        .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
-        .width(POPUP_WIDTH)
-        .show(|ui| {
-            ui.set_width(POPUP_WIDTH);
-            match history.sessions(&repo.path) {
-                None => {
-                    ui.horizontal(|ui| {
-                        spinner(ui, 12.0, muted(ui));
-                        ui.label(RichText::new("Loading conversations…").color(muted(ui)));
-                    });
-                }
-                Some(sessions) if sessions.is_empty() => {
-                    ui.add_space(10.0);
-                    ui.label(RichText::new("No conversation history").color(muted(ui)));
-                    ui.add_space(10.0);
-                }
-                Some(sessions) => {
-                    let now = now_secs();
-                    // As tall as the window allows, up to MAX_ROWS rows. The popup's area is
-                    // sized from its first (invisible) pass, where the scroll area sees no room;
-                    // `min_scrolled_height` makes it claim the height anyway once there is more
-                    // content than fits.
-                    let room = ui.ctx().content_rect().bottom() - ui.cursor().top() - 24.0;
-                    let max_height = room.clamp(ROW_HEIGHT * 4.0, ROW_HEIGHT * MAX_ROWS as f32);
-                    ScrollArea::vertical().max_height(max_height).min_scrolled_height(max_height).show(
-                        ui,
-                        |ui| {
-                            for session in sessions.iter() {
-                                if session_row(ui, session, now).clicked() {
-                                    actions.push(Action::ResumeSession {
-                                        repo: repo.id,
-                                        session: session.id.clone(),
-                                        title: session.title.clone(),
-                                    });
-                                    ui.close();
-                                }
-                            }
-                        },
-                    );
-                }
+    design::popup(ui, &button, POPUP_WIDTH, |ui| {
+        design::section_label(ui, "Recent conversations");
+        match history.sessions(&repo.path) {
+            None => {
+                ui.horizontal(|ui| {
+                    spinner(ui, 12.0, muted(ui));
+                    ui.label(RichText::new("Loading conversations…").size(TEXT_SECONDARY).color(muted(ui)));
+                });
             }
-        });
+            Some(sessions) if sessions.is_empty() => design::empty_state(ui, "No conversation history"),
+            Some(sessions) => {
+                let now = now_secs();
+                // As tall as the window allows, up to MAX_ROWS rows. The popup's area is
+                // sized from its first (invisible) pass, where the scroll area sees no room;
+                // `min_scrolled_height` makes it claim the height anyway once there is more
+                // content than fits.
+                let room = ui.ctx().content_rect().bottom() - ui.cursor().top() - 24.0;
+                let max_height = room.clamp(ROW_HEIGHT * 4.0, ROW_HEIGHT * MAX_ROWS as f32);
+                ScrollArea::vertical().max_height(max_height).min_scrolled_height(max_height).show(
+                    ui,
+                    |ui| {
+                        for session in sessions.iter() {
+                            if session_row(ui, session, now).clicked() {
+                                actions.push(Action::ResumeSession {
+                                    repo: repo.id,
+                                    session: session.id.clone(),
+                                    title: session.title.clone(),
+                                });
+                                ui.close();
+                            }
+                        }
+                    },
+                );
+            }
+        }
+    });
 }
 
 /// Claude mark in a ring, the title, when it was last active, and dots for how long it ran.
 fn session_row(ui: &mut Ui, session: &Session, now: u64) -> Response {
     let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_HEIGHT), Sense::click());
     if response.hovered() {
-        ui.painter().rect_filled(rect, CornerRadius::same(6), ui.visuals().widgets.hovered.weak_bg_fill);
+        ui.painter().rect_filled(
+            rect,
+            CornerRadius::same(RADIUS_ROW),
+            ui.visuals().widgets.hovered.weak_bg_fill,
+        );
     }
     let ring = pos2(rect.left() + 20.0, rect.center().y);
     ui.painter().circle_stroke(ring, 11.0, Stroke::new(1.2, AGENT));
@@ -87,10 +82,10 @@ fn session_row(ui: &mut Ui, session: &Session, now: u64) -> Response {
         "now" => "just now".into(),
         when => format!("{when} ago"),
     };
-    child.add(Label::new(RichText::new(when).size(12.0).color(muted(&child))).selectable(false));
+    child.add(Label::new(RichText::new(when).size(TEXT_SECONDARY).color(muted(&child))).selectable(false));
     // The title takes what's left, from the left edge, truncated with an ellipsis.
     child.with_layout(Layout::left_to_right(Align::Center), |ui| {
-        ui.add(Label::new(RichText::new(&session.title).size(13.5)).truncate().selectable(false));
+        ui.add(Label::new(RichText::new(&session.title).size(TEXT_BODY)).truncate().selectable(false));
     });
     response
 }

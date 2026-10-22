@@ -3,6 +3,7 @@ use std::path::Path;
 use eframe::egui::{Label, RichText, Ui};
 
 use super::Action;
+use super::design::{self, TEXT_CAPTION};
 use super::widgets::{glyph_button, muted, right_aligned, row, spinner, tag};
 use crate::library::{McpServer, Skill};
 use crate::library_cache::LibraryCache;
@@ -66,9 +67,10 @@ pub fn show(
 }
 
 fn section(ui: &mut Ui, title: &str, add: Option<Action>, actions: &mut Vec<Action>) {
-    ui.add_space(10.0);
+    ui.add_space(6.0);
     ui.horizontal(|ui| {
-        ui.label(RichText::new(title.to_uppercase()).size(11.0).strong().color(muted(ui)));
+        ui.spacing_mut().item_spacing.y = 0.0;
+        design::section_label(ui, title);
         if let Some(action) = add {
             right_aligned(ui, |ui| {
                 ui.add_space(6.0);
@@ -82,7 +84,7 @@ fn section(ui: &mut Ui, title: &str, add: Option<Action>, actions: &mut Vec<Acti
 }
 
 fn hint(ui: &mut Ui, text: &str) {
-    ui.add(Label::new(RichText::new(text).size(12.0).color(muted(ui))).wrap());
+    ui.add(Label::new(RichText::new(text).size(TEXT_CAPTION).color(muted(ui))).wrap());
 }
 
 fn skill_row(ui: &mut Ui, repo: &Repo, skill: &Skill, actions: &mut Vec<Action>) {

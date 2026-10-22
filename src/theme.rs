@@ -94,14 +94,19 @@ impl Theme {
 
         visuals.panel_fill = bg;
         visuals.window_fill = shift(self.background.color(), 0.04);
-        visuals.window_corner_radius = egui::CornerRadius::same(10);
-        visuals.menu_corner_radius = egui::CornerRadius::same(8);
+        visuals.window_corner_radius = egui::CornerRadius::same(12);
+        visuals.menu_corner_radius = egui::CornerRadius::same(10);
+        let shadow =
+            egui::Shadow { offset: [0, 6], blur: 24, spread: 0, color: Color32::from_black_alpha(90) };
+        visuals.window_shadow = shadow;
+        visuals.popup_shadow = shadow;
         visuals.extreme_bg_color = self.background.color();
         visuals.faint_bg_color = shift(bg, 0.05);
         visuals.override_text_color = Some(fg);
         visuals.hyperlink_color = self.accent();
         visuals.selection.bg_fill = self.selection.color();
-        visuals.selection.stroke.color = fg;
+        // Focused fields get a thin accent outline rather than a bright full-strength one.
+        visuals.selection.stroke = egui::Stroke::new(1.0, self.accent());
         visuals.widgets.noninteractive.bg_fill = visuals.panel_fill;
         visuals.widgets.noninteractive.bg_stroke.color = shift(bg, 0.12);
         visuals.widgets.inactive.weak_bg_fill = shift(bg, 0.08);
@@ -110,7 +115,20 @@ impl Theme {
         visuals.widgets.hovered.bg_fill = shift(bg, 0.11);
         visuals.widgets.active.weak_bg_fill = shift(bg, 0.15);
         visuals.widgets.active.bg_fill = shift(bg, 0.15);
+        for widget in [
+            &mut visuals.widgets.noninteractive,
+            &mut visuals.widgets.inactive,
+            &mut visuals.widgets.hovered,
+            &mut visuals.widgets.active,
+            &mut visuals.widgets.open,
+        ] {
+            widget.corner_radius = egui::CornerRadius::same(6);
+        }
         ctx.set_visuals(visuals);
+        ctx.all_styles_mut(|style| {
+            style.spacing.button_padding = egui::vec2(10.0, 4.0);
+            style.spacing.menu_margin = egui::Margin::same(6);
+        });
     }
 }
 

@@ -1,10 +1,12 @@
 use eframe::egui::{
-    Align, Align2, Button, Color32, FontId, Id, Label, Layout, Popup, PopupCloseBehavior, Response, RichText,
-    ScrollArea, Sense, Shape, Stroke, Ui, UiBuilder, pos2, vec2,
+    Align, Align2, Button, Color32, CornerRadius, FontId, Id, Label, Layout, Response, RichText, ScrollArea,
+    Sense, Shape, Stroke, Ui, UiBuilder, pos2, vec2,
 };
 
 use super::Action;
 use super::agent_status;
+use super::design::{self, RADIUS_ROW, TEXT_BODY, TEXT_CAPTION, TEXT_SECONDARY};
+use super::dialog_kit::{Tone, button};
 use super::widgets::{AGENT, accent, ago, icon_button_frame, muted, right_aligned};
 use crate::inbox::{Inbox, Notice, Source};
 use crate::model::AppState;
@@ -21,14 +23,10 @@ pub fn bell(ui: &mut Ui, state: &AppState, inbox: &Inbox, pool: &SessionPool, ac
     let response =
         bell_icon(ui, inbox.unread() + approvals.len(), !approvals.is_empty()).on_hover_text("Notifications");
     let filter = Id::unique("inbox-unread-only");
-    Popup::from_toggle_button_response(&response)
-        .layout(Layout::top_down(Align::Min))
-        .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
-        .width(WIDTH)
-        .show(|ui| {
-            approvals_section(ui, &approvals, actions);
-            contents(ui, inbox, filter, actions);
-        });
+    design::popup(ui, &response, WIDTH, |ui| {
+        approvals_section(ui, &approvals, actions);
+        contents(ui, inbox, filter, actions);
+    });
 }
 
 /// Agents currently waiting for permission, with where they are and what they ask.
@@ -60,34 +58,34 @@ fn approvals_section(ui: &mut Ui, approvals: &[Approval], actions: &mut Vec<Acti
     if approvals.is_empty() {
         return;
     }
-    ui.label(RichText::new("Approvals").strong());
-    ui.add_space(4.0);
+    design::section_label(ui, "Approvals");
     for approval in approvals {
         let Source { repo, tab, pane } = approval.source;
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             right_aligned(ui, |ui| {
-                if ui.small_button("Deny").clicked() {
-                    actions.push(Action::AnswerApproval { pane, allow: false });
-                }
-                if ui.small_button("Allow").clicked() {
+                if button(ui, "Allow", Tone::Primary).clicked() {
                     actions.push(Action::AnswerApproval { pane, allow: true });
+                }
+                if button(ui, "Deny", Tone::Secondary).clicked() {
+                    actions.push(Action::AnswerApproval { pane, allow: false });
                 }
                 ui.with_layout(Layout::top_down(Align::Min), |ui| {
                     ui.spacing_mut().item_spacing.y = 1.0;
-                    let title = Label::new(RichText::new(&approval.title).color(muted(ui)).size(11.5));
+                    let title =
+                        Label::new(RichText::new(&approval.title).color(muted(ui)).size(TEXT_CAPTION));
                     if ui.add(title.truncate().selectable(false).sense(Sense::click())).clicked() {
                         actions.push(Action::SelectTab { repo, tab });
                         ui.close();
                     }
-                    let request = RichText::new(&approval.request).color(AGENT).size(12.5);
+                    let request = RichText::new(&approval.request).color(AGENT).size(TEXT_SECONDARY);
                     ui.add(Label::new(request).truncate().selectable(false));
                 });
             });
         });
         ui.add_space(4.0);
     }
-    ui.separator();
+    design::divider(ui);
 }
 
 fn contents(ui: &mut Ui, inbox: &Inbox, filter: Id, actions: &mut Vec<Action>) {
@@ -95,21 +93,18 @@ fn contents(ui: &mut Ui, inbox: &Inbox, filter: Id, actions: &mut Vec<Action>) {
     // Title and filter only: the UI font may be a wide monospace one, so bulk actions sit in a
     // footer instead of crowding this row.
     ui.horizontal(|ui| {
-        ui.label(RichText::new("Notifications").strong().size(13.0));
+        ui.label(RichText::new("Notifications").strong().size(TEXT_BODY));
         right_aligned(ui, |ui| {
-            if ui.selectable_label(unread_only, RichText::new("Unread").size(12.0)).clicked() {
+            if ui.selectable_label(unread_only, RichText::new("Unread").size(TEXT_CAPTION)).clicked() {
                 unread_only = !unread_only;
                 ui.data_mut(|d| d.insert_temp(filter, unread_only));
             }
         });
     });
-    ui.separator();
+    design::divider(ui);
     let notices: Vec<&Notice> = inbox.notices().iter().rev().filter(|n| !unread_only || !n.read).collect();
     if notices.is_empty() {
-        let text = if unread_only { "No unread notifications" } else { "Nothing yet" };
-        ui.add_space(14.0);
-        ui.vertical_centered(|ui| ui.label(RichText::new(text).color(muted(ui)).size(12.5)));
-        ui.add_space(14.0);
+        design::empty_state(ui, if unread_only { "No unread notifications" } else { "Nothing yet" });
         return;
     }
     let now = now_secs();
@@ -122,10 +117,10 @@ fn contents(ui: &mut Ui, inbox: &Inbox, filter: Id, actions: &mut Vec<Action>) {
             }
         }
     });
-    ui.separator();
+    design::divider(ui);
     ui.horizontal(|ui| {
         let link = |ui: &mut Ui, text: &str| {
-            ui.add(Button::new(RichText::new(text).color(muted(ui)).size(12.0)).frame(false))
+            ui.add(Button::new(RichText::new(text).color(muted(ui)).size(TEXT_CAPTION)).frame(false))
         };
         if link(ui, "Mark all read").clicked() {
             actions.push(Action::MarkNoticesRead);
@@ -141,7 +136,11 @@ fn contents(ui: &mut Ui, inbox: &Inbox, filter: Id, actions: &mut Vec<Action>) {
 fn notice_row(ui: &mut Ui, notice: &Notice, now: u64) -> Response {
     let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_HEIGHT), Sense::click());
     if response.hovered() {
-        ui.painter().rect_filled(rect, 6.0, ui.visuals().widgets.hovered.weak_bg_fill);
+        ui.painter().rect_filled(
+            rect,
+            CornerRadius::same(RADIUS_ROW),
+            ui.visuals().widgets.hovered.weak_bg_fill,
+        );
     }
     let color = agent_status::color(ui, notice.status);
     let dot = if notice.read { color.gamma_multiply(0.4) } else { color };
@@ -152,13 +151,17 @@ fn notice_row(ui: &mut Ui, notice: &Notice, now: u64) -> Response {
     child.spacing_mut().item_spacing.y = 2.0;
     let primary = if notice.read { ui.visuals().text_color().gamma_multiply(0.75) } else { color };
     child.horizontal(|ui| {
-        ui.add(Label::new(RichText::new(ago(notice.at, now)).color(muted(ui)).size(11.0)).selectable(false));
+        ui.add(
+            Label::new(RichText::new(ago(notice.at, now)).color(muted(ui)).size(TEXT_CAPTION))
+                .selectable(false),
+        );
         ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
             ui.add(
-                Label::new(RichText::new(&notice.label).strong().color(primary).size(12.5)).selectable(false),
+                Label::new(RichText::new(&notice.label).strong().color(primary).size(TEXT_SECONDARY))
+                    .selectable(false),
             );
             ui.add(
-                Label::new(RichText::new(&notice.title).color(muted(ui)).size(12.0))
+                Label::new(RichText::new(&notice.title).color(muted(ui)).size(TEXT_SECONDARY))
                     .truncate()
                     .selectable(false),
             );
@@ -167,7 +170,9 @@ fn notice_row(ui: &mut Ui, notice: &Notice, now: u64) -> Response {
     if !notice.detail.is_empty() {
         let detail = ui.visuals().text_color().gamma_multiply(if notice.read { 0.6 } else { 0.85 });
         child.add(
-            Label::new(RichText::new(&notice.detail).color(detail).size(12.0)).truncate().selectable(false),
+            Label::new(RichText::new(&notice.detail).color(detail).size(TEXT_SECONDARY))
+                .truncate()
+                .selectable(false),
         );
     }
     response

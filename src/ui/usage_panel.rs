@@ -1,12 +1,10 @@
 //! Subscription usage: a gauge in the top bar that opens a card with one bar per limit window,
 //! like "Session · 85% left · Resets in 1h 25m".
 
-use eframe::egui::{
-    Align, Color32, CornerRadius, Layout, Popup, PopupCloseBehavior, Response, RichText, Sense, Shape,
-    Stroke, Ui, pos2, vec2,
-};
+use eframe::egui::{Color32, CornerRadius, Response, RichText, Sense, Shape, Stroke, Ui, pos2, vec2};
 
 use super::claude_icon;
+use super::design::{self, TEXT_BODY, TEXT_SECONDARY, TEXT_TITLE};
 use super::widgets::{GOOD, ago, icon_button_frame, muted, right_aligned};
 use crate::claude_status_line::{StatusLine, Window, duration, now};
 use crate::model::AppState;
@@ -21,21 +19,18 @@ const CRITICAL_AT: f64 = 85.0;
 pub fn gauge(ui: &mut Ui, state: &AppState, limits: Option<&StatusLine>, context: Option<f64>) {
     let peak = limits.map_or(0.0, StatusLine::peak_used);
     let response = gauge_icon(ui, state, limits.map(|_| peak)).on_hover_text("Claude usage");
-    Popup::from_toggle_button_response(&response)
-        .layout(Layout::top_down(Align::Min))
-        .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
-        .width(WIDTH)
-        .show(|ui| contents(ui, state, limits, context));
+    design::popup(ui, &response, WIDTH, |ui| contents(ui, state, limits, context));
 }
 
 fn contents(ui: &mut Ui, state: &AppState, limits: Option<&StatusLine>, context: Option<f64>) {
     ui.spacing_mut().item_spacing.y = 6.0;
+    ui.add_space(4.0);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
         claude_icon::icon(ui, 16.0);
-        ui.label(RichText::new("Claude Code").size(15.0).strong());
+        ui.label(RichText::new("Claude Code").size(TEXT_TITLE).strong());
     });
-    ui.add_space(6.0);
+    ui.add_space(8.0);
     let now = now();
     match limits {
         Some(limits) => {
@@ -45,17 +40,16 @@ fn contents(ui: &mut Ui, state: &AppState, limits: Option<&StatusLine>, context:
         }
         None => {
             let text = "Usage shows after the first reply in a Claude pane (Pro and Max plans).";
-            ui.label(RichText::new(text).color(muted(ui)).size(12.5));
+            ui.label(RichText::new(text).color(muted(ui)).size(TEXT_SECONDARY));
         }
     }
     if let Some(context) = context {
         bar_row(ui, state, "Context window", &format!("{:.0}% used", context), "this pane", context);
     }
     if let Some(limits) = limits {
-        ui.add_space(4.0);
-        ui.separator();
+        design::divider(ui);
         let updated = format!("Updated {} ago", ago(limits.reported_at, now)).replace("now ago", "just now");
-        ui.label(RichText::new(updated).color(muted(ui)).size(12.0));
+        ui.label(RichText::new(updated).color(muted(ui)).size(TEXT_SECONDARY));
     }
 }
 
@@ -70,10 +64,10 @@ fn limit_row(ui: &mut Ui, state: &AppState, window: &Window, now: u64) {
 fn bar_row(ui: &mut Ui, state: &AppState, label: &str, amount: &str, note: &str, used: f64) {
     let color = level_color(state, used);
     ui.horizontal(|ui| {
-        ui.label(RichText::new(label).size(13.5));
+        ui.label(RichText::new(label).size(TEXT_BODY));
         right_aligned(ui, |ui| {
-            ui.label(RichText::new(note).color(muted(ui)).size(12.5));
-            ui.label(RichText::new(amount).color(color).size(13.0).strong());
+            ui.label(RichText::new(note).color(muted(ui)).size(TEXT_SECONDARY));
+            ui.label(RichText::new(amount).color(color).size(TEXT_SECONDARY).strong());
         });
     });
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), BAR_HEIGHT), Sense::hover());
