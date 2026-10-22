@@ -2,8 +2,8 @@
 //! like "Session · 85% left · Resets in 1h 25m".
 
 use eframe::egui::{
-    Color32, CornerRadius, Popup, PopupCloseBehavior, Response, RichText, Sense, Shape, Stroke, Ui, pos2,
-    vec2,
+    Align, Color32, CornerRadius, Layout, Popup, PopupCloseBehavior, Response, RichText, Sense, Shape,
+    Stroke, Ui, pos2, vec2,
 };
 
 use super::claude_icon;
@@ -22,6 +22,7 @@ pub fn gauge(ui: &mut Ui, state: &AppState, limits: Option<&StatusLine>, context
     let peak = limits.map_or(0.0, StatusLine::peak_used);
     let response = gauge_icon(ui, state, limits.map(|_| peak)).on_hover_text("Claude usage");
     Popup::from_toggle_button_response(&response)
+        .layout(Layout::top_down(Align::Min))
         .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
         .width(WIDTH)
         .show(|ui| contents(ui, state, limits, context));

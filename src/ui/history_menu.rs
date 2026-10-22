@@ -11,14 +11,18 @@ use crate::model::{Repo, now_secs};
 
 const POPUP_WIDTH: f32 = 400.0;
 const ROW_HEIGHT: f32 = 40.0;
+/// Rows shown before the list scrolls.
+const MAX_ROWS: usize = 16;
 /// Transcript sizes at which one more activity dot lights up.
 const DOT_STEPS: [u64; 7] = [16 << 10, 64 << 10, 256 << 10, 1 << 20, 4 << 20, 16 << 20, 64 << 20];
 
 /// Clock button that lists the repo's past Claude conversations; picking one resumes it in a tab.
 pub fn show(ui: &mut Ui, repo: &Repo, history: &ClaudeHistory, actions: &mut Vec<Action>) {
     let button = clock_button(ui).on_hover_text("Claude conversation history");
+    // The button sits in a right-to-left row; the popup must not inherit that layout.
     Popup::from_toggle_button_response(&button)
         .align(RectAlign::BOTTOM_END)
+        .layout(Layout::top_down(Align::Min))
         .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
         .width(POPUP_WIDTH)
         .show(|ui| {
@@ -37,7 +41,10 @@ pub fn show(ui: &mut Ui, repo: &Repo, history: &ClaudeHistory, actions: &mut Vec
                 }
                 Some(sessions) => {
                     let now = now_secs();
-                    ScrollArea::vertical().max_height(380.0).show(ui, |ui| {
+                    // As tall as the window allows, up to MAX_ROWS rows.
+                    let room = ui.ctx().content_rect().bottom() - ui.min_rect().top() - 24.0;
+                    let max_height = room.clamp(ROW_HEIGHT * 4.0, ROW_HEIGHT * MAX_ROWS as f32);
+                    ScrollArea::vertical().max_height(max_height).show(ui, |ui| {
                         for session in sessions.iter() {
                             if session_row(ui, session, now).clicked() {
                                 actions.push(Action::ResumeSession {
@@ -75,7 +82,10 @@ fn session_row(ui: &mut Ui, session: &Session, now: u64) -> Response {
         when => format!("{when} ago"),
     };
     child.add(Label::new(RichText::new(when).size(12.0).color(muted(&child))).selectable(false));
-    child.add(Label::new(RichText::new(&session.title).size(13.5)).truncate().selectable(false));
+    // The title takes what's left, from the left edge, truncated with an ellipsis.
+    child.with_layout(Layout::left_to_right(Align::Center), |ui| {
+        ui.add(Label::new(RichText::new(&session.title).size(13.5)).truncate().selectable(false));
+    });
     response
 }
 

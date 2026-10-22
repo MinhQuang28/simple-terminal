@@ -22,6 +22,7 @@ pub fn bell(ui: &mut Ui, state: &AppState, inbox: &Inbox, pool: &SessionPool, ac
         bell_icon(ui, inbox.unread() + approvals.len(), !approvals.is_empty()).on_hover_text("Notifications");
     let filter = Id::unique("inbox-unread-only");
     Popup::from_toggle_button_response(&response)
+        .layout(Layout::top_down(Align::Min))
         .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
         .width(WIDTH)
         .show(|ui| {
