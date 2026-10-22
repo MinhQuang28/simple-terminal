@@ -23,6 +23,7 @@ use crate::inbox::{Inbox, Source};
 use crate::library::Prompt;
 use crate::library_cache::LibraryCache;
 use crate::model::{AppState, PaneKind, Tab, now_secs};
+use crate::notification_permission::NotificationPermission;
 use crate::pr_status::PrWatcher;
 use crate::session_pool::SessionPool;
 use crate::shell_env;
@@ -76,6 +77,7 @@ pub struct RepodeckApp {
     quit_confirmed: bool,
     settings_page: Page,
     fonts: FontCatalog,
+    notification_permission: NotificationPermission,
     /// The font family currently installed in egui; `None` until the first install.
     applied_font: Option<(String, String, u32)>,
     last_save: Instant,
@@ -137,6 +139,7 @@ impl RepodeckApp {
             quit_confirmed: false,
             settings_page: Page::default(),
             fonts,
+            notification_permission: NotificationPermission::new(ctx.clone()),
             applied_font: None,
             last_save: Instant::now(),
             saver: Saver::spawn(),
@@ -253,6 +256,7 @@ impl RepodeckApp {
             &mut self.settings_page,
             &mut self.state.settings,
             &self.fonts,
+            &self.notification_permission,
         );
         if changes.theme {
             self.state.settings.theme.apply_to(&ctx);

@@ -70,6 +70,10 @@ pub struct Settings {
     /// Run instead of `agent_command` when an agent pane is restored after restart.
     pub agent_resume_command: String,
     pub agent_renderer: AgentRenderer,
+    /// Post system notifications for panes the user isn't watching.
+    pub notifications: bool,
+    /// Play the system alert sound with each notification.
+    pub notification_sound: bool,
     /// Command for ⌘-clicked file paths, with `{path}`, `{line}` and `{col}` placeholders; empty
     /// opens the built-in editor.
     pub external_editor: String,
@@ -97,6 +101,8 @@ impl Default for Settings {
             agent_command: "claude".into(),
             agent_resume_command: "claude --continue || claude".into(),
             agent_renderer: AgentRenderer::default(),
+            notifications: true,
+            notification_sound: true,
             external_editor: String::new(),
             prompts: Vec::new(),
         }

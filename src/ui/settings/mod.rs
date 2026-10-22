@@ -2,6 +2,7 @@ mod agent;
 mod appearance;
 mod controls;
 mod nav;
+mod notifications;
 mod terminal;
 mod typography;
 
@@ -9,6 +10,7 @@ use eframe::egui::{self, CentralPanel, Frame, Key, Margin, Panel, RichText, Scro
 
 use crate::font_catalog::FontCatalog;
 use crate::model::Settings;
+use crate::notification_permission::NotificationPermission;
 use crate::ui::claude_icon;
 use crate::ui::widgets::muted;
 
@@ -19,6 +21,7 @@ pub enum Page {
     #[default]
     Appearance,
     Typography,
+    Notifications,
     Terminal,
     Agents,
 }
@@ -28,6 +31,7 @@ impl Page {
         match self {
             Page::Appearance => "Appearance",
             Page::Typography => "Typography",
+            Page::Notifications => "Notifications",
             Page::Terminal => "Terminal",
             Page::Agents => "Agents",
         }
@@ -37,6 +41,7 @@ impl Page {
         match self {
             Page::Appearance => "Theme, colors and the overall look of Repodeck.",
             Page::Typography => "Fonts and spacing for terminals, the editor and the app.",
+            Page::Notifications => "System notifications and sounds when a pane needs you.",
             Page::Terminal => "Cursor and shell behaviour of terminal panes.",
             Page::Agents => "Commands Repodeck runs for Claude tabs.",
         }
@@ -60,6 +65,7 @@ pub fn show(
     page: &mut Page,
     settings: &mut Settings,
     fonts: &FontCatalog,
+    permission: &NotificationPermission,
 ) -> Changes {
     let before = settings.clone();
     let window_bg = settings.theme.window_background();
@@ -88,6 +94,7 @@ pub fn show(
                     match page {
                         Page::Appearance => appearance::show(ui, settings),
                         Page::Typography => typography::show(ui, settings, fonts),
+                        Page::Notifications => notifications::show(ui, settings, permission),
                         Page::Terminal => terminal::show(ui, settings),
                         Page::Agents => agent::show(ui, settings),
                     }
@@ -120,6 +127,7 @@ fn page_icon(ui: &mut Ui, page: Page, size: f32) {
     let (glyph, font) = match page {
         Page::Appearance => ("◐", egui::FontId::proportional(size * 0.8)),
         Page::Typography => ("Aa", egui::FontId::proportional(size * 0.7)),
+        Page::Notifications => ("🔔", egui::FontId::proportional(size * 0.8)),
         Page::Terminal => (">_", egui::FontId::monospace(size * 0.65)),
         Page::Agents => return claude_icon::icon(ui, size * 0.6),
     };

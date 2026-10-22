@@ -30,6 +30,7 @@ mod inbox;
 mod library;
 mod library_cache;
 mod model;
+mod notification_permission;
 mod pane_layout;
 mod pr_status;
 mod session_pool;

@@ -1,15 +1,27 @@
 use std::sync::Once;
 use std::thread;
 
-/// Posts a system notification; the app's bundle identity is used when it runs from a bundle.
-pub fn notify(title: &str, body: &str) {
+/// The system alert sound, as the macOS notification API names it.
+#[cfg(target_os = "macos")]
+const SOUND_NAME: &str = "NSUserNotificationDefaultSoundName";
+#[cfg(not(target_os = "macos"))]
+const SOUND_NAME: &str = "message-new-instant";
+
+/// Posts a system notification, with the system alert sound when `sound`; the app's bundle
+/// identity is used when it runs from a bundle.
+pub fn notify(title: &str, body: &str, sound: bool) {
     static APP: Once = Once::new();
     APP.call_once(|| {
         let _ = notify_rust::set_application("dev.repodeck.app");
     });
     let (title, body) = (title.to_string(), body.to_string());
     thread::spawn(move || {
-        if let Err(err) = notify_rust::Notification::new().summary(&title).body(&body).show() {
+        let mut notification = notify_rust::Notification::new();
+        notification.summary(&title).body(&body);
+        if sound {
+            notification.sound_name(SOUND_NAME);
+        }
+        if let Err(err) = notification.show() {
             log::warn!("Notification failed: {err}");
         }
     });

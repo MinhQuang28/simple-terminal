@@ -90,6 +90,19 @@ mod tests {
         assert_eq!(defs.font_data["terminal-regular"].tweak.scale, 1.0, "the terminal keeps its own size");
     }
 
+    /// Icons the interface draws as text must exist in a bundled font, or they show as boxes.
+    #[test]
+    fn bundled_fonts_cover_the_interface_icons() {
+        let defs = FontDefinitions::default();
+        for icon in ['🔔', '🗐'] {
+            let covered = defs.font_data.values().any(|data| {
+                ttf_parser::Face::parse((*data.font).as_ref(), data.index)
+                    .is_ok_and(|face| face.glyph_index(icon).is_some())
+            });
+            assert!(covered, "no bundled font has {icon:?}");
+        }
+    }
+
     #[test]
     fn scaling_without_an_interface_font_tweaks_eguis_font() {
         let mut defs = FontDefinitions::default();

@@ -48,9 +48,10 @@ impl RepodeckApp {
                 }
                 Report::Message(text) => (AgentStatus::NeedsInput, "Notification".to_string(), text),
             };
-            if !watching && self.inbox.allow_system_notice(source.pane) {
+            let settings = &self.state.settings;
+            if !watching && settings.notifications && self.inbox.allow_system_notice(source.pane) {
                 let body = if detail.is_empty() { &tab_title } else { &detail };
-                attention::notify(&format!("{repo_name} · {label}"), body);
+                attention::notify(&format!("{repo_name} · {label}"), body, settings.notification_sound);
             }
             self.inbox.push(source, status, &label, format!("{repo_name} · {tab_title}"), detail);
         }
@@ -135,7 +136,9 @@ impl RepodeckApp {
             Some(report) => self.deliver(vec![report], false, &HashSet::new()),
             None => {
                 let nowhere = Source { repo: Uuid::nil(), tab: Uuid::nil(), pane: Uuid::nil() };
-                attention::notify("Repodeck", &text);
+                if self.state.settings.notifications {
+                    attention::notify("Repodeck", &text, self.state.settings.notification_sound);
+                }
                 self.inbox.push(nowhere, AgentStatus::NeedsInput, "Notification", String::new(), text);
             }
         }

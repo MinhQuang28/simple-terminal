@@ -11,7 +11,7 @@ const TRAFFIC_LIGHTS_HEIGHT: f32 = 40.0;
 const ITEM_HEIGHT: f32 = 34.0;
 
 const GROUPS: &[(&str, &[Page])] = &[
-    ("General", &[Page::Appearance, Page::Typography]),
+    ("General", &[Page::Appearance, Page::Typography, Page::Notifications]),
     ("Terminal", &[Page::Terminal]),
     ("AI", &[Page::Agents]),
 ];
