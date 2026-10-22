@@ -22,6 +22,8 @@ pub struct Session {
     pub title: String,
     /// Unix seconds of the last write to the transcript.
     pub modified: u64,
+    /// Transcript size in bytes, a rough measure of how long the conversation ran.
+    pub size: u64,
 }
 
 struct Entry {
@@ -107,7 +109,7 @@ fn scan(repo: &Path, titles: &Mutex<HashMap<PathBuf, CachedTitle>>) -> Vec<Sessi
                 return None;
             }
             let title = cached_title(titles, path, (len, modified))?;
-            Some(Session { id, title, modified })
+            Some(Session { id, title, modified, size: len })
         })
         .take(MAX_SESSIONS)
         .collect()
