@@ -18,6 +18,9 @@ pub const SYSTEM_FONT_PATH: &str = "/System/Library/Fonts/SFNSMono.ttf";
 /// macOS's interface font (San Francisco), hidden from font lists under the name ".SF NS".
 pub const SYSTEM_UI_FONT: &str = "SF Pro";
 pub const SYSTEM_UI_FONT_PATH: &str = "/System/Library/Fonts/SFNS.ttf";
+/// Apple's downloadable static SF Pro at the text optical size. The system file above is a
+/// variable font whose default instance is the display size, so this reads better when installed.
+pub const SYSTEM_UI_TEXT_FONT: &str = "SF Pro Text";
 
 /// Every lowercase Vietnamese letter with a diacritic. Fonts missing any are left out of the
 /// catalog, since a fallback glyph mid-word looks broken.

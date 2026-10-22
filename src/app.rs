@@ -16,7 +16,7 @@ use crate::editor::Buffers;
 use crate::file_drag::FileDrag;
 use crate::file_tree::FileTree;
 use crate::finder_service::{self, FolderRequest};
-use crate::font_catalog::FontCatalog;
+use crate::font_catalog::{self, FontCatalog};
 use crate::font_install::{self, FontChoice};
 use crate::git_watcher::GitWatcher;
 use crate::inbox::{Inbox, Source};
@@ -278,12 +278,7 @@ impl RepodeckApp {
         if self.applied_font.as_ref() == Some(&key) {
             return;
         }
-        let wanted = [&settings.font_family, &settings.ui_font_family];
-        let fonts = match self.fonts.fonts() {
-            Some(fonts) => fonts,
-            None if wanted.iter().all(|f| f.is_empty()) => Vec::new(),
-            None => return,
-        };
+        let Some(fonts) = self.fonts.fonts() else { return };
         let find = |family: &String| {
             let entry = fonts.iter().find(|f| &f.family == family);
             if !family.is_empty() && entry.is_none() {
@@ -291,9 +286,11 @@ impl RepodeckApp {
             }
             entry
         };
+        let ui = find(&settings.ui_font_family)
+            .or_else(|| fonts.iter().find(|f| f.family == font_catalog::SYSTEM_UI_TEXT_FONT));
         let choice = FontChoice {
             terminal: find(&settings.font_family),
-            ui: find(&settings.ui_font_family),
+            ui,
             ui_scale: font_install::ui_scale(settings.ui_font_size),
         };
         font_install::apply(ctx, choice);
