@@ -4,9 +4,10 @@ use eframe::egui::{
 };
 
 use super::Action;
+use super::agent_icon;
 use super::agent_status;
-use super::claude_icon::{self, ICON_SIZE};
-use super::sidebar::{tab_busy, tab_menu, tab_status, tab_title};
+use super::claude_icon::ICON_SIZE;
+use super::sidebar::{tab_agent, tab_busy, tab_menu, tab_status, tab_title};
 use super::widgets::{
     accent, ago, avatar, glyph_button, menu_icon, muted, right_aligned, row_sized, spinner, tag,
 };
@@ -63,8 +64,9 @@ fn tab_row(
     actions: &mut Vec<Action>,
 ) {
     // The branch row above already names the branch, so idle tabs show what runs in them.
+    let agent = tab_agent(tab, pool);
     let fallback = match tab.kind() {
-        PaneKind::Agent => "Claude",
+        PaneKind::Agent => agent.label(),
         PaneKind::Shell => "Terminal",
     };
     let title = tab_title(tab, pool, fallback);
@@ -82,7 +84,7 @@ fn tab_row(
             }
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                 match tab.kind() {
-                    PaneKind::Agent => claude_icon::icon(ui, ICON_SIZE),
+                    PaneKind::Agent => agent_icon::icon(ui, ICON_SIZE, agent),
                     PaneKind::Shell => terminal_icon(ui),
                 }
                 let color = if selected {

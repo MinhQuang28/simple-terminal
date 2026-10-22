@@ -32,6 +32,14 @@ pub enum Agent {
 }
 
 impl Agent {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Claude => "Claude",
+            Self::Codex => "Codex",
+            Self::OpenCode => "OpenCode",
+        }
+    }
+
     /// The agent a command token names, by its file name.
     pub fn of(token: &str) -> Option<Self> {
         match Path::new(token).file_name()?.to_str()? {
@@ -41,6 +49,11 @@ impl Agent {
             _ => None,
         }
     }
+}
+
+/// The first agent `command` starts, if any.
+pub fn agent_of(command: &str) -> Option<Agent> {
+    command_tokens(command).find_map(|(start, token)| Agent::of(token).filter(|_| start))
 }
 
 /// Whether `command` starts `agent` anywhere in its pipeline.
@@ -129,6 +142,8 @@ mod tests {
         assert_eq!(with_hooks("opencode -m gpt"), "opencode -m gpt");
         assert!(uses("claude || opencode", Agent::OpenCode));
         assert!(!uses("echo opencode", Agent::OpenCode));
+        assert_eq!(agent_of("repodeck run-codex codex resume --last || codex"), Some(Agent::Codex));
+        assert_eq!(agent_of("echo hi"), None);
     }
 
     #[test]

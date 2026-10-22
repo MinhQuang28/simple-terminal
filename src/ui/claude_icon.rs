@@ -24,11 +24,6 @@ const RAYS: &[[f32; 2]] = &[
 const RAY_BASE_WIDTH: f32 = 0.16;
 const RAY_TIP_WIDTH: f32 = 0.1;
 
-/// Width of the icon drawn `height` points tall.
-pub fn width(height: f32) -> f32 {
-    height
-}
-
 /// Paints the starburst centered in `rect`, as vector shapes so it stays crisp at any size.
 pub fn paint(painter: &Painter, rect: Rect) {
     let radius = rect.width().min(rect.height()) / 2.0;

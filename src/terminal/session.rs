@@ -104,6 +104,8 @@ pub struct TerminalSession {
     /// Last captured grid contents; kept so its buffer is reused.
     pub frame: Frame,
     agent: Option<AgentEvents>,
+    /// Which agent the pane was started with, for its icon and label.
+    agent_kind: Option<agent_launch::Agent>,
     status_change: Option<(AgentStatus, String)>,
     /// When the user started looking at this pane while its agent reported "Done".
     done_seen_at: Option<Instant>,
@@ -227,6 +229,10 @@ impl TerminalSession {
             theme: theme.clone(),
             frame: Frame::default(),
             agent,
+            agent_kind: match launch {
+                Launch::Agent(command) => agent_launch::agent_of(command),
+                _ => None,
+            },
             status_change: None,
             stale_summary: None,
             prompt_title: None,
@@ -299,6 +305,11 @@ impl TerminalSession {
 
     pub fn agent_session_id(&self) -> Option<&str> {
         self.agent.as_ref()?.session_id()
+    }
+
+    /// The agent the pane runs, when it was started as an agent pane.
+    pub fn agent_kind(&self) -> Option<agent_launch::Agent> {
+        self.agent_kind
     }
 
     /// The terminal title as the program set it.

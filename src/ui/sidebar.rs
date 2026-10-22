@@ -6,6 +6,7 @@ use super::chrome::window_drag_area;
 use super::sidebar_rows::repo_block;
 use super::widgets::{avatar, glyph_button, icon_button, menu_icon, muted, right_aligned, row_sized};
 use crate::agent_events::AgentStatus;
+use crate::agent_launch::Agent;
 use crate::file_drag::FileDrag;
 use crate::git_watcher::GitWatcher;
 use crate::model::{AppState, Project, Tab, now_secs};
@@ -144,6 +145,11 @@ pub fn tab_title(tab: &Tab, pool: &SessionPool, fallback: &str) -> String {
     let pane = tab.active_pane.or_else(|| tab.panes.first().map(|p| p.id));
     let live = pane.and_then(|id| pool.get(id)).and_then(|s| s.title());
     tab_title::display(tab, live, fallback)
+}
+
+/// Which agent the tab runs; Claude until its pane has started.
+pub fn tab_agent(tab: &Tab, pool: &SessionPool) -> Agent {
+    tab.panes.iter().filter_map(|p| pool.get(p.id)).find_map(|s| s.agent_kind()).unwrap_or(Agent::Claude)
 }
 
 /// Whether an agent in the tab reports it is working, or a pane is producing output the user
