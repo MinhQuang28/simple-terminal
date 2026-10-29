@@ -1,16 +1,22 @@
 use std::collections::HashMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use eframe::egui;
 use serde_json::Value;
 
-/// How often each repo's pull request is re-read from GitHub.
-const POLL_INTERVAL: Duration = Duration::from_secs(90);
+/// How often the worker looks for repos to re-read; a branch switch is noticed within this.
+const TICK: Duration = Duration::from_secs(30);
+/// Repos with an open pull request re-read it this often, so review and CI changes land soon.
+const PR_INTERVAL: Duration = Duration::from_secs(90);
+/// Repos without one are only asked again this often, unless their HEAD moves first: asking
+/// costs a `gh` process and a network round trip per repo.
+const NO_PR_INTERVAL: Duration = Duration::from_secs(10 * 60);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CheckState {
@@ -63,6 +69,12 @@ enum Msg {
     Refresh(PathBuf),
 }
 
+/// When a repo was last asked, and what its HEAD pointed at then.
+struct Checked {
+    at: Instant,
+    head: Option<String>,
+}
+
 /// Pull request state per repo, polled with the GitHub CLI on a background thread. Repos without
 /// a PR (or without `gh`) are recorded as `None` so the UI can tell "no PR" from "not checked".
 pub struct PrWatcher {
@@ -106,23 +118,34 @@ fn run(
         return;
     }
     let mut repos: Vec<PathBuf> = Vec::new();
+    let mut checked: HashMap<PathBuf, Checked> = HashMap::new();
     loop {
-        let due: Vec<PathBuf> = match rx.recv_timeout(POLL_INTERVAL) {
+        let forced: Vec<PathBuf> = match rx.recv_timeout(TICK) {
             Ok(Msg::Paths(paths)) => {
                 if let Ok(mut map) = shared.lock() {
                     map.retain(|p, _| paths.contains(p));
                 }
-                let new: Vec<_> = paths.iter().filter(|p| !repos.contains(p)).cloned().collect();
+                checked.retain(|p, _| paths.contains(p));
                 repos = paths;
-                new
+                Vec::new()
             }
             Ok(Msg::Refresh(path)) => vec![path],
-            Err(RecvTimeoutError::Timeout) => repos.clone(),
+            Err(RecvTimeoutError::Timeout) => Vec::new(),
             Err(RecvTimeoutError::Disconnected) => return,
         };
+        let now = Instant::now();
+        let mut due = Vec::new();
+        for path in &repos {
+            let head = head_ref(path);
+            let has_pr = shared.lock().ok().and_then(|map| map.get(path).cloned()).flatten().is_some();
+            if forced.contains(path) || is_due(checked.get(path), &head, has_pr, now) {
+                due.push((path.clone(), head));
+            }
+        }
         let mut changed = false;
-        for path in due {
+        for (path, head) in due {
             let pr = read_pr(&path).map(Arc::new);
+            checked.insert(path.clone(), Checked { at: Instant::now(), head });
             if let Ok(mut map) = shared.lock()
                 && map.get(&path) != Some(&pr)
             {
@@ -134,6 +157,28 @@ fn run(
             ctx.request_repaint();
         }
     }
+}
+
+/// Whether a repo needs asking: never asked, HEAD moved to another ref since, or the last answer
+/// aged past the interval for repos with or without a pull request.
+fn is_due(checked: Option<&Checked>, head: &Option<String>, has_pr: bool, now: Instant) -> bool {
+    let Some(checked) = checked else { return true };
+    let interval = if has_pr { PR_INTERVAL } else { NO_PR_INTERVAL };
+    checked.head != *head || now.duration_since(checked.at) >= interval
+}
+
+/// What `.git/HEAD` points at: the branch ref, or a commit id when detached. Read from disk so
+/// polling costs no git process. Linked worktrees keep a `.git` file naming their git dir.
+fn head_ref(repo: &Path) -> Option<String> {
+    let dot_git = repo.join(".git");
+    let git_dir = if dot_git.is_dir() {
+        dot_git
+    } else {
+        let link = fs::read_to_string(&dot_git).ok()?;
+        let dir = PathBuf::from(link.strip_prefix("gitdir:")?.trim());
+        if dir.is_absolute() { dir } else { repo.join(dir) }
+    };
+    fs::read_to_string(git_dir.join("HEAD")).ok().map(|s| s.trim().to_string())
 }
 
 fn gh_available() -> bool {
@@ -205,6 +250,34 @@ mod tests {
         assert_eq!(pr.failing().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["lint"]);
         assert_eq!(run_id(&pr.checks[0].url), Some("42"));
         assert_eq!(run_id("https://example.com"), None);
+    }
+
+    #[test]
+    fn asks_again_on_head_change_or_after_the_interval() {
+        let now = Instant::now();
+        let main = Some("ref: refs/heads/main".to_string());
+        let fresh = Checked { at: now, head: main.clone() };
+        assert!(is_due(None, &main, false, now));
+        assert!(!is_due(Some(&fresh), &main, false, now + Duration::from_secs(120)));
+        assert!(is_due(Some(&fresh), &main, true, now + Duration::from_secs(120)));
+        assert!(is_due(Some(&fresh), &main, false, now + NO_PR_INTERVAL));
+        assert!(is_due(Some(&fresh), &Some("ref: refs/heads/fix".into()), false, now));
+    }
+
+    #[test]
+    fn reads_head_of_repos_and_linked_worktrees() {
+        let root = std::env::temp_dir().join(format!("repodeck-pr-{}", uuid::Uuid::new_v4()));
+        let (repo, tree) = (root.join("repo"), root.join("tree"));
+        fs::create_dir_all(repo.join(".git/worktrees/tree")).unwrap();
+        fs::write(repo.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+        fs::write(repo.join(".git/worktrees/tree/HEAD"), "abc123\n").unwrap();
+        fs::create_dir_all(&tree).unwrap();
+        fs::write(tree.join(".git"), format!("gitdir: {}\n", repo.join(".git/worktrees/tree").display()))
+            .unwrap();
+        assert_eq!(head_ref(&repo).as_deref(), Some("ref: refs/heads/main"));
+        assert_eq!(head_ref(&tree).as_deref(), Some("abc123"));
+        assert_eq!(head_ref(&root), None);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

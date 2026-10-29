@@ -1,8 +1,6 @@
 use std::path::Path;
 use std::process::Command;
 
-use crate::worktree;
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChangedFile {
     /// One-letter status such as `M`, `A`, `D`, `R` or `U` (untracked).
@@ -14,6 +12,8 @@ pub struct ChangedFile {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct GitStatus {
     pub branch: String,
+    /// The commit HEAD points at.
+    pub oid: String,
     pub ahead: u32,
     pub behind: u32,
     pub changed: u32,
@@ -27,7 +27,8 @@ pub struct GitStatus {
 
 /// Runs `git status` for the repository at `path`; `None` when it isn't a repository or git
 /// isn't installed. Optional locks are skipped so a status check never rewrites the index,
-/// which would otherwise wake the file watcher again.
+/// which would otherwise wake the file watcher again. `merged` is left for the caller, as it
+/// costs several more git runs.
 pub fn read_status(path: &Path) -> Option<GitStatus> {
     let output = Command::new("git")
         .arg("-C")
@@ -38,15 +39,15 @@ pub fn read_status(path: &Path) -> Option<GitStatus> {
     if !output.status.success() {
         return None;
     }
-    let mut status = parse_porcelain(&String::from_utf8_lossy(&output.stdout));
-    status.merged = worktree::is_worktree(path) && worktree::is_merged(path);
-    Some(status)
+    Some(parse_porcelain(&String::from_utf8_lossy(&output.stdout)))
 }
 
 fn parse_porcelain(out: &str) -> GitStatus {
     let mut status = GitStatus::default();
     for line in out.lines() {
-        if let Some(head) = line.strip_prefix("# branch.head ") {
+        if let Some(oid) = line.strip_prefix("# branch.oid ") {
+            status.oid = oid.to_string();
+        } else if let Some(head) = line.strip_prefix("# branch.head ") {
             status.branch = head.to_string();
         } else if let Some(ab) = line.strip_prefix("# branch.ab ") {
             let mut parts = ab.split_whitespace();
@@ -84,7 +85,10 @@ mod tests {
         let out = "# branch.oid abc\n# branch.head main\n# branch.upstream origin/main\n\
                    # branch.ab +2 -1\n1 .M N... 100644 100644 100644 a b src/x.rs\n? new.txt\n";
         let s = parse_porcelain(out);
-        assert_eq!((s.branch.as_str(), s.ahead, s.behind, s.changed), ("main", 2, 1, 2));
+        assert_eq!(
+            (s.branch.as_str(), s.oid.as_str(), s.ahead, s.behind, s.changed),
+            ("main", "abc", 2, 1, 2)
+        );
         let files: Vec<_> = s.files.iter().map(|f| (f.status, f.path.as_str())).collect();
         assert_eq!(files, [('M', "src/x.rs"), ('U', "new.txt")]);
     }

@@ -31,6 +31,7 @@ mod file_tree;
 mod finder_service;
 mod font_catalog;
 mod font_install;
+mod git_ignore;
 mod git_status;
 mod git_watcher;
 mod inbox;

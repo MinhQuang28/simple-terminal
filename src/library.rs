@@ -1,4 +1,6 @@
 use std::fs;
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -34,6 +36,9 @@ pub struct McpServer {
 
 /// Disabling a skill renames its file so Claude Code no longer finds it; nothing is deleted.
 const DISABLED_SUFFIX: &str = ".disabled";
+/// Front matter sits at the top of `SKILL.md`, so only this much of it is read; the bodies run
+/// to hundreds of KB each.
+const FRONTMATTER_LIMIT: u64 = 8 * 1024;
 
 fn home() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
@@ -71,7 +76,11 @@ fn scan_skills(dir: &Path, project: bool) -> Vec<Skill> {
 
 /// `name:` and `description:` from a Markdown file's YAML front matter.
 fn frontmatter(file: &Path) -> (Option<String>, Option<String>) {
-    let Ok(text) = fs::read_to_string(file) else { return (None, None) };
+    let mut head = Vec::new();
+    if fs::File::open(file).and_then(|f| f.take(FRONTMATTER_LIMIT).read_to_end(&mut head)).is_err() {
+        return (None, None);
+    }
+    let text = String::from_utf8_lossy(&head);
     let Some(rest) = text.strip_prefix("---") else { return (None, None) };
     let Some(end) = rest.find("\n---") else { return (None, None) };
     let field = |key: &str| {
@@ -81,6 +90,33 @@ fn frontmatter(file: &Path) -> (Option<String>, Option<String>) {
         })
     };
     (field("name"), field("description"))
+}
+
+/// A hash of the modification times of everything `skills` and `mcp_servers` read, so a rescan
+/// can be skipped while nothing changed.
+pub fn fingerprint(repo: &Path) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    let mut stamp = |path: &Path| {
+        if let Ok(meta) = fs::metadata(path) {
+            (meta.modified().ok(), meta.len()).hash(&mut hasher);
+        }
+    };
+    let home = home();
+    let dirs = [Some(repo.join(".claude/skills")), home.as_ref().map(|h| h.join(".claude/skills"))];
+    for dir in dirs.into_iter().flatten() {
+        stamp(&dir);
+        for entry in fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let folder = entry.path();
+            stamp(&folder);
+            stamp(&folder.join("SKILL.md"));
+            stamp(&folder.join(format!("SKILL.md{DISABLED_SUFFIX}")));
+        }
+    }
+    stamp(&repo.join(".mcp.json"));
+    if let Some(home) = home {
+        stamp(&home.join(".claude.json"));
+    }
+    hasher.finish()
 }
 
 /// Toggles a skill by renaming its `SKILL.md`; returns the new file path.

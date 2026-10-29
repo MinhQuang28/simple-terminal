@@ -8,8 +8,8 @@ use eframe::egui;
 
 use crate::library::{self, McpServer, Skill};
 
-/// How long a repo's library is reused before it is rescanned in the background. The user's
-/// skills alone run to hundreds of KB of `SKILL.md`, too much to read every frame.
+/// How long a repo's library is reused before its files are checked again in the background.
+/// The check only compares modification times; the files are re-read when one of them changed.
 const REFRESH_AFTER: Duration = Duration::from_secs(3);
 
 /// Skills and MCP servers available to agents in a repo.
@@ -21,6 +21,8 @@ pub struct Library {
 
 struct Entry {
     scanned_at: Instant,
+    /// What the library was read from, as [`library::fingerprint`] saw it; `None` forces a read.
+    fingerprint: Option<u64>,
     library: Option<Arc<Library>>,
 }
 
@@ -42,9 +44,11 @@ impl LibraryCache {
         let Ok(mut entries) = self.entries.lock() else { return None };
         let stale = entries.get(repo).is_none_or(|e| e.scanned_at.elapsed() > REFRESH_AFTER);
         if stale {
-            let previous = entries.get(repo).and_then(|e| e.library.clone());
-            entries.insert(repo.to_path_buf(), Entry { scanned_at: Instant::now(), library: previous });
-            self.spawn_scan(repo.to_path_buf());
+            let previous = entries.get(repo);
+            let (fingerprint, library) =
+                previous.map_or((None, None), |e| (e.fingerprint, e.library.clone()));
+            entries.insert(repo.to_path_buf(), Entry { scanned_at: Instant::now(), fingerprint, library });
+            self.spawn_scan(repo.to_path_buf(), fingerprint);
         }
         entries.get(repo).and_then(|e| e.library.clone())
     }
@@ -55,16 +59,33 @@ impl LibraryCache {
         if let Ok(mut entries) = self.entries.lock() {
             for entry in entries.values_mut() {
                 entry.scanned_at = Instant::now() - REFRESH_AFTER - Duration::from_millis(1);
+                entry.fingerprint = None;
             }
         }
     }
 
-    fn spawn_scan(&self, repo: PathBuf) {
+    /// Re-reads the library unless its files still match `known`, in which case the cached one
+    /// is kept.
+    fn spawn_scan(&self, repo: PathBuf, known: Option<u64>) {
         let this = self.clone();
         let spawned = thread::Builder::new().name("library-scan".into()).spawn(move || {
+            let fingerprint = library::fingerprint(&repo);
+            let Ok(mut entries) = this.entries.lock() else { return };
+            let cached = entries.get(&repo).and_then(|e| e.library.clone());
+            if known == Some(fingerprint) && cached.is_some() {
+                entries
+                    .insert(repo, Entry { scanned_at: Instant::now(), fingerprint: known, library: cached });
+                return;
+            }
+            drop(entries);
             let library = Library { skills: library::skills(&repo), servers: library::mcp_servers(&repo) };
             if let Ok(mut entries) = this.entries.lock() {
-                entries.insert(repo, Entry { scanned_at: Instant::now(), library: Some(Arc::new(library)) });
+                let entry = Entry {
+                    scanned_at: Instant::now(),
+                    fingerprint: Some(fingerprint),
+                    library: Some(Arc::new(library)),
+                };
+                entries.insert(repo, entry);
             }
             this.ctx.request_repaint();
         });

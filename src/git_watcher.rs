@@ -7,9 +7,12 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use eframe::egui;
+use ignore::gitignore::Gitignore;
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 
+use crate::git_ignore;
 use crate::git_status::{GitStatus, read_status};
+use crate::worktree;
 
 /// Bursts of file events (a build, a checkout) collapse into one status run.
 const DEBOUNCE: Duration = Duration::from_millis(500);
@@ -76,8 +79,11 @@ impl Worker {
     fn run(self) {
         let mut watcher = self.watcher();
         let mut repos: Vec<PathBuf> = Vec::new();
+        let mut rules: HashMap<PathBuf, Option<Gitignore>> = HashMap::new();
         let mut checked: HashMap<PathBuf, Instant> = HashMap::new();
         let mut dirty: HashSet<PathBuf> = HashSet::new();
+        // Repos whose `.git` changed, so their merged state is worth recomputing.
+        let mut refs_changed: HashSet<PathBuf> = HashSet::new();
         let mut dirty_since: Option<Instant> = None;
         let mut last_full = Instant::now();
         loop {
@@ -86,11 +92,27 @@ impl Worker {
                 Ok(Msg::Paths(paths)) => {
                     rewatch(watcher.as_mut(), &repos, &paths);
                     repos = paths;
+                    rules.retain(|p, _| repos.contains(p));
+                    for repo in &repos {
+                        rules.entry(repo.clone()).or_insert_with(|| git_ignore::rules(repo));
+                    }
                     dirty.extend(repos.iter().cloned());
+                    refs_changed.extend(repos.iter().cloned());
                     false
                 }
                 Ok(Msg::Changed(paths)) => {
-                    dirty.extend(paths.into_iter().filter_map(|p| repo_for(&repos, &p)));
+                    for path in paths {
+                        let Some(repo) = repo_for(&repos, &path) else { continue };
+                        if git_ignore::is_rules_file(&path) {
+                            rules.insert(repo.clone(), git_ignore::rules(&repo));
+                        }
+                        if inside_git(&path) {
+                            refs_changed.insert(repo.clone());
+                        } else if git_ignore::is_ignored(rules.get(&repo).and_then(Option::as_ref), &path) {
+                            continue;
+                        }
+                        dirty.insert(repo);
+                    }
                     false
                 }
                 Err(RecvTimeoutError::Timeout) => true,
@@ -106,6 +128,7 @@ impl Worker {
             }
             if last_full.elapsed() >= FALLBACK_INTERVAL {
                 dirty.extend(repos.iter().cloned());
+                refs_changed.extend(repos.iter().cloned());
                 last_full = Instant::now();
             }
             let now = Instant::now();
@@ -118,7 +141,7 @@ impl Worker {
             for path in due {
                 dirty.remove(&path);
                 checked.insert(path.clone(), Instant::now());
-                changed |= self.refresh(&path);
+                changed |= self.refresh(&path, refs_changed.remove(&path));
             }
             if dirty.is_empty() {
                 dirty_since = None;
@@ -129,12 +152,19 @@ impl Worker {
         }
     }
 
-    fn refresh(&self, path: &Path) -> bool {
+    /// Re-reads the repo's status; `merged` is recomputed only when HEAD moved or `.git`
+    /// changed (`recheck_merged`), as it costs several git runs per linked worktree.
+    fn refresh(&self, path: &Path, recheck_merged: bool) -> bool {
         let Some(mut status) = read_status(path) else { return false };
+        let old = self.shared.lock().ok().and_then(|s| s.statuses.get(path).cloned());
+        status.merged = match &old {
+            Some(old) if !recheck_merged && old.oid == status.oid => old.merged,
+            _ => worktree::is_worktree(path) && worktree::is_merged(path),
+        };
         let Ok(mut shared) = self.shared.lock() else { return false };
-        if let Some(old) = shared.statuses.get(path) {
+        if let Some(old) = old {
             status.generation = old.generation;
-            if **old == status {
+            if *old == status {
                 return false;
             }
         }
@@ -187,6 +217,10 @@ fn affects_status(path: &Path) -> bool {
         inside_git = part == ".git";
     }
     !path.extension().is_some_and(|e| e == "lock")
+}
+
+fn inside_git(path: &Path) -> bool {
+    path.components().any(|c| c.as_os_str() == ".git")
 }
 
 /// The longest watched root containing `path`, so nested repos map to the inner one.
