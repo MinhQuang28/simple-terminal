@@ -30,6 +30,21 @@ fn whole_lines_move_the_grid_and_fractions_stay_pending() {
 }
 
 #[test]
+fn mouse_wheel_motion_eases_out_while_trackpad_motion_applies_at_once() {
+    let mut state = ScrollState::default();
+    let first = state.ease(10.0, 1.0 / 120.0);
+    assert!(first > 0.0 && first < 10.0, "a mouse notch spreads over frames, got {first}");
+    let mut total = first;
+    for _ in 0..60 {
+        total += state.ease(0.0, 1.0 / 120.0);
+    }
+    assert!((total - 10.0).abs() < 1e-3, "all motion arrives eventually, got {total}");
+    assert_eq!(state.queued, 0.0);
+    let mut trackpad = ScrollState { touch: true, ..ScrollState::default() };
+    assert_eq!(trackpad.ease(10.0, 1.0 / 120.0), 10.0);
+}
+
+#[test]
 fn clamps_at_bottom_and_top() {
     let mut term = term_with_history();
     let mut state = ScrollState::default();

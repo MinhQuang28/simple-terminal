@@ -1,10 +1,13 @@
+use std::path::PathBuf;
+use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
 use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::term::{Term, TermMode};
+use eframe::egui::emath::exponential_smooth_factor;
 use eframe::egui::{
     Align2, Color32, CornerRadius, Event, FontId, Id, MouseWheelUnit, Pos2, Rect, Sense, Stroke, StrokeKind,
-    Ui, pos2, vec2,
+    TouchPhase, Ui, pos2, vec2,
 };
 
 use super::render::Grid;
@@ -22,6 +25,50 @@ const MIN_THUMB: f32 = 24.0;
 const ARROW_BURST: f32 = 3.0;
 const ARROW_REFILL_PER_SEC: f32 = 40.0;
 
+/// Mouse wheels report at their own rate (an MX Master at 125 Hz), which beats against a 120 Hz
+/// display: some frames get two wheel events and others none. Wheel motion is eased out over
+/// this long so those frames move evenly. Trackpads deliver one delta per frame and skip it.
+const WHEEL_EASING_SECS: f32 = 0.04;
+
+/// `REPODECK_SCROLL_LOG=<file>` appends one line per frame while scrolling — frame time, the
+/// wheel events received with their phases, and their delta — to check whether a driver's events
+/// land evenly, one per frame, or straddle frame boundaries.
+static SCROLL_LOG: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
+    std::env::var_os("REPODECK_SCROLL_LOG").map(PathBuf::from).filter(|p| !p.as_os_str().is_empty())
+});
+
+fn log_frame(ui: &Ui) {
+    let Some(path) = SCROLL_LOG.as_ref() else { return };
+    ui.input(|i| {
+        let mut phases = String::new();
+        let mut raw = 0.0;
+        for event in &i.events {
+            if let Event::MouseWheel { phase, delta, .. } = event {
+                phases.push(match phase {
+                    TouchPhase::Start => 'S',
+                    TouchPhase::Move => 'M',
+                    TouchPhase::End => 'E',
+                    TouchPhase::Cancel => 'C',
+                });
+                raw += delta.y;
+            }
+        }
+        if phases.is_empty() && !i.is_scrolling() {
+            return;
+        }
+        let dt = i.stable_dt * 1000.0;
+        let line = format!(
+            "t={:.4} dt={dt:.2}ms events={} [{phases}] raw={raw:.1} smooth={:.1}\n",
+            i.time,
+            phases.len(),
+            i.smooth_scroll_delta.y
+        );
+        if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+            let _ = std::io::Write::write_all(&mut file, line.as_bytes());
+        }
+    });
+}
+
 /// Fractional scroll position between two grid lines, so trackpad scrolling moves pixel by pixel
 /// while the terminal itself only knows whole lines. Positive means scrolled up into history.
 #[derive(Clone, Copy, Default)]
@@ -31,6 +78,10 @@ pub struct ScrollState {
     pending: f32,
     /// Fractional lines of wheel movement not yet forwarded to the program as a whole event.
     carry: f32,
+    /// Wheel motion still being eased out over the next frames.
+    queued: f32,
+    /// A trackpad gesture is in progress; mice send no phases, so this stays false for them.
+    touch: bool,
     arrow_tokens: f32,
     arrows_refilled: Option<Instant>,
 }
@@ -44,6 +95,34 @@ impl ScrollState {
         let allowed = lines.unsigned_abs().min(self.arrow_tokens as u32) as i32;
         self.arrow_tokens -= allowed as f32;
         allowed * lines.signum()
+    }
+
+    /// Tracks trackpad gestures from the wheel events' phases.
+    fn note_phases(&mut self, ui: &Ui) {
+        ui.input(|i| {
+            for event in &i.events {
+                if let Event::MouseWheel { phase, .. } = event {
+                    match phase {
+                        TouchPhase::Start => self.touch = true,
+                        TouchPhase::End | TouchPhase::Cancel => self.touch = false,
+                        TouchPhase::Move => {}
+                    }
+                }
+            }
+        });
+    }
+
+    /// Queues `lines` of wheel motion and hands out this frame's share: all of it during a
+    /// trackpad gesture, otherwise eased so bursts and gaps between wheel reports even out.
+    fn ease(&mut self, lines: f32, dt: f32) -> f32 {
+        self.queued += lines;
+        let release = if self.touch || self.queued.abs() < 0.02 {
+            self.queued
+        } else {
+            self.queued * exponential_smooth_factor(0.9, WHEEL_EASING_SECS, dt)
+        };
+        self.queued -= release;
+        release
     }
 
     /// Pixel shift of the grid for the sub-line part of the scroll position.
@@ -91,13 +170,26 @@ impl ScrollState {
 /// terminal mid-parse (a streaming build, a resumed Claude conversation replaying), the lines are
 /// kept for the next frame so a wheel flick never stalls the window.
 pub fn scroll_scrollback(ui: &Ui, session: &TerminalSession, state: &mut ScrollState, lines: f32) {
-    let lines = state.pending + lines;
+    let dt = ui.input(|i| i.stable_dt).min(0.1);
+    let lines = state.pending + state.ease(lines, dt);
     state.pending = 0.0;
+    if state.queued != 0.0 {
+        ui.ctx().request_repaint();
+    }
     if lines == 0.0 {
         return;
     }
     match session.term.try_lock_unfair() {
-        Some(mut term) => state.scroll_lines(&mut term, lines, session.frame.band_rows),
+        Some(mut term) => {
+            let band = session.frame.band_rows;
+            state.scroll_lines(&mut term, lines, band);
+            // Motion still queued against the top or bottom would only pile up there.
+            let top = term.grid().history_size().saturating_sub(band);
+            let offset = term.grid().display_offset();
+            if (offset == 0 && state.queued < 0.0) || (offset >= top && state.queued > 0.0) {
+                state.queued = 0.0;
+            }
+        }
         None => {
             state.pending = lines;
             ui.ctx().request_repaint_after(Duration::from_millis(8));
@@ -114,6 +206,8 @@ pub fn handle_wheel(
     grid: Grid,
     pointer: Pos2,
 ) {
+    log_frame(ui);
+    state.note_phases(ui);
     let (mode, rows) = (session.frame.mode, session.frame.screen_lines);
     let forwarded = mode.intersects(TermMode::MOUSE_MODE)
         || mode.contains(TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL);
