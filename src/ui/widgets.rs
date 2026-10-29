@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use eframe::egui::containers::menu::MenuButton;
 use eframe::egui::{
-    Align, Align2, Button, Color32, CornerRadius, FontId, Layout, Rect, Response, RichText, Sense, Shape,
-    Stroke, Ui, UiBuilder, vec2,
+    Align, Align2, Button, Color32, CornerRadius, CursorIcon, FontId, Layout, Rect, Response, RichText,
+    Sense, Shape, Stroke, Ui, UiBuilder, vec2,
 };
 
 pub const AGENT: Color32 = Color32::from_rgb(0xe0, 0x8a, 0x5f);
@@ -46,6 +46,21 @@ pub fn icon_button(ui: &mut Ui, glyph: &str) -> Response {
         color,
     );
     response
+}
+
+/// Muted caption text that gains a rounded background and brighter text on hover, so it reads
+/// as clickable; used for footer links such as "Mark all read".
+pub fn text_button(ui: &mut Ui, text: &str, size: f32) -> Response {
+    let galley = ui.painter().layout_no_wrap(text.to_string(), FontId::proportional(size), muted(ui));
+    let (rect, response) = ui.allocate_exact_size(galley.size() + vec2(16.0, 8.0), Sense::click());
+    let color = if response.hovered() {
+        ui.painter().rect_filled(rect, CornerRadius::same(6), ui.visuals().widgets.hovered.weak_bg_fill);
+        ui.visuals().strong_text_color()
+    } else {
+        muted(ui)
+    };
+    ui.painter().galley(rect.center() - galley.size() / 2.0, galley, color);
+    response.on_hover_cursor(CursorIcon::PointingHand)
 }
 
 /// Small rounded label, e.g. an agent state or "merged".

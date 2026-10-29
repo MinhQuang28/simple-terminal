@@ -179,6 +179,7 @@ impl RepodeckApp {
             }
             Action::ReopenClosedTab => {
                 let Some((repo_id, tab)) = self.state.closed_tabs.pop() else { return };
+            Action::ToggleIgnoredFiles => self.state.show_ignored_files = !self.state.show_ignored_files,
                 let Some(repo) = self.state.repo_mut(repo_id) else { return };
                 repo.active_tab = Some(tab.id);
                 repo.tabs.push(tab);

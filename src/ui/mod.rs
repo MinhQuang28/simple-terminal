@@ -120,6 +120,8 @@ pub enum Action {
         tab: Uuid,
         path: Vec<usize>,
         index: usize,
+    /// Shows or hides gitignored files in the Files panel.
+    ToggleIgnoredFiles,
         delta: f32,
     },
     ReopenClosedTab,

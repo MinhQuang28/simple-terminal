@@ -112,7 +112,7 @@ pub fn show(ctx: &egui::Context, dialog: &mut Dialog) -> (bool, Option<DialogRes
             kit::title(ui, if index.is_some() { "Edit prompt" } else { "New prompt" });
             let name_edit = kit::field(ui, name, "Name", false);
             if index.is_none() && name.is_empty() {
-                name_edit.request_focus();
+                kit::focus_initially(ui, &name_edit);
             }
             kit::text_area(ui, text, "Prompt text; pasted into the pane as is.", 6);
             let footer = kit::footer(ui, &[("Save", Tone::Primary)], false);
@@ -163,7 +163,8 @@ pub fn show(ctx: &egui::Context, dialog: &mut Dialog) -> (bool, Option<DialogRes
         Dialog::RepoSetup { repo, command } => {
             kit::title(ui, "Worktree setup");
             kit::description(ui, "Runs in the first terminal of each new worktree, before the shell prompt.");
-            kit::field(ui, command, "e.g. npm install", true).request_focus();
+            let field = kit::field(ui, command, "e.g. npm install", true);
+            kit::focus_initially(ui, &field);
             let footer = kit::footer(ui, &[("Save", Tone::Primary)], true);
             result = footer
                 .action
@@ -189,7 +190,8 @@ fn name_form(
     if let Some(about) = about {
         kit::description(ui, about);
     }
-    kit::field(ui, name, hint, false).request_focus();
+    let field = kit::field(ui, name, hint, false);
+    kit::focus_initially(ui, &field);
     let footer = kit::footer(ui, &[(ok_label, Tone::Primary)], true);
     let name = name.trim().to_string();
     ((footer.action.is_some() && !name.is_empty()).then_some(name), footer.cancel)

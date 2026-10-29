@@ -8,8 +8,8 @@ use crate::model::Settings;
 use eframe::egui::text::{CCursor, CCursorRange, LayoutJob};
 use eframe::egui::text_edit::TextEditOutput;
 use eframe::egui::{
-    Align, Button, Color32, FontId, Frame, Galley, Id, Key, Label, Layout, Margin, Modifiers, Rect, RichText,
-    ScrollArea, TextBuffer, TextEdit, TextFormat, Ui, pos2,
+    Align, Button, Color32, FocusDirection, FontId, Frame, Galley, Id, Key, Label, Layout, Margin, Modifiers,
+    Rect, RichText, ScrollArea, TextBuffer, TextEdit, TextFormat, Ui, pos2,
 };
 
 /// Highlighting re-runs on every edit, so very large files are shown as plain text.
@@ -120,6 +120,11 @@ pub fn show(
     }
     if focus_text {
         ui.memory_mut(|m| m.request_focus(id));
+    }
+    // egui turns arrow/Tab presses on the frame after focus into a focus move before the editor's
+    // `lock_focus` filter exists; a code editor keeps those keys (as the terminal does).
+    if ui.memory(|m| m.has_focus(id)) {
+        ui.memory_mut(|m| m.move_focus(FocusDirection::None));
     }
     let row_height = ui.fonts_mut(|f| f.row_height(&font));
     let mut area = ScrollArea::both().id_salt(id.with("scroll")).auto_shrink(false);

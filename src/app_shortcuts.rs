@@ -18,7 +18,8 @@ impl RepodeckApp {
         let pressed = |mods, key| ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(mods, key)));
         let repo = self.state.selected_repo;
 
-        if pressed(cmd, Key::K) {
+        // ⌘K without Shift clears the focused terminal (handled by the pane).
+        if pressed(cmd_shift, Key::K) {
             self.palette = if self.palette.is_none() { Some(Palette::default()) } else { None };
         }
         if self.palette.is_some() {

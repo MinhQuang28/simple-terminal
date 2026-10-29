@@ -9,6 +9,7 @@ use super::links::{self, Link, Span};
 use super::render::Grid;
 use super::session::TerminalSession;
 use super::style::TerminalStyle;
+use crate::agent_launch::Agent;
 use crate::ui::widgets::{muted, spinner_at};
 
 const BLINK_INTERVAL: f64 = 0.53;
@@ -49,9 +50,11 @@ pub(super) fn hover_link(
             span
         }
     }?;
-    let underline = grid.cell_rect(span.row, span.cols.start, span.cols.len());
     let color = ui.visuals().hyperlink_color;
-    ui.painter().hline(underline.x_range(), underline.bottom() - 1.0, Stroke::new(1.0, color));
+    for (row, cols) in &span.rows {
+        let underline = grid.cell_rect(*row, cols.start, cols.len());
+        ui.painter().hline(underline.x_range(), underline.bottom() - 1.0, Stroke::new(1.0, color));
+    }
     ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
     if !response.clicked() {
         return None;
@@ -95,7 +98,8 @@ pub(super) fn starting_indicator(ui: &Ui, session: &TerminalSession, rect: egui:
     }
     let color = muted(ui);
     let font = egui::FontId::proportional(13.0);
-    let galley = ui.painter().layout_no_wrap("Starting Claude…".into(), font, color);
+    let text = format!("Starting {}…", session.agent_kind().map_or("Claude", Agent::label));
+    let galley = ui.painter().layout_no_wrap(text, font, color);
     let size = vec2(14.0 + 8.0 + galley.size().x, galley.size().y.max(14.0));
     let origin = rect.center() - size / 2.0;
     spinner_at(

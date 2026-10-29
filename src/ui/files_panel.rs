@@ -41,6 +41,7 @@ pub fn show(
     };
     let open_file =
         repo.active_tab.and_then(|id| repo.tabs.iter().find(|t| t.id == id)).and_then(|t| t.file.clone());
+    tree.set_show_ignored(state.show_ignored_files);
     ScrollArea::vertical().auto_shrink(false).show(ui, |ui| match state.side_panel {
         SidePanel::Files => directory(ui, tree, repo, &repo.path, 0, open_file.as_deref(), actions),
         SidePanel::Library => library_panel::show(ui, repo, &state.settings, library, actions),
@@ -101,7 +102,11 @@ fn directory(
             };
             ui.label(RichText::new(chevron).color(muted(ui)).monospace());
             file_icon(ui, entry.is_dir);
-            ui.add(Label::new(RichText::new(&entry.name).size(13.0)).truncate().selectable(false));
+            let mut name = RichText::new(&entry.name).size(13.0);
+            if entry.ignored {
+                name = name.color(muted(ui));
+            }
+            ui.add(Label::new(name).truncate().selectable(false));
         });
         if response.clicked() {
             if entry.is_dir {

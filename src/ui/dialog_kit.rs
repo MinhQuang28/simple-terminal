@@ -63,6 +63,14 @@ pub fn field(ui: &mut Ui, value: &mut String, hint: &str, code: bool) -> Respons
     ui.add(edit)
 }
 
+/// Puts the caret in `field` once the dialog has taken focus from the pane behind it. Asking
+/// every frame would reset egui's key filter and cancel IME composition on each keystroke.
+pub fn focus_initially(ui: &Ui, field: &Response) {
+    if ui.memory(|m| m.focused().is_none()) {
+        field.request_focus();
+    }
+}
+
 /// A full-width multi-line field.
 pub fn text_area(ui: &mut Ui, value: &mut String, hint: &str, rows: usize) -> Response {
     let edit = TextEdit::multiline(value)

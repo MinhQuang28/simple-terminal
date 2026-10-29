@@ -6,13 +6,15 @@ use alacritty_terminal::index::{Column, Line, Point, Side};
 use alacritty_terminal::selection::{Selection, SelectionType};
 use alacritty_terminal::term::TermMode;
 use eframe::egui::{
-    self, Event, EventFilter, Id, ImeEvent, Pos2, Response, Sense, Stroke, StrokeKind, Ui, vec2,
+    self, Event, EventFilter, FocusDirection, Id, ImeEvent, Pos2, Response, Sense, Stroke, StrokeKind, Ui,
+    vec2,
 };
 
 use super::find::{self, FindState};
 use super::input::{key_to_bytes, paste_bytes};
 use super::links::Link;
 use super::mouse::{self, MouseReportState};
+use super::prompt_click::PromptClick;
 use super::render::{self, CursorState, Grid};
 use super::render_cache::PaintCache;
 use super::scroll::{self, ScrollState};
@@ -32,6 +34,7 @@ const REFRESH_RETRY: Duration = Duration::from_millis(8);
 pub struct ViewState {
     scroll: ScrollState,
     mouse: MouseReportState,
+    prompt_click: PromptClick,
     find: FindState,
     preedit: String,
     /// Focus state last sent to the program, when it asked to be told.
@@ -68,6 +71,11 @@ pub fn show(
     cwd: &Path,
 ) -> Shown {
     let rect = ui.available_rect_before_wrap();
+    // egui already turned this frame's arrow/Tab presses into a focus move before the lock filter
+    // below could exist (it only takes effect one frame after focus); a terminal keeps those keys.
+    if ui.memory(|m| m.has_focus(id)) {
+        ui.memory_mut(|m| m.move_focus(FocusDirection::None));
+    }
     let response = ui.interact(rect, id, Sense::click_and_drag());
     ui.advance_cursor_after_rect(rect);
     if response.clicked() || response.drag_started() {
@@ -136,12 +144,23 @@ pub fn show(
         && !mouse::report(ui, &response, session, mode, grid, (cols, rows), &mut state.mouse)
     {
         handle_selection(&response, session, grid, (cols, rows));
+        // A plain click in an agent's prompt box moves its caret there, as in a text field.
+        if response.clicked()
+            && session.is_agent()
+            && !ui.input(|i| i.modifiers.any())
+            && let Some(pos) = response.interact_pointer_pos()
+        {
+            state.prompt_click.click(&session.frame, grid, pos, ui.input(|i| i.time));
+        }
         if style.copy_on_select
             && (response.drag_stopped() || response.double_clicked() || response.triple_clicked())
             && let Some(text) = session.term.lock().selection_to_string()
         {
             ui.ctx().copy_text(text);
         }
+    }
+    if state.prompt_click.step(session, ui.input(|i| i.time)) {
+        ui.ctx().request_repaint_after(REFRESH_RETRY);
     }
     exit_badge(ui, session, rect, style);
     starting_indicator(ui, session, rect);
@@ -193,6 +212,13 @@ fn handle_keyboard(
         let bytes = match event {
             Event::Text(_) if std::mem::take(&mut skip_text) => None,
             Event::Text(text) => Some(text.into_bytes()),
+            Event::Key { key: egui::Key::K, pressed: true, modifiers, .. }
+                if modifiers.command && !modifiers.shift && !modifiers.alt && !modifiers.ctrl =>
+            {
+                session.clear_scrollback();
+                state.scroll = ScrollState::default();
+                None
+            }
             Event::Key { key, pressed: true, modifiers, .. }
                 if modifiers.command
                     && !modifiers.ctrl
@@ -212,6 +238,13 @@ fn handle_keyboard(
                 let name = key.name();
                 let c = if modifiers.shift { name.to_uppercase() } else { name.to_lowercase() };
                 Some(format!("\x1b{c}").into_bytes())
+            }
+            // Backspace/Delete over a selection in an agent's prompt box erase what it covers.
+            Event::Key {
+                key: egui::Key::Backspace | egui::Key::Delete, pressed: true, modifiers, ..
+            } if modifiers.is_none() && state.prompt_click.erase_selection(session, ui.input(|i| i.time)) => {
+                typed = true;
+                None
             }
             Event::Key { key, pressed: true, modifiers, .. } => key_to_bytes(key, modifiers, mode),
             Event::Paste(text) => Some(paste_bytes(&text, mode)),

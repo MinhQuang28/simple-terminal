@@ -55,6 +55,11 @@ impl ShellEvents {
         &self.marks
     }
 
+    /// Forgets the prompts recorded so far, whose lines are gone once scrollback is cleared.
+    pub fn clear_marks(&mut self) {
+        self.marks.clear();
+    }
+
     /// Applies new events; `prompt_line` is where the next prompt is being drawn right now.
     /// Returns whether the shell printed a prompt.
     pub fn poll(&mut self, prompt_line: impl Fn() -> usize) -> bool {

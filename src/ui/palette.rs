@@ -17,7 +17,7 @@ const WIDTH: f32 = 560.0;
 const MAX_RESULTS: usize = 12;
 const TOP_OFFSET: f32 = 110.0;
 
-/// Command palette (⌘K): fuzzy-filters commands and tab switches, runs the chosen one. As
+/// Command palette (⇧⌘K): fuzzy-filters commands and tab switches, runs the chosen one. As
 /// quick open (⌘P) it filters the selected repo's files instead.
 #[derive(Default)]
 pub struct Palette {
@@ -107,6 +107,8 @@ impl Palette {
         if down && self.selected + 1 < ranked.len() {
             self.selected += 1;
         }
+        // The list is driven by ↑/↓ above; stop egui from also moving focus off the search field.
+        ctx.memory_mut(|m| m.move_focus(eframe::egui::FocusDirection::None));
         let area = Area::new(Id::unique("palette")).anchor(Align2::CENTER_TOP, vec2(0.0, TOP_OFFSET));
         let frame = design::surface_frame(&ctx.global_style().visuals, 0);
         let modal =
@@ -162,7 +164,11 @@ impl Palette {
                 .margin(vec2(0.0, 0.0))
                 .font(FontId::proportional(15.0)),
         );
-        edit.request_focus();
+        // Only until it has focus: asking every frame resets egui's key filter and cancels any
+        // IME composition, so a composing input method (e.g. Vietnamese) lost its text each frame.
+        if !edit.has_focus() {
+            edit.request_focus();
+        }
         edit.changed()
     }
 }

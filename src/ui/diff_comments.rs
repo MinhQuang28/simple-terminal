@@ -58,7 +58,10 @@ pub fn gutter(ui: &mut Ui, galley: &Arc<Galley>, file: &Path, comments: &mut Vec
         }
         ui.label(RichText::new(format!("Comment on line {}", line + 1)).color(muted(ui)).size(11.5));
         let edit = ui.add(TextEdit::multiline(&mut text).desired_rows(3).desired_width(f32::INFINITY));
-        edit.request_focus();
+        // Not every frame: that resets egui's key filter and cancels IME composition each frame.
+        if !edit.has_focus() {
+            edit.request_focus();
+        }
         let submit = ui.input(|i| i.modifiers.command && i.key_pressed(Key::Enter));
         let footer = kit::footer(ui, &[("Add", Tone::Primary)], false);
         if footer.action.is_some() || submit {

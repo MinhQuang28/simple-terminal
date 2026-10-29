@@ -1,13 +1,13 @@
 use eframe::egui::{
-    Align, Align2, Button, Color32, CornerRadius, FontId, Id, Label, Layout, Response, RichText, ScrollArea,
-    Sense, Shape, Stroke, Ui, UiBuilder, pos2, vec2,
+    Align, Align2, Color32, CornerRadius, FontId, Id, Label, Layout, Response, RichText, ScrollArea, Sense,
+    Shape, Stroke, Ui, UiBuilder, pos2, vec2,
 };
 
 use super::Action;
 use super::agent_status;
 use super::design::{self, RADIUS_ROW, TEXT_BODY, TEXT_CAPTION, TEXT_SECONDARY};
 use super::dialog_kit::{Tone, button};
-use super::widgets::{AGENT, accent, ago, icon_button_frame, muted, right_aligned};
+use super::widgets::{AGENT, accent, ago, icon_button_frame, muted, right_aligned, text_button};
 use crate::inbox::{Inbox, Notice, Source};
 use crate::model::AppState;
 use crate::model::now_secs;
@@ -119,14 +119,11 @@ fn contents(ui: &mut Ui, inbox: &Inbox, filter: Id, actions: &mut Vec<Action>) {
     });
     design::divider(ui);
     ui.horizontal(|ui| {
-        let link = |ui: &mut Ui, text: &str| {
-            ui.add(Button::new(RichText::new(text).color(muted(ui)).size(TEXT_CAPTION)).frame(false))
-        };
-        if link(ui, "Mark all read").clicked() {
+        if text_button(ui, "Mark all read", TEXT_CAPTION).clicked() {
             actions.push(Action::MarkNoticesRead);
         }
         right_aligned(ui, |ui| {
-            if link(ui, "Clear").clicked() {
+            if text_button(ui, "Clear", TEXT_CAPTION).clicked() {
                 actions.push(Action::ClearNotices);
             }
         });

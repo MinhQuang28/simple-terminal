@@ -139,6 +139,8 @@ pub struct AppState {
     /// Tabs closed most recently last, with the repo each came from, for "Reopen closed tab".
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub closed_tabs: Vec<(Uuid, Tab)>,
+    /// List gitignored files in the Files panel too, muted.
+    pub show_ignored_files: bool,
 }
 
 impl Default for AppState {
@@ -152,6 +154,7 @@ impl Default for AppState {
             closed_tabs: Vec::new(),
         }
     }
+            show_ignored_files: false,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

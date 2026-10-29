@@ -17,10 +17,11 @@ CLI (`claude`), never calls an LLM API itself, and runs as one Rust process.
   clickable links, in-pane search (⌘F), box-drawing and powerline glyphs drawn as seamless shapes.
 - **Shell integration** — knows each command's start, end and exit status; long commands report
   when they finish.
-- **Command palette** (⌘K) — fuzzy-run any command or jump to any tab; **quick open** (⌘P)
+- **Command palette** (⇧⌘K) — fuzzy-run any command or jump to any tab; **quick open** (⌘P)
   fuzzy-finds any file in the repo.
 - **Files panel** (⌘B) with a built-in editor — syntax highlighting, find (⌘F), go to line (⌘L),
-  optional word wrap — and a rendered **Markdown preview**.
+  optional word wrap — and a rendered **Markdown preview**. Gitignored files are hidden; the ⊘
+  button in the top bar lists them too, muted.
 - **Paste images** straight into a pane; they are saved to a temp file whose path is typed for you.
 - **Finder integration** — drop folders on the sidebar, or use Finder's Services menu
   ("New Repodeck Terminal at Folder").
@@ -142,13 +143,13 @@ For a quick unbundled run while developing: `cargo run`.
 | -------- | ---------------------------- | -------- | -------------------------- |
 | ⌘T       | New terminal                 | ⌘D       | Split pane right           |
 | ⇧⌘T      | New Claude session           | ⇧⌘D      | Split pane down            |
-| ⌘K       | Command palette              | ⇧⌘↩      | Zoom pane                  |
+| ⇧⌘K      | Command palette              | ⇧⌘↩      | Zoom pane                  |
 | ⌘F       | Find in terminal / file      | ⌥⌘←↑→↓   | Focus neighbouring pane    |
 | ⌘P       | Open file in the repo        | ⌘L       | Go to line (editor)        |
 | ⇧⌘[ ⇧⌘]  | Previous / next tab          | ⌘W       | Close pane                 |
 | ⌥⌘T      | Reopen closed tab            | ⇧⌘W      | Close tab                  |
 | ⌃⌘N      | Next pane needing attention  | ⌘B       | Toggle files panel         |
-| ⌘,       | Settings                     |          |                            |
+| ⌘,       | Settings                     | ⌘K       | Clear terminal             |
 
 **Settings** (⌘,) covers appearance (theme, ANSI palette), typography (terminal font and size,
 a separate interface font and size, line height), notifications (on/off, sound, and whether

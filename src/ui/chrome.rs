@@ -1,5 +1,6 @@
 use eframe::egui::{
-    CornerRadius, Rect, Response, RichText, Sense, Stroke, StrokeKind, Ui, ViewportCommand, pos2, vec2,
+    Align2, CornerRadius, FontId, Frame, Label, Margin, Rect, Response, RichText, Sense, Stroke, StrokeKind,
+    Ui, ViewportCommand, pos2, vec2,
 };
 
 use super::Action;
@@ -9,7 +10,7 @@ use super::widgets::{icon_button_frame, muted, right_aligned};
 use crate::font_catalog::SYSTEM_FONT;
 use crate::git_status::GitStatus;
 use crate::inbox::Inbox;
-use crate::model::AppState;
+use crate::model::{AppState, SidePanel};
 use crate::session_pool::SessionPool;
 
 /// Makes `rect` drag the window, since the native titlebar is hidden.
@@ -55,6 +56,13 @@ pub fn top_bar(
             {
                 actions.push(Action::ToggleSidePanel);
             }
+            if state.show_side_panel && state.side_panel == SidePanel::Files {
+                let hint =
+                    if state.show_ignored_files { "Hide gitignored files" } else { "Show gitignored files" };
+                if ignored_icon(ui, state.show_ignored_files).on_hover_text(hint).clicked() {
+                    actions.push(Action::ToggleIgnoredFiles);
+                }
+            }
             inbox_panel::bell(ui, state, inbox, pool, actions);
             usage_panel::gauge(ui, state, pool.latest_limits().as_ref(), context);
             if search_icon(ui).on_hover_text("Find in terminal (⌘F)").clicked() {
@@ -86,6 +94,13 @@ fn search_icon(ui: &mut Ui) -> Response {
     let start = center + vec2(3.6, 3.6);
     painter.line_segment([start, start + vec2(3.5, 3.5)], stroke);
     response
+/// Circled slash, lit while gitignored files are listed in the files panel.
+fn ignored_icon(ui: &mut Ui, active: bool) -> Response {
+    let (rect, response, color) = icon_button_frame(ui, active);
+    ui.painter().text(rect.center(), Align2::CENTER_CENTER, "⊘", FontId::proportional(17.0), color);
+    response
+}
+
 }
 
 pub fn status_bar(ui: &mut Ui, state: &AppState, status: Option<&GitStatus>) {

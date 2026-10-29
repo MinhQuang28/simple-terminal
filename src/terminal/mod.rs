@@ -1,5 +1,6 @@
 mod box_arms;
 mod box_drawing;
+mod clear;
 mod colors;
 mod decorations;
 mod find;
@@ -8,6 +9,7 @@ mod input;
 pub mod links;
 mod mouse;
 mod osc_notify;
+mod prompt_click;
 mod render;
 mod render_cache;
 mod repaint;
