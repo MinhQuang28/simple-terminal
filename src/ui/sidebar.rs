@@ -6,6 +6,7 @@ use uuid::Uuid;
 use super::Action;
 use super::chrome::window_drag_area;
 use super::design::{TEXT_CAPTION, hairline};
+use super::repo_drag::{self, RepoSpan};
 use super::sidebar_rows::repo_block;
 use super::widgets::{glyph_button, icon_button, menu_icon, muted, right_aligned, row_sized};
 use crate::agent_events::AgentStatus;
@@ -56,7 +57,8 @@ pub fn show(
     });
 
     let mut spans: Vec<(Uuid, Rect)> = Vec::new();
-    ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
+    let mut repo_spans: Vec<RepoSpan> = Vec::new();
+    let list = ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
         ui.spacing_mut().item_spacing.y = 0.0;
         let now = now_secs();
         for (index, project) in state.projects.iter().enumerate() {
@@ -68,7 +70,10 @@ pub fn show(
             if !project.collapsed {
                 ui.add_space(4.0);
                 for repo in &project.repos {
+                    let top = ui.cursor().top();
                     repo_block(ui, repo, state, git, prs, pool, now, actions);
+                    let rect = Rect::from_x_y_ranges(ui.max_rect().x_range(), top..=ui.cursor().top());
+                    repo_spans.push(RepoSpan { project: project.id, repo: repo.id, rect });
                 }
                 if project.repos.is_empty() {
                     let (response, ()) = row_sized(ui, false, 12.0, 28.0, |ui| {
@@ -91,6 +96,7 @@ pub fn show(
         }
     });
     drop_target(ui, drag, &spans, actions);
+    repo_drag::drop_target(ui, state, list.inner_rect, &spans, &repo_spans, actions);
 }
 
 /// Hairline between projects so each group reads as its own block.

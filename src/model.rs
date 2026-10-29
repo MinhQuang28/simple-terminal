@@ -85,6 +85,8 @@ pub struct Settings {
     pub external_editor: String,
     /// Wrap long lines in the built-in editor instead of scrolling sideways.
     pub editor_word_wrap: bool,
+    /// Give each repo in the sidebar a row naming its checked-out branch.
+    pub sidebar_branches: bool,
     /// Reusable prompts shown in the Library panel.
     pub prompts: Vec<Prompt>,
 }
@@ -115,6 +117,7 @@ impl Default for Settings {
             notification_sound: true,
             external_editor: String::new(),
             editor_word_wrap: false,
+            sidebar_branches: false,
             prompts: Vec::new(),
         }
     }
@@ -136,11 +139,11 @@ pub struct AppState {
     pub settings: Settings,
     pub show_side_panel: bool,
     pub side_panel: SidePanel,
+    /// List gitignored files in the Files panel too, muted.
+    pub show_ignored_files: bool,
     /// Tabs closed most recently last, with the repo each came from, for "Reopen closed tab".
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub closed_tabs: Vec<(Uuid, Tab)>,
-    /// List gitignored files in the Files panel too, muted.
-    pub show_ignored_files: bool,
 }
 
 impl Default for AppState {
@@ -151,10 +154,10 @@ impl Default for AppState {
             settings: Settings::default(),
             show_side_panel: true,
             side_panel: SidePanel::default(),
+            show_ignored_files: false,
             closed_tabs: Vec::new(),
         }
     }
-            show_ignored_files: false,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

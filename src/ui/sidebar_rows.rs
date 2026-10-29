@@ -1,16 +1,15 @@
 use eframe::egui::{
-    Align, Align2, Button, Color32, CornerRadius, FontId, Label, Layout, RichText, Sense, Stroke, Ui, pos2,
-    vec2,
+    Align, Align2, Button, CornerRadius, FontId, Label, Layout, RichText, Sense, Stroke, Ui, pos2, vec2,
 };
 
 use super::Action;
 use super::agent_icon;
 use super::agent_status;
 use super::claude_icon::ICON_SIZE;
+use super::repo_drag;
+use super::repo_indicators::{RepoRow, busy_mark, indicators, tabs_chevron};
 use super::sidebar::{tab_agent, tab_busy, tab_menu, tab_status, tab_title};
-use super::widgets::{
-    accent, ago, avatar, glyph_button, menu_icon, muted, right_aligned, row_sized, spinner, tag,
-};
+use super::widgets::{avatar, glyph_button, menu_icon, muted, right_aligned, row_sized};
 use crate::git_watcher::GitWatcher;
 use crate::model::{AppState, PaneKind, Repo, Tab};
 use crate::pr_status::{CheckState, PrWatcher, PullRequest};
@@ -25,7 +24,8 @@ const TAB_INDENT: f32 = TEXT_INDENT + 22.0;
 const TAB_ROW_HEIGHT: f32 = 26.0;
 
 /// A repo as a block: its name, its branch line with activity, and the terminals open in it.
-/// File and diff tabs only appear in the tab bar.
+/// Without branches the activity moves onto the name row. File and diff tabs only appear in the
+/// tab bar.
 #[allow(clippy::too_many_arguments)]
 pub fn repo_block(
     ui: &mut Ui,
@@ -43,9 +43,15 @@ pub fn repo_block(
     let tab_active = tabs.iter().any(|t| Some(t.id) == active_tab);
 
     let pr = prs.pr(&repo.path).flatten();
-    repo_row(ui, repo, pr.as_deref(), actions);
+    let status = git.status(&repo.path);
+    let row = RepoRow { repo, status: status.as_deref(), pr: pr.as_deref(), pool, now, selected };
     let expandable = !tabs.is_empty();
-    branch_row(ui, repo, selected && !tab_active, expandable, git, pr.as_deref(), pool, now, actions);
+    if state.settings.sidebar_branches {
+        repo_row(ui, &row, None, actions);
+        branch_row(ui, &row, selected && !tab_active, expandable, actions);
+    } else {
+        repo_row(ui, &row, Some((selected && !tab_active, expandable)), actions);
+    }
     if !repo.tabs_collapsed {
         for (index, tab) in tabs.iter().enumerate() {
             let (selected, last) = (Some(tab.id) == active_tab, index + 1 == tabs.len());
@@ -80,7 +86,7 @@ fn tab_row(
             ui.spacing_mut().item_spacing.x = 8.0;
             let close = glyph_button(ui, "×").on_hover_text("Close tab").clicked();
             if busy {
-                spinner(ui, 11.0, muted(ui));
+                busy_mark(ui, state.selected_repo == Some(repo.id));
             }
             if let Some(status) = tab_status(tab, pool).filter(|s| s.needs_attention()) {
                 agent_status::pill(ui, status);
@@ -131,84 +137,58 @@ fn terminal_icon(ui: &mut Ui) {
     );
 }
 
-fn repo_row(ui: &mut Ui, repo: &Repo, pr: Option<&PullRequest>, actions: &mut Vec<Action>) {
-    let (response, ()) = row_sized(ui, false, REPO_INDENT, 32.0, |ui| {
+/// The repo's avatar and name. `compact` (selected, expandable) also puts the activity and the tab
+/// chevron here, for when there's no branch row below.
+fn repo_row(ui: &mut Ui, row: &RepoRow, compact: Option<(bool, bool)>, actions: &mut Vec<Action>) {
+    let repo = row.repo;
+    let selected = compact.is_some_and(|(selected, _)| selected);
+    let (response, ()) = row_sized(ui, selected, REPO_INDENT, 32.0, |ui| {
         right_aligned(ui, |ui| {
             ui.spacing_mut().item_spacing.x = 10.0;
             menu_icon(ui, "+", |ui| new_tab_menu(ui, repo, actions)).on_hover_text("New tab");
+            if compact.is_some() {
+                indicators(ui, row, actions);
+            }
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                 avatar(ui, &repo.name, AVATAR);
-                ui.add(Label::new(RichText::new(&repo.name).size(14.0)).truncate().selectable(false));
+                let expandable = compact.is_some_and(|(_, expandable)| expandable);
+                // Leave the chevron its room so a long name truncates instead of pushing it out.
+                let chevron_width = if expandable { 20.0 } else { 0.0 };
+                ui.scope(|ui| {
+                    ui.set_max_width((ui.available_width() - chevron_width).max(0.0));
+                    ui.add(Label::new(RichText::new(&repo.name).size(14.0)).truncate().selectable(false));
+                });
+                if expandable {
+                    tabs_chevron(ui, repo, actions);
+                }
             });
         });
     });
+    let response = repo_drag::drag_source(response, repo.id);
     if response.clicked() {
         actions.push(Action::SelectRepo(repo.id));
     }
     response
         .on_hover_text(repo.path.display().to_string())
-        .context_menu(|ui| repo_menu(ui, repo, pr, actions));
+        .context_menu(|ui| repo_menu(ui, repo, row.pr, actions));
 }
 
 /// Branch name with sync state and recency; selecting it shows the repo without a terminal.
-#[allow(clippy::too_many_arguments)]
-fn branch_row(
-    ui: &mut Ui,
-    repo: &Repo,
-    selected: bool,
-    expandable: bool,
-    git: &GitWatcher,
-    pr: Option<&PullRequest>,
-    pool: &SessionPool,
-    now: u64,
-    actions: &mut Vec<Action>,
-) {
-    let status = git.status(&repo.path);
-    let busy = repo.tabs.iter().any(|t| tab_busy(t, pool));
+fn branch_row(ui: &mut Ui, row: &RepoRow, selected: bool, expandable: bool, actions: &mut Vec<Action>) {
+    let repo = row.repo;
     let indent = if expandable { TEXT_INDENT - 20.0 } else { TEXT_INDENT };
     let (response, ()) = row_sized(ui, selected, indent, 28.0, |ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
-        let name = status.as_ref().map_or("local", |s| s.branch.as_str());
+        let name = row.status.map_or("local", |s| s.branch.as_str());
         let color =
             if selected { ui.visuals().text_color() } else { ui.visuals().text_color().gamma_multiply(0.85) };
-        let attention = repo.tabs.iter().filter_map(|t| tab_status(t, pool)).max();
         // Indicators go first so the branch name truncates to the space they leave.
         right_aligned(ui, |ui| {
-            ui.spacing_mut().item_spacing.x = 8.0;
-            ui.label(RichText::new(ago(repo.last_active(), now)).color(muted(ui)).size(11.5));
-            if let Some(pr) = pr {
-                pr_badge(ui, pr, actions);
-            }
-            if busy {
-                spinner(ui, 11.0, muted(ui));
-            }
-            if let Some(status) = &status {
-                if status.ahead > 0 {
-                    ui.label(RichText::new("⬆").color(accent(ui)).size(11.5))
-                        .on_hover_text(format!("{} commits to push", status.ahead));
-                }
-                if status.behind > 0 {
-                    ui.label(RichText::new("⬇").color(muted(ui)).size(11.5))
-                        .on_hover_text(format!("{} commits to pull", status.behind));
-                }
-            }
-            if status.as_ref().is_some_and(|s| s.merged) {
-                tag(ui, "merged", muted(ui));
-            }
-            if let Some(attention) = attention.filter(|s| s.needs_attention()) {
-                agent_status::pill(ui, attention);
-            }
-            ui.add_space(4.0);
+            indicators(ui, row, actions);
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
                 if expandable {
-                    let glyph = if repo.tabs_collapsed { "›" } else { "⌄" };
-                    let chevron = Button::new(RichText::new(glyph).color(muted(ui)).size(13.0))
-                        .frame(false)
-                        .min_size(vec2(14.0, 14.0));
-                    if ui.add(chevron).clicked() {
-                        actions.push(Action::ToggleRepoTabs(repo.id));
-                    }
+                    tabs_chevron(ui, repo, actions);
                 }
                 // Leave the star its room so a long branch name truncates instead of pushing it out.
                 let star_width = 16.0;
@@ -224,32 +204,7 @@ fn branch_row(
     if response.clicked() {
         actions.push(Action::SelectRepo(repo.id));
     }
-    response.context_menu(|ui| repo_menu(ui, repo, pr, actions));
-}
-
-/// `#123` tinted by CI state; hovering lists the checks, clicking opens the pull request.
-fn pr_badge(ui: &mut Ui, pr: &PullRequest, actions: &mut Vec<Action>) {
-    let color = match pr.ci() {
-        Some(CheckState::Failing) => Color32::from_rgb(0xe5, 0x53, 0x53),
-        Some(CheckState::Pending) => ui.visuals().warn_fg_color,
-        Some(CheckState::Passing) => Color32::from_rgb(0x7f, 0xd8, 0x8f),
-        None => muted(ui),
-    };
-    let mut hover = format!("#{} {}", pr.number, pr.title);
-    if pr.draft {
-        hover.push_str(" (draft)");
-    }
-    for check in &pr.checks {
-        let mark = match check.state {
-            CheckState::Passing => "✓",
-            CheckState::Failing => "✗",
-            CheckState::Pending => "…",
-        };
-        hover.push_str(&format!("\n{mark} {}", check.name));
-    }
-    if tag(ui, &format!("#{}", pr.number), color).on_hover_text(hover).clicked() {
-        actions.push(Action::OpenUrl(pr.url.clone()));
-    }
+    response.context_menu(|ui| repo_menu(ui, repo, row.pr, actions));
 }
 
 fn new_tab_menu(ui: &mut Ui, repo: &Repo, actions: &mut Vec<Action>) {

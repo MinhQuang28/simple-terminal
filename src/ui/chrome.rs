@@ -47,7 +47,7 @@ pub fn top_bar(
             ui.label(RichText::new(&repo.name).strong());
             if let Some(status) = status {
                 ui.add_space(6.0);
-                ui.label(RichText::new(format!("⎇ {}", status.branch)).color(muted(ui)).size(12.5));
+                branch_chip(ui, &status.branch);
             }
         }
         right_aligned(ui, |ui| {
@@ -72,6 +72,16 @@ pub fn top_bar(
     });
 }
 
+/// The checked-out branch on a filled pill, so it reads at a glance next to the repo name.
+fn branch_chip(ui: &mut Ui, branch: &str) {
+    let text = RichText::new(format!("⎇ {branch}")).size(12.5).color(ui.visuals().text_color());
+    Frame::new()
+        .fill(ui.visuals().widgets.inactive.weak_bg_fill)
+        .corner_radius(CornerRadius::same(6))
+        .inner_margin(Margin::symmetric(8, 3))
+        .show(ui, |ui| ui.add(Label::new(text).selectable(false)));
+}
+
 /// Outlined window with a divider marking the right-hand panel.
 fn side_panel_icon(ui: &mut Ui, active: bool) -> Response {
     let (rect, response, color) = icon_button_frame(ui, active);
@@ -81,6 +91,13 @@ fn side_panel_icon(ui: &mut Ui, active: bool) -> Response {
     painter.rect_stroke(frame, CornerRadius::same(3), stroke, StrokeKind::Inside);
     let x = frame.right() - 5.0;
     painter.line_segment([pos2(x, frame.top()), pos2(x, frame.bottom())], stroke);
+    response
+}
+
+/// Circled slash, lit while gitignored files are listed in the files panel.
+fn ignored_icon(ui: &mut Ui, active: bool) -> Response {
+    let (rect, response, color) = icon_button_frame(ui, active);
+    ui.painter().text(rect.center(), Align2::CENTER_CENTER, "⊘", FontId::proportional(17.0), color);
     response
 }
 
@@ -94,13 +111,6 @@ fn search_icon(ui: &mut Ui) -> Response {
     let start = center + vec2(3.6, 3.6);
     painter.line_segment([start, start + vec2(3.5, 3.5)], stroke);
     response
-/// Circled slash, lit while gitignored files are listed in the files panel.
-fn ignored_icon(ui: &mut Ui, active: bool) -> Response {
-    let (rect, response, color) = icon_button_frame(ui, active);
-    ui.painter().text(rect.center(), Align2::CENTER_CENTER, "⊘", FontId::proportional(17.0), color);
-    response
-}
-
 }
 
 pub fn status_bar(ui: &mut Ui, state: &AppState, status: Option<&GitStatus>) {

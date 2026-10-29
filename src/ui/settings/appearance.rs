@@ -1,6 +1,6 @@
 use eframe::egui::{Align2, CornerRadius, FontId, Response, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
 
-use super::controls::{card, section_label};
+use super::controls::{card, section_label, toggle};
 use crate::model::Settings;
 use crate::theme::{Hex, Theme, presets};
 
@@ -55,6 +55,17 @@ pub fn show(ui: &mut Ui, settings: &mut Settings) {
     if edited {
         theme.name = CUSTOM_NAME.into();
     }
+
+    section_label(ui, "Sidebar");
+    card(ui, |card| {
+        card.row(
+            "Show branches",
+            "A row under each repo naming its branch. It's always in the header.",
+            |ui| {
+                toggle(ui, &mut settings.sidebar_branches);
+            },
+        );
+    });
 
     section_label(ui, "Reset");
     card(ui, |card| {

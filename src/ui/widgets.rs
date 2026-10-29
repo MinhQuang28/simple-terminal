@@ -189,15 +189,40 @@ pub fn file_icon(ui: &mut Ui, is_dir: bool) {
 /// of its frames repaints the whole window (~1 ms), so 30 Hz halves that steady cost while a
 /// 12-point arc still turns smoothly.
 const SPINNER_FRAME: Duration = Duration::from_micros(1_000_000 / 30);
+/// Where a still arc rests: the sweep peaks here, so it shows as a full 240° arc.
+const STILL_ARC_TIME: f64 = std::f64::consts::FRAC_PI_2;
 
-/// Rotating arc like egui's `Spinner`, repainted only while visible.
+/// Rotating arc like egui's `Spinner`. It only animates, and so repaints, while visible and the
+/// window is focused; an unwatched window shows a still arc instead of 30 frames a second.
 pub fn spinner_at(ui: &Ui, rect: Rect, color: Color32) {
     if !ui.is_rect_visible(rect) {
         return;
     }
-    ui.ctx().request_repaint_after(SPINNER_FRAME);
+    let time = if ui.input(|i| i.focused) {
+        ui.ctx().request_repaint_after(SPINNER_FRAME);
+        ui.input(|i| i.time)
+    } else {
+        STILL_ARC_TIME
+    };
+    arc(ui, rect, color, time);
+}
+
+pub fn spinner(ui: &mut Ui, size: f32, color: Color32) {
+    let (rect, _) = ui.allocate_exact_size(vec2(size, size), Sense::hover());
+    spinner_at(ui, rect, color);
+}
+
+/// A still arc marking work in progress, for rows the user isn't watching: it never asks for a
+/// repaint, so agents working in other repos don't keep the whole window animating.
+pub fn activity_arc(ui: &mut Ui, size: f32, color: Color32) {
+    let (rect, _) = ui.allocate_exact_size(vec2(size, size), Sense::hover());
+    if ui.is_rect_visible(rect) {
+        arc(ui, rect, color, STILL_ARC_TIME);
+    }
+}
+
+fn arc(ui: &Ui, rect: Rect, color: Color32, time: f64) {
     let radius = rect.height().min(rect.width()) * 0.5 - 1.5;
-    let time = ui.input(|i| i.time);
     let start = time * std::f64::consts::TAU;
     let end = start + 240f64.to_radians() * time.sin();
     let points: Vec<_> = (0..16)
@@ -208,11 +233,6 @@ pub fn spinner_at(ui: &Ui, rect: Rect, color: Color32) {
         })
         .collect();
     ui.painter().add(Shape::line(points, Stroke::new(2.0, color)));
-}
-
-pub fn spinner(ui: &mut Ui, size: f32, color: Color32) {
-    let (rect, _) = ui.allocate_exact_size(vec2(size, size), Sense::hover());
-    spinner_at(ui, rect, color);
 }
 
 /// Compact relative time like "now", "5m", "3h", "2d".

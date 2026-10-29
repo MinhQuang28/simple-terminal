@@ -15,6 +15,8 @@ mod library_panel;
 pub mod palette;
 mod palette_items;
 mod pane_chrome;
+mod repo_drag;
+mod repo_indicators;
 pub mod settings;
 pub mod sidebar;
 mod sidebar_rows;
@@ -102,6 +104,12 @@ pub enum Action {
         project: Option<Uuid>,
         paths: Vec<PathBuf>,
     },
+    /// A repo dragged in the sidebar to `index` among `project`'s other repos, which may be its own.
+    MoveRepo {
+        repo: Uuid,
+        project: Uuid,
+        index: usize,
+    },
     /// Opens a shell tab at a folder dropped from Finder.
     OpenFolderTab(PathBuf),
     ToggleSidePanel,
@@ -112,6 +120,8 @@ pub enum Action {
     /// Opens the go-to-line bar in the active file editor.
     OpenGoToLine,
     SetSidePanel(SidePanel),
+    /// Shows or hides gitignored files in the Files panel.
+    ToggleIgnoredFiles,
     /// Shows the active pane alone, or restores the split.
     ToggleZoom,
     FocusNeighbor(Nav),
@@ -120,8 +130,6 @@ pub enum Action {
         tab: Uuid,
         path: Vec<usize>,
         index: usize,
-    /// Shows or hides gitignored files in the Files panel.
-    ToggleIgnoredFiles,
         delta: f32,
     },
     ReopenClosedTab,

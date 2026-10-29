@@ -136,6 +136,20 @@ impl RepodeckApp {
                 return;
             }
             Action::ResumeSession { repo, session, title } => self.resume_session(repo, session, title),
+            Action::MoveRepo { repo, project, index } => {
+                if !self.state.projects.iter().any(|p| p.id == project) {
+                    return;
+                }
+                let moved = self.state.projects.iter_mut().find_map(|p| {
+                    let index = p.repos.iter().position(|r| r.id == repo)?;
+                    Some(p.repos.remove(index))
+                });
+                let Some(moved) = moved else { return };
+                if let Some(target) = self.state.projects.iter_mut().find(|p| p.id == project) {
+                    target.collapsed = false;
+                    target.repos.insert(index.min(target.repos.len()), moved);
+                }
+            }
             Action::AddDroppedRepos { project, paths } => self.add_dropped_repos(project, &paths),
             Action::OpenFolderTab(path) => self.open_folder(FolderRequest { path, kind: PaneKind::Shell }),
             Action::ToggleSidePanel => self.state.show_side_panel = !self.state.show_side_panel,
@@ -165,6 +179,7 @@ impl RepodeckApp {
                 self.state.side_panel = panel;
                 self.state.show_side_panel = true;
             }
+            Action::ToggleIgnoredFiles => self.state.show_ignored_files = !self.state.show_ignored_files,
             Action::Split { dir, kind } => self.split(dir, kind),
             Action::ToggleZoom
             | Action::FocusNeighbor(_)
@@ -179,7 +194,6 @@ impl RepodeckApp {
             }
             Action::ReopenClosedTab => {
                 let Some((repo_id, tab)) = self.state.closed_tabs.pop() else { return };
-            Action::ToggleIgnoredFiles => self.state.show_ignored_files = !self.state.show_ignored_files,
                 let Some(repo) = self.state.repo_mut(repo_id) else { return };
                 repo.active_tab = Some(tab.id);
                 repo.tabs.push(tab);
