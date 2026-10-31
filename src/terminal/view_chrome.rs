@@ -10,7 +10,7 @@ use super::render::Grid;
 use super::session::TerminalSession;
 use super::style::TerminalStyle;
 use crate::agent_launch::Agent;
-use crate::ui::widgets::{muted, spinner_at};
+use crate::ui::widgets::{loading_dot_at, muted};
 
 const BLINK_INTERVAL: f64 = 0.53;
 const EXIT_BADGE: Duration = Duration::from_secs(4);
@@ -86,7 +86,7 @@ pub(super) fn exit_badge(ui: &Ui, session: &TerminalSession, rect: egui::Rect, s
     ui.ctx().request_repaint_after(EXIT_BADGE - finished.at.elapsed());
 }
 
-/// A pulsing dot over an agent pane that hasn't drawn anything yet; resuming a long conversation
+/// A grey pulsing dot over an agent pane that hasn't drawn anything yet; resuming a long conversation
 /// can take seconds while Claude Code loads it, and an empty pane reads as a hang.
 pub(super) fn starting_indicator(ui: &Ui, session: &TerminalSession, rect: egui::Rect) {
     let starting = session.agent_status().is_some()
@@ -102,7 +102,7 @@ pub(super) fn starting_indicator(ui: &Ui, session: &TerminalSession, rect: egui:
     let galley = ui.painter().layout_no_wrap(text, font, color);
     let size = vec2(14.0 + 8.0 + galley.size().x, galley.size().y.max(14.0));
     let origin = rect.center() - size / 2.0;
-    spinner_at(
+    loading_dot_at(
         ui,
         egui::Rect::from_min_size(origin + vec2(0.0, (size.y - 14.0) / 2.0), vec2(14.0, 14.0)),
     );

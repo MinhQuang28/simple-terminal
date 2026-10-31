@@ -4,7 +4,7 @@ use eframe::egui::{Label, RichText, Ui};
 
 use super::Action;
 use super::design::{self, TEXT_CAPTION};
-use super::widgets::{glyph_button, muted, right_aligned, row, spinner, tag};
+use super::widgets::{glyph_button, loading_dot, muted, right_aligned, row, tag};
 use crate::library::{McpServer, Skill};
 use crate::library_cache::LibraryCache;
 use crate::model::{Repo, Settings};
@@ -44,7 +44,7 @@ pub fn show(
     let Some(library) = library.get(&repo.path) else {
         section(ui, "Skills", None, actions);
         ui.horizontal(|ui| {
-            spinner(ui, 12.0);
+            loading_dot(ui, 12.0);
             ui.label(RichText::new("Loading…").color(muted(ui)));
         });
         return;

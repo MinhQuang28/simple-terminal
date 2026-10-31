@@ -192,15 +192,11 @@ const SPINNER_FRAME: Duration = Duration::from_micros(1_000_000 / 30);
 /// One grow-and-shrink cycle of the busy dot, in seconds.
 const PULSE_PERIOD: f64 = 1.2;
 
-/// Orange dot pulsing big and small, like Claude Code's working indicator. It animates, and so
-/// repaints, whenever visible, focused window or not, so background agents still read as busy.
+/// Orange dot pulsing big and small, like Claude Code's working indicator: an agent is at work.
+/// It animates, and so repaints, whenever visible, focused window or not, so background agents
+/// still read as busy.
 pub fn spinner_at(ui: &Ui, rect: Rect) {
-    if !ui.is_rect_visible(rect) {
-        return;
-    }
-    ui.ctx().request_repaint_after(SPINNER_FRAME);
-    let t = ui.input(|i| i.time) * std::f64::consts::TAU / PULSE_PERIOD;
-    dot(ui, rect, (0.5 - 0.5 * t.cos()) as f32);
+    pulsing_dot(ui, rect, AGENT);
 }
 
 pub fn spinner(ui: &mut Ui, size: f32) {
@@ -208,11 +204,26 @@ pub fn spinner(ui: &mut Ui, size: f32) {
     spinner_at(ui, rect);
 }
 
-fn dot(ui: &Ui, rect: Rect, phase: f32) {
+/// Grey pulsing dot for plain loading, so orange keeps meaning "an agent is working".
+pub fn loading_dot_at(ui: &Ui, rect: Rect) {
+    pulsing_dot(ui, rect, muted(ui));
+}
+
+pub fn loading_dot(ui: &mut Ui, size: f32) {
+    let (rect, _) = ui.allocate_exact_size(vec2(size, size), Sense::hover());
+    loading_dot_at(ui, rect);
+}
+
+fn pulsing_dot(ui: &Ui, rect: Rect, color: Color32) {
+    if !ui.is_rect_visible(rect) {
+        return;
+    }
+    ui.ctx().request_repaint_after(SPINNER_FRAME);
+    let t = ui.input(|i| i.time) * std::f64::consts::TAU / PULSE_PERIOD;
+    let phase = (0.5 - 0.5 * t.cos()) as f32;
     let max_radius = rect.height().min(rect.width()) * 0.5 - 1.0;
     let radius = max_radius * (0.4 + 0.6 * phase);
-    let color = AGENT.gamma_multiply(0.55 + 0.45 * phase);
-    ui.painter().circle_filled(rect.center(), radius, color);
+    ui.painter().circle_filled(rect.center(), radius, color.gamma_multiply(0.55 + 0.45 * phase));
 }
 
 /// Compact relative time like "now", "5m", "3h", "2d".
