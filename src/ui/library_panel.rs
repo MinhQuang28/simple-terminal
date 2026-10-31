@@ -44,7 +44,7 @@ pub fn show(
     let Some(library) = library.get(&repo.path) else {
         section(ui, "Skills", None, actions);
         ui.horizontal(|ui| {
-            spinner(ui, 12.0, muted(ui));
+            spinner(ui, 12.0);
             ui.label(RichText::new("Loading…").color(muted(ui)));
         });
         return;

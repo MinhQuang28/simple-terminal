@@ -25,7 +25,7 @@ pub fn show(ui: &mut Ui, repo: &Repo, history: &ClaudeHistory, actions: &mut Vec
         match history.sessions(&repo.path) {
             None => {
                 ui.horizontal(|ui| {
-                    spinner(ui, 12.0, muted(ui));
+                    spinner(ui, 12.0);
                     ui.label(RichText::new("Loading conversations…").size(TEXT_SECONDARY).color(muted(ui)));
                 });
             }

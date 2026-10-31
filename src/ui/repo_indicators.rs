@@ -3,7 +3,7 @@ use eframe::egui::{Button, Color32, RichText, Ui, vec2};
 use super::Action;
 use super::agent_status;
 use super::sidebar::{tab_busy, tab_status};
-use super::widgets::{accent, activity_arc, ago, muted, spinner, tag};
+use super::widgets::{accent, ago, muted, spinner, tag};
 use crate::git_status::GitStatus;
 use crate::model::Repo;
 use crate::pr_status::{CheckState, PullRequest};
@@ -16,21 +16,19 @@ pub struct RepoRow<'a> {
     pub pr: Option<&'a PullRequest>,
     pub pool: &'a SessionPool,
     pub now: u64,
-    /// The repo is the selected one, so the user is watching its rows.
-    pub selected: bool,
 }
 
 /// A repo's activity, right to left: recency, pull request, spinner, sync state, merged, attention.
-/// Call inside a right-to-left layout. Only the selected repo's spinner animates.
+/// Call inside a right-to-left layout.
 pub fn indicators(ui: &mut Ui, row: &RepoRow, actions: &mut Vec<Action>) {
-    let RepoRow { repo, status, pr, pool, now, selected } = *row;
+    let RepoRow { repo, status, pr, pool, now } = *row;
     ui.spacing_mut().item_spacing.x = 8.0;
     ui.label(RichText::new(ago(repo.last_active(), now)).color(muted(ui)).size(11.5));
     if let Some(pr) = pr {
         pr_badge(ui, pr, actions);
     }
     if repo.tabs.iter().any(|t| tab_busy(t, pool)) {
-        busy_mark(ui, selected);
+        busy_mark(ui);
     }
     if let Some(status) = status {
         if status.ahead > 0 {
@@ -52,13 +50,9 @@ pub fn indicators(ui: &mut Ui, row: &RepoRow, actions: &mut Vec<Action>) {
     ui.add_space(4.0);
 }
 
-/// Work-in-progress mark: a spinner where the user is looking, a still arc elsewhere.
-pub fn busy_mark(ui: &mut Ui, watched: bool) {
-    if watched {
-        spinner(ui, 11.0, muted(ui));
-    } else {
-        activity_arc(ui, 11.0, muted(ui));
-    }
+/// Work-in-progress mark: a pulsing dot on every repo or tab with an agent at work.
+pub fn busy_mark(ui: &mut Ui) {
+    spinner(ui, 11.0);
 }
 
 /// `›`/`⌄` that shows or hides the repo's terminal rows.

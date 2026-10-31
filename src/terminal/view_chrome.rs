@@ -86,7 +86,7 @@ pub(super) fn exit_badge(ui: &Ui, session: &TerminalSession, rect: egui::Rect, s
     ui.ctx().request_repaint_after(EXIT_BADGE - finished.at.elapsed());
 }
 
-/// A spinner over an agent pane that hasn't drawn anything yet; resuming a long conversation
+/// A pulsing dot over an agent pane that hasn't drawn anything yet; resuming a long conversation
 /// can take seconds while Claude Code loads it, and an empty pane reads as a hang.
 pub(super) fn starting_indicator(ui: &Ui, session: &TerminalSession, rect: egui::Rect) {
     let starting = session.agent_status().is_some()
@@ -105,7 +105,6 @@ pub(super) fn starting_indicator(ui: &Ui, session: &TerminalSession, rect: egui:
     spinner_at(
         ui,
         egui::Rect::from_min_size(origin + vec2(0.0, (size.y - 14.0) / 2.0), vec2(14.0, 14.0)),
-        color,
     );
     ui.painter().galley(origin + vec2(22.0, (size.y - galley.size().y) / 2.0), galley, color);
 }

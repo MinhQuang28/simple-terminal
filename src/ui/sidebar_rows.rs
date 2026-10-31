@@ -44,7 +44,7 @@ pub fn repo_block(
 
     let pr = prs.pr(&repo.path).flatten();
     let status = git.status(&repo.path);
-    let row = RepoRow { repo, status: status.as_deref(), pr: pr.as_deref(), pool, now, selected };
+    let row = RepoRow { repo, status: status.as_deref(), pr: pr.as_deref(), pool, now };
     let expandable = !tabs.is_empty();
     if state.settings.sidebar_branches {
         repo_row(ui, &row, None, actions);
@@ -86,7 +86,7 @@ fn tab_row(
             ui.spacing_mut().item_spacing.x = 8.0;
             let close = glyph_button(ui, "×").on_hover_text("Close tab").clicked();
             if busy {
-                busy_mark(ui, state.selected_repo == Some(repo.id));
+                busy_mark(ui);
             }
             if let Some(status) = tab_status(tab, pool).filter(|s| s.needs_attention()) {
                 agent_status::pill(ui, status);

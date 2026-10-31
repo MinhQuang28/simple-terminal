@@ -144,7 +144,7 @@ fn tab_item(ui: &mut Ui, number: usize, tab: &Tab, title: &str, state: &TabState
     } else if let Some(color) = attention_color.filter(|_| !over_close) {
         painter.circle_filled(close_rect.center(), 3.5, color);
     } else if busy && !response.hovered() {
-        spinner_at(ui, close_rect.shrink(2.0), muted(ui));
+        spinner_at(ui, close_rect.shrink(2.0));
     } else if response.hovered() || active {
         if over_close {
             painter.rect_filled(close_rect, 4.0, ui.visuals().widgets.active.weak_bg_fill);

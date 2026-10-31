@@ -3,7 +3,7 @@ use std::time::Duration;
 use eframe::egui::containers::menu::MenuButton;
 use eframe::egui::{
     Align, Align2, Button, Color32, CornerRadius, CursorIcon, FontId, Layout, Rect, Response, RichText,
-    Sense, Shape, Stroke, Ui, UiBuilder, vec2,
+    Sense, Stroke, Ui, UiBuilder, vec2,
 };
 
 pub const AGENT: Color32 = Color32::from_rgb(0xe0, 0x8a, 0x5f);
@@ -185,54 +185,34 @@ pub fn file_icon(ui: &mut Ui, is_dir: bool) {
     }
 }
 
-/// Spinner animation frame interval. A spinner shows whenever an agent is working, and each
-/// of its frames repaints the whole window (~1 ms), so 30 Hz halves that steady cost while a
-/// 12-point arc still turns smoothly.
+/// Busy dot animation frame interval. A dot shows whenever an agent is working, and each of
+/// its frames repaints the whole window (~1 ms), so 30 Hz halves that steady cost while the
+/// pulse still looks smooth.
 const SPINNER_FRAME: Duration = Duration::from_micros(1_000_000 / 30);
-/// Where a still arc rests: the sweep peaks here, so it shows as a full 240° arc.
-const STILL_ARC_TIME: f64 = std::f64::consts::FRAC_PI_2;
+/// One grow-and-shrink cycle of the busy dot, in seconds.
+const PULSE_PERIOD: f64 = 1.2;
 
-/// Rotating arc like egui's `Spinner`. It only animates, and so repaints, while visible and the
-/// window is focused; an unwatched window shows a still arc instead of 30 frames a second.
-pub fn spinner_at(ui: &Ui, rect: Rect, color: Color32) {
+/// Orange dot pulsing big and small, like Claude Code's working indicator. It animates, and so
+/// repaints, whenever visible, focused window or not, so background agents still read as busy.
+pub fn spinner_at(ui: &Ui, rect: Rect) {
     if !ui.is_rect_visible(rect) {
         return;
     }
-    let time = if ui.input(|i| i.focused) {
-        ui.ctx().request_repaint_after(SPINNER_FRAME);
-        ui.input(|i| i.time)
-    } else {
-        STILL_ARC_TIME
-    };
-    arc(ui, rect, color, time);
+    ui.ctx().request_repaint_after(SPINNER_FRAME);
+    let t = ui.input(|i| i.time) * std::f64::consts::TAU / PULSE_PERIOD;
+    dot(ui, rect, (0.5 - 0.5 * t.cos()) as f32);
 }
 
-pub fn spinner(ui: &mut Ui, size: f32, color: Color32) {
+pub fn spinner(ui: &mut Ui, size: f32) {
     let (rect, _) = ui.allocate_exact_size(vec2(size, size), Sense::hover());
-    spinner_at(ui, rect, color);
+    spinner_at(ui, rect);
 }
 
-/// A still arc marking work in progress, for rows the user isn't watching: it never asks for a
-/// repaint, so agents working in other repos don't keep the whole window animating.
-pub fn activity_arc(ui: &mut Ui, size: f32, color: Color32) {
-    let (rect, _) = ui.allocate_exact_size(vec2(size, size), Sense::hover());
-    if ui.is_rect_visible(rect) {
-        arc(ui, rect, color, STILL_ARC_TIME);
-    }
-}
-
-fn arc(ui: &Ui, rect: Rect, color: Color32, time: f64) {
-    let radius = rect.height().min(rect.width()) * 0.5 - 1.5;
-    let start = time * std::f64::consts::TAU;
-    let end = start + 240f64.to_radians() * time.sin();
-    let points: Vec<_> = (0..16)
-        .map(|i| {
-            let angle = start + (end - start) * i as f64 / 16.0;
-            let (sin, cos) = angle.sin_cos();
-            rect.center() + radius * vec2(cos as f32, sin as f32)
-        })
-        .collect();
-    ui.painter().add(Shape::line(points, Stroke::new(2.0, color)));
+fn dot(ui: &Ui, rect: Rect, phase: f32) {
+    let max_radius = rect.height().min(rect.width()) * 0.5 - 1.0;
+    let radius = max_radius * (0.4 + 0.6 * phase);
+    let color = AGENT.gamma_multiply(0.55 + 0.45 * phase);
+    ui.painter().circle_filled(rect.center(), radius, color);
 }
 
 /// Compact relative time like "now", "5m", "3h", "2d".
