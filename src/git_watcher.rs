@@ -12,6 +12,7 @@ use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 
 use crate::git_ignore;
 use crate::git_status::{GitStatus, read_status};
+use crate::window_activity;
 use crate::worktree;
 
 /// Bursts of file events (a build, a checkout) collapse into one status run.
@@ -24,6 +25,8 @@ const FALLBACK_INTERVAL: Duration = Duration::from_secs(60);
 enum Msg {
     Paths(Vec<PathBuf>),
     Changed(Vec<PathBuf>),
+    /// The window came back to the front: run the fallback check if it came due meanwhile.
+    Wake,
 }
 
 #[derive(Default)]
@@ -60,6 +63,10 @@ impl GitWatcher {
             let _ = self.tx.send(Msg::Paths(paths.clone()));
             *current = paths;
         }
+    }
+
+    pub fn wake(&self) {
+        let _ = self.tx.send(Msg::Wake);
     }
 
     pub fn status(&self, path: &Path) -> Option<Arc<GitStatus>> {
@@ -115,7 +122,7 @@ impl Worker {
                     }
                     false
                 }
-                Err(RecvTimeoutError::Timeout) => true,
+                Ok(Msg::Wake) | Err(RecvTimeoutError::Timeout) => true,
                 Err(RecvTimeoutError::Disconnected) => return,
             };
             if !dirty.is_empty() {
@@ -126,7 +133,8 @@ impl Worker {
                     continue;
                 }
             }
-            if last_full.elapsed() >= FALLBACK_INTERVAL {
+            // The safety net only matters while someone looks; file events still apply meanwhile.
+            if last_full.elapsed() >= FALLBACK_INTERVAL && window_activity::is_active() {
                 dirty.extend(repos.iter().cloned());
                 refs_changed.extend(repos.iter().cloned());
                 last_full = Instant::now();

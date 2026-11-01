@@ -6,11 +6,11 @@ use eframe::egui;
 use uuid::Uuid;
 
 use crate::agent_events::{AgentEvents, AgentStatus};
-use crate::agent_launch::with_hooks;
+use crate::agent_launch::{with_first_prompt, with_hooks};
 use crate::claude_history::{has_transcript, is_session_id};
 use crate::claude_status_line::StatusLine;
 use crate::model::{Pane, PaneKind, Settings};
-use crate::terminal::{Launch, RepaintGate, SessionConfig, TerminalSession};
+use crate::terminal::{Launch, Presence, RepaintGate, SessionConfig, TerminalSession};
 
 /// Live terminal sessions keyed by pane id, spawned on first display.
 #[derive(Default)]
@@ -29,7 +29,8 @@ impl SessionPool {
         self.fresh.insert(pane);
     }
 
-    /// Runs `command` in the pane's shell once it starts, then leaves the shell open.
+    /// Runs `command` in a shell pane once it starts, then leaves the shell open; for a new agent
+    /// pane, it is the first prompt the agent gets.
     pub fn set_startup(&mut self, pane: Uuid, command: String) {
         self.startup.insert(pane, command);
     }
@@ -53,17 +54,33 @@ impl SessionPool {
                 .session
                 .as_deref()
                 .filter(|s| is_session_id(s) && has_transcript(cwd, s))
-                .map(|s| format!("{} --resume {s}", settings.agent_command));
+                // A preset's own command (Claude with flags) resumes with those flags.
+                .map(|s| {
+                    format!("{} --resume {s}", pane.command.as_deref().unwrap_or(&settings.agent_command))
+                });
             let command = match (&pane.kind, resume) {
-                (PaneKind::Shell, _) => self.startup.get(&id).cloned(),
+                (PaneKind::Shell, _) => self.startup.get(&id).or(pane.command.as_ref()).cloned(),
                 (PaneKind::Agent, Some(command)) => Some(command),
+                // A preset's agent starts afresh on restore too: only Claude's resume is known.
+                (PaneKind::Agent, None) if pane.command.is_some() => pane.command.clone(),
                 (PaneKind::Agent, None) if self.fresh.contains(&id) => Some(settings.agent_command.clone()),
                 (PaneKind::Agent, None) => Some(settings.agent_resume_command.clone()),
             };
-            let agent = (pane.kind == PaneKind::Agent && command.is_some())
-                .then(|| AgentEvents::create(id))
-                .flatten();
+            // A terminal tab gets events too, dormant, for an agent started from its shell.
+            let agent = if pane.kind == PaneKind::Agent && command.is_some() {
+                AgentEvents::create(id)
+            } else {
+                AgentEvents::create_dormant(id)
+            };
             let command = command.map(|c| if agent.is_some() { with_hooks(&c) } else { c });
+            // Added after the hooks so nothing in the prompt is read as part of the command line.
+            let task = (pane.kind == PaneKind::Agent && self.fresh.contains(&id))
+                .then(|| self.startup.get(&id))
+                .flatten();
+            let command = match (command, task) {
+                (Some(command), Some(task)) => Some(with_first_prompt(&command, task)),
+                (command, _) => command,
+            };
             let launch = match (&pane.kind, command.as_deref()) {
                 (_, None) => Launch::LoginShell,
                 (PaneKind::Agent, Some(command)) => Launch::Agent(command),
@@ -146,10 +163,16 @@ impl SessionPool {
 
     /// Drains PTY events of sessions not currently on screen so their channels don't grow
     /// unbounded and terminal queries still get answered.
-    pub fn pump_background(&mut self, visible: &HashSet<Uuid>, ctx: &egui::Context) {
+    /// While the window is minimized or covered (`window_shown` false) no pane is on screen.
+    pub fn pump_background(&mut self, visible: &HashSet<Uuid>, window_shown: bool, ctx: &egui::Context) {
         for (id, session) in &mut self.sessions {
-            let on_screen = visible.contains(id);
-            session.set_visible(on_screen);
+            let on_screen = window_shown && visible.contains(id);
+            // An on-screen pane's view sets how closely it is watched when it draws.
+            if !on_screen {
+                session.set_presence(Presence::Hidden);
+            } else if session.presence() == Presence::Hidden {
+                session.set_presence(Presence::Visible);
+            }
             if !on_screen && let Some(text) = session.process_events() {
                 ctx.copy_text(text);
             }

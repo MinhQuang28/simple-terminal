@@ -70,6 +70,10 @@ fn approvals_section(ui: &mut Ui, approvals: &[Approval], actions: &mut Vec<Acti
                 if button(ui, "Deny", Tone::Secondary).clicked() {
                     actions.push(Action::AnswerApproval { pane, allow: false });
                 }
+                if button(ui, "Peek", Tone::Secondary).on_hover_text("See what it is asking").clicked() {
+                    actions.push(Action::Peek(pane));
+                    ui.close();
+                }
                 ui.with_layout(Layout::top_down(Align::Min), |ui| {
                     ui.spacing_mut().item_spacing.y = 1.0;
                     let title =

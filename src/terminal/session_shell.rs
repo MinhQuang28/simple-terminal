@@ -13,6 +13,11 @@ impl TerminalSession {
         self.shell.as_ref()?.cwd.as_deref()
     }
 
+    /// The command the shell is running, if integration is active and one is.
+    pub fn running_command(&self) -> Option<&str> {
+        self.shell.as_ref()?.running()
+    }
+
     pub fn last_finished(&self) -> Option<&Finished> {
         self.shell.as_ref()?.last_finished.as_ref()
     }

@@ -61,7 +61,17 @@ pub fn show(ui: &mut Ui, ws: &mut Workspace<'_>) {
     ui.add_space(1.0);
     let Some(tab) = repo.active_tab.and_then(|id| repo.tabs.iter().find(|t| t.id == id)) else {
         ui.centered_and_justified(|ui| {
-            ui.label(RichText::new("No terminals open — ⌘T for a shell, ⇧⌘T for Claude").color(muted(ui)));
+            let keys: Vec<String> = [("tab.new", "for a shell"), ("tab.new_agent", "for Claude")]
+                .into_iter()
+                .map(|(command, what)| (crate::keymap_hint::hint(command), what))
+                .filter(|(keys, _)| !keys.is_empty())
+                .map(|(keys, what)| format!("{keys} {what}"))
+                .collect();
+            let text = match keys.is_empty() {
+                true => "No terminals open".to_string(),
+                false => format!("No terminals open — {}", keys.join(", ")),
+            };
+            ui.label(RichText::new(text).color(muted(ui)));
         });
         return;
     };
@@ -150,13 +160,25 @@ fn panes(ui: &mut Ui, ws: &mut Workspace<'_>, repo: &Repo, tab: &Tab) {
         match pool.get_or_spawn(pane, cwd, &state.settings, ui.ctx()) {
             Ok(session) => {
                 let cwd = session.cwd().map(Path::to_path_buf).unwrap_or_else(|| cwd.to_path_buf());
-                let shown = view::show(&mut child, session, id, &TerminalStyle::new(&state.settings), &cwd);
+                let is_pane = |p: Uuid| p != pane.id && state.all_pane_ids().any(|id| id == p);
+                let style = TerminalStyle::new(&state.settings);
+                let shown = view::show(&mut child, session, id, &style, &cwd, &is_pane);
                 let response = shown.response;
                 if response.gained_focus() || response.clicked() || response.secondary_clicked() {
                     actions.push(Action::FocusPane { tab: tab.id, pane: pane.id });
                 }
-                if let Some(Link::File { path, line, col }) = shown.open_file {
-                    actions.push(Action::OpenFileAt { repo: repo.id, path, line, col });
+                match shown.open_file {
+                    Some(Link::File { path, line, col }) => {
+                        actions.push(Action::OpenFileAt { repo: repo.id, path, line, col });
+                    }
+                    // One beside it in this tab is already in view: go to it rather than peek.
+                    Some(Link::Pane(other))
+                        if zoomed.is_none() && tab.panes.iter().any(|p| p.id == other) =>
+                    {
+                        actions.push(Action::FocusPane { tab: tab.id, pane: other });
+                    }
+                    Some(Link::Pane(other)) => actions.push(Action::Peek(other)),
+                    _ => {}
                 }
                 response.context_menu(|ui| pane_menu(ui, session, tab.id, pane.id, actions));
                 if drag.hovering(rect) {
@@ -167,7 +189,7 @@ fn panes(ui: &mut Ui, ws: &mut Workspace<'_>, repo: &Repo, tab: &Tab) {
                     actions.push(Action::FocusPane { tab: tab.id, pane: pane.id });
                 }
                 if session.exited {
-                    exited_overlay(&mut child, rect, tab.id, pane.id, actions);
+                    exited_overlay(&mut child, rect, session, tab.id, pane.id, actions);
                 }
             }
             Err(err) => {
@@ -186,7 +208,11 @@ fn panes(ui: &mut Ui, ws: &mut Workspace<'_>, repo: &Repo, tab: &Tab) {
         if multiple && (active || ui.rect_contains_pointer(rect)) {
             let button_rect = Rect::from_min_size(rect.right_top() + vec2(-28.0, 6.0), vec2(22.0, 22.0));
             let label = if zoomed.is_some() { "⤡" } else { "×" };
-            let hint = if zoomed.is_some() { "Unzoom (⇧⌘↩)" } else { "Close pane (⌘W)" };
+            let hint = if zoomed.is_some() {
+                crate::keymap_hint::with_hint("Unzoom", "pane.zoom")
+            } else {
+                crate::keymap_hint::with_hint("Close pane", "pane.close")
+            };
             let button = Button::new(RichText::new(label).size(15.0)).corner_radius(4.0);
             if ui.put(button_rect, button).on_hover_text(hint).clicked() {
                 actions.push(if zoomed.is_some() {

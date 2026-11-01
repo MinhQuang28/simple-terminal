@@ -11,6 +11,7 @@ use crate::editor::{BarKind, EditorBar};
 use crate::finder_service::FolderRequest;
 use crate::library;
 use crate::model::{PaneKind, Project, Repo, Tab};
+use crate::trash;
 use crate::ui::Action;
 use crate::ui::dialogs::Dialog;
 use crate::ui::palette::Palette;
@@ -42,6 +43,68 @@ impl RepodeckApp {
                     p.collapsed = !p.collapsed;
                 }
             }
+            Action::SetSidebarView(view) => self.state.sidebar_view = view,
+            Action::SwitchBranch { repo, branch, create } => {
+                let Some(path) = self.state.repo(repo).map(|r| r.path.clone()) else { return };
+                // Git sees those files clean, but saving them later would write this branch's
+                // text over the other one's.
+                let unsaved = self.buffers.dirty_under(&path);
+                if unsaved > 0 && !create {
+                    let files = if unsaved == 1 { "file" } else { "files" };
+                    let detail = format!("Save or revert {unsaved} unsaved {files} in this repo first.");
+                    self.report_error(&format!("Didn't switch to {branch}"), detail);
+                    return;
+                }
+                self.spawn_job("git-switch", move || {
+                    let result = crate::git_branch::switch(&path, &branch, create);
+                    Box::new(move |app: &mut RepodeckApp| match result {
+                        Ok(()) => crate::ui::toast::post(&app.ctx, format!("Switched to {branch}")),
+                        Err(err) => app.report_error(&format!("Couldn't switch to {branch}"), err),
+                    })
+                });
+                return;
+            }
+            Action::CommitAll { repo, message } => {
+                let Some(path) = self.state.repo(repo).map(|r| r.path.clone()) else { return };
+                self.spawn_job("git-commit", move || {
+                    let result = crate::git_commit::commit_all(&path, &message);
+                    Box::new(move |app: &mut RepodeckApp| match result {
+                        Ok(summary) => crate::ui::toast::post(&app.ctx, format!("Committed {summary}")),
+                        Err(err) => {
+                            crate::ui::commit_box::restore(&app.ctx, repo, message);
+                            app.report_error("Commit failed", err);
+                        }
+                    })
+                });
+                return;
+            }
+            Action::Peek(pane) => {
+                self.peek = Some(pane);
+                return;
+            }
+            Action::ClosePeek => {
+                self.peek = None;
+                self.focus_active_pane();
+                return;
+            }
+            Action::GoToPane(pane) => {
+                self.peek = None;
+                self.focus_pane(pane);
+            }
+            Action::TogglePinTab { repo, tab } => {
+                if let Some(tab) =
+                    self.state.repo_mut(repo).and_then(|r| r.tabs.iter_mut().find(|t| t.id == tab))
+                {
+                    tab.pinned = !tab.pinned;
+                }
+            }
+            Action::ToggleSettleTab { repo, tab } => {
+                if let Some(tab) =
+                    self.state.repo_mut(repo).and_then(|r| r.tabs.iter_mut().find(|t| t.id == tab))
+                {
+                    tab.settled = !tab.settled;
+                }
+            }
             Action::ToggleRepoTabs(id) => {
                 if let Some(repo) = self.state.repo_mut(id) {
                     repo.tabs_collapsed = !repo.tabs_collapsed;
@@ -69,6 +132,22 @@ impl RepodeckApp {
                 }
                 return;
             }
+            Action::RevealPath(path) => {
+                if let Err(err) = Command::new("open").arg("-R").arg(&path).spawn() {
+                    self.report_error("Could not reveal in Finder", err.to_string());
+                }
+                return;
+            }
+            Action::TrashPath { repo, ref path } => {
+                if !self.confirmed {
+                    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                    let title = format!("Move {name} to the Trash?");
+                    let body = "Tabs open on it close; the file can be put back from the Finder.".into();
+                    self.dialog = Some(Dialog::Confirm { title, body, ok: "Move to Trash", action });
+                    return;
+                }
+                self.trash_path(repo, path);
+            }
             Action::SelectRepo(id) => {
                 self.state.selected_repo = Some(id);
                 self.focus_active_pane();
@@ -77,12 +156,19 @@ impl RepodeckApp {
                 self.state.selected_repo = Some(repo);
                 if let Some(r) = self.state.repo_mut(repo) {
                     r.active_tab = Some(tab);
+                    // Opening a settled tab brings it back.
+                    r.tabs.iter_mut().filter(|t| t.id == tab).for_each(|t| t.settled = false);
                 }
                 self.focus_active_pane();
             }
             Action::NewTab { repo, kind } => {
-                self.new_tab(repo, kind, None);
+                // Within the repo being worked in, a terminal opens where the active pane is. Agents
+                // stay at the root, where the repo's conversation history is kept.
+                let here = self.state.selected_repo == Some(repo) && kind == PaneKind::Shell;
+                let cwd = if here { self.active_pane_cwd() } else { None };
+                self.new_tab(repo, kind, cwd);
             }
+            Action::RunPreset { repo, preset } => self.run_preset(repo, preset),
             Action::CloseTab { repo, tab } => {
                 let Some(t) = self.state.repo(repo).and_then(|r| r.tabs.iter().find(|t| t.id == tab)) else {
                     return;
@@ -151,7 +237,9 @@ impl RepodeckApp {
                 }
             }
             Action::AddDroppedRepos { project, paths } => self.add_dropped_repos(project, &paths),
-            Action::OpenFolderTab(path) => self.open_folder(FolderRequest { path, kind: PaneKind::Shell }),
+            Action::OpenFolderTab(path) => {
+                self.open_folder(FolderRequest { path, kind: PaneKind::Shell });
+            }
             Action::ToggleSidePanel => self.state.show_side_panel = !self.state.show_side_panel,
             Action::OpenQuickOpen => self.palette = Some(Palette::files()),
             Action::OpenFind => {
@@ -180,9 +268,12 @@ impl RepodeckApp {
                 self.state.show_side_panel = true;
             }
             Action::ToggleIgnoredFiles => self.state.show_ignored_files = !self.state.show_ignored_files,
-            Action::Split { dir, kind } => self.split(dir, kind),
+            Action::Split { dir, kind } => {
+                self.split(dir, kind);
+            }
             Action::ToggleZoom
             | Action::FocusNeighbor(_)
+            | Action::SwapNeighbor(_)
             | Action::ResizeSplit { .. }
             | Action::OpenRenameTab { .. }
             | Action::MoveTab { .. }
@@ -342,16 +433,48 @@ impl RepodeckApp {
 
     /// Opens and focuses a new tab in the repo; returns its pane.
     pub(crate) fn new_tab(&mut self, repo_id: Uuid, kind: PaneKind, cwd: Option<PathBuf>) -> Option<Uuid> {
+        let pane = self.add_tab(repo_id, kind, cwd)?;
+        let repo = self.state.repo_mut(repo_id)?;
+        repo.active_tab = repo.tabs.last().map(|t| t.id);
+        self.state.selected_repo = Some(repo_id);
+        self.pending_focus = Some(pane);
+        Some(pane)
+    }
+
+    /// Adds a tab to `repo` without switching to it; returns its pane.
+    pub(crate) fn add_tab(&mut self, repo_id: Uuid, kind: PaneKind, cwd: Option<PathBuf>) -> Option<Uuid> {
         let mut tab = Tab::new(kind);
         tab.panes[0].cwd = cwd;
         let pane = tab.panes[0].id;
-        let repo = self.state.repo_mut(repo_id)?;
-        repo.active_tab = Some(tab.id);
-        repo.tabs.push(tab);
-        self.state.selected_repo = Some(repo_id);
+        self.state.repo_mut(repo_id)?.tabs.push(tab);
         self.pool.mark_fresh(pane);
-        self.pending_focus = Some(pane);
+        self.dirty = true;
         Some(pane)
+    }
+
+    /// Moves `path` to the Trash, closing the tabs open on it or inside it, and re-lists its folder.
+    fn trash_path(&mut self, repo_id: Uuid, path: &Path) {
+        if let Err(err) = trash::move_to_trash(path) {
+            self.report_error("Could not move to the Trash", format!("{}: {err}", path.display()));
+            return;
+        }
+        let open: Vec<Uuid> = self
+            .state
+            .repo(repo_id)
+            .map(|r| {
+                r.tabs
+                    .iter()
+                    .filter(|t| t.file.as_deref().is_some_and(|f| f.starts_with(path)))
+                    .map(|t| t.id)
+                    .collect()
+            })
+            .unwrap_or_default();
+        for tab in open {
+            self.close_tab(repo_id, tab);
+        }
+        if let Some(parent) = path.parent() {
+            self.file_tree.forget(parent);
+        }
     }
 
     pub(crate) fn selected_repo_mut(&mut self) -> Option<&mut Repo> {

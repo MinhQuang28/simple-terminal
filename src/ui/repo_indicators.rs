@@ -5,7 +5,7 @@ use super::agent_status;
 use super::sidebar::{tab_busy, tab_status};
 use super::widgets::{accent, ago, muted, spinner, tag};
 use crate::git_status::GitStatus;
-use crate::model::Repo;
+use crate::model::{LaunchPreset, Repo};
 use crate::pr_status::{CheckState, PullRequest};
 use crate::session_pool::SessionPool;
 
@@ -16,12 +16,14 @@ pub struct RepoRow<'a> {
     pub pr: Option<&'a PullRequest>,
     pub pool: &'a SessionPool,
     pub now: u64,
+    /// Offered in the repo's new-tab menu.
+    pub presets: &'a [LaunchPreset],
 }
 
 /// A repo's activity, right to left: recency, pull request, spinner, sync state, merged, attention.
 /// Call inside a right-to-left layout.
 pub fn indicators(ui: &mut Ui, row: &RepoRow, actions: &mut Vec<Action>) {
-    let RepoRow { repo, status, pr, pool, now } = *row;
+    let RepoRow { repo, status, pr, pool, now, .. } = *row;
     ui.spacing_mut().item_spacing.x = 8.0;
     ui.label(RichText::new(ago(repo.last_active(), now)).color(muted(ui)).size(11.5));
     if let Some(pr) = pr {

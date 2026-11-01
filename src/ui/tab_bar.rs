@@ -1,17 +1,17 @@
 use eframe::egui::{Align2, Button, Color32, FontId, Rect, Response, RichText, Sense, Ui, pos2, vec2};
 
 use super::Action;
-use super::agent_icon;
 use super::agent_status;
 use super::claude_icon::ICON_SIZE;
 use super::history_menu;
-use super::sidebar::{tab_agent, tab_busy, tab_menu, tab_status, tab_title};
+use super::program_icon;
+use super::sidebar::{tab_busy, tab_menu, tab_program, tab_status, tab_title};
 use super::widgets::{accent, muted, right_aligned, spinner_at};
 use crate::agent_events::AgentStatus;
-use crate::agent_launch::Agent;
 use crate::claude_history::ClaudeHistory;
 use crate::editor::Buffers;
 use crate::model::{AppState, PaneKind, Repo, Tab};
+use crate::programs::Program;
 use crate::session_pool::SessionPool;
 
 pub const TAB_HEIGHT: f32 = 38.0;
@@ -24,7 +24,7 @@ struct TabState {
     dirty: bool,
     busy: bool,
     attention: Option<AgentStatus>,
-    agent: Agent,
+    program: &'static Program,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -52,7 +52,7 @@ pub fn show(
                 dirty: tab.file.as_deref().is_some_and(|p| buffers.is_dirty(p)),
                 busy: tab_busy(tab, pool),
                 attention: tab_status(tab, pool).filter(|s| s.needs_attention()),
-                agent: tab_agent(tab, pool),
+                program: tab_program(tab, pool),
             };
             let (response, close) = tab_item(ui, index + 1, tab, &title, &tab_state);
             centers.push(response.rect.center().x);
@@ -78,10 +78,19 @@ pub fn show(
         ui.add_space(6.0);
         ui.menu_button(RichText::new("+").size(19.0), |ui| {
             ui.set_min_width(180.0);
-            if ui.add(Button::new("New terminal").shortcut_text("⌘T")).clicked() {
+            if ui
+                .add(Button::new("New terminal").shortcut_text(crate::keymap_hint::hint("tab.new")))
+                .clicked()
+            {
                 actions.push(Action::NewTab { repo: repo.id, kind: PaneKind::Shell });
             }
-            if ui.add(Button::new("New Claude session").shortcut_text("⇧⌘T")).clicked() {
+            if ui
+                .add(
+                    Button::new("New Claude session")
+                        .shortcut_text(crate::keymap_hint::hint("tab.new_agent")),
+                )
+                .clicked()
+            {
                 actions.push(Action::NewTab { repo: repo.id, kind: PaneKind::Agent });
             }
         });
@@ -94,13 +103,11 @@ pub fn show(
 
 /// A numbered tab with an accent underline when active; returns (response, close clicked).
 fn tab_item(ui: &mut Ui, number: usize, tab: &Tab, title: &str, state: &TabState) -> (Response, bool) {
-    let TabState { active, dirty, busy, attention, agent } = *state;
+    let TabState { active, dirty, busy, attention, program } = *state;
     let attention_color = attention.map(|s| agent_status::color(ui, s));
     let text_color = if active { ui.visuals().text_color() } else { muted(ui) };
-    let icon_width = match (&tab.file, tab.kind()) {
-        (None, PaneKind::Agent) => agent_icon::width(ICON_SIZE, agent),
-        (Some(_), _) | (None, PaneKind::Shell) => 0.0,
-    };
+    // Files and diffs show only their name; terminals what runs in them.
+    let icon_width = if tab.is_document() { 0.0 } else { ICON_SIZE };
     let font = FontId::proportional(13.5);
     let layout = |text: String, color: Color32| ui.painter().layout_no_wrap(text, font.clone(), color);
     let number_galley = layout(number.to_string(), muted(ui));
@@ -130,7 +137,7 @@ fn tab_item(ui: &mut Ui, number: usize, tab: &Tab, title: &str, state: &TabState
     x += number_width + 8.0;
     if icon_width > 0.0 {
         let icon = Rect::from_min_size(pos2(x, y - ICON_SIZE / 2.0), vec2(icon_width, ICON_SIZE));
-        agent_icon::paint(painter, icon, agent, text_color);
+        program_icon::paint(painter, icon, program);
         x += icon_width + icon_gap;
     }
     painter.galley(pos2(x, y - title_galley.size().y / 2.0), title_galley, text_color);

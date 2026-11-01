@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use eframe::egui::containers::menu::MenuButton;
 use eframe::egui::{
-    Align, Align2, Button, Color32, CornerRadius, CursorIcon, FontId, Layout, Rect, Response, RichText,
-    Sense, Stroke, Ui, UiBuilder, vec2,
+    Align, Align2, Button, Color32, CornerRadius, CursorIcon, FontId, Layout, Painter, Pos2, Rect, Response,
+    RichText, Sense, Shape, Stroke, Ui, UiBuilder, Vec2, vec2,
 };
 
 pub const AGENT: Color32 = Color32::from_rgb(0xe0, 0x8a, 0x5f);
@@ -186,17 +186,34 @@ pub fn file_icon(ui: &mut Ui, is_dir: bool) {
 }
 
 /// Busy dot animation frame interval. A dot shows whenever an agent is working, and each of
-/// its frames repaints the whole window (~1 ms), so 30 Hz halves that steady cost while the
-/// pulse still looks smooth.
-const SPINNER_FRAME: Duration = Duration::from_micros(1_000_000 / 30);
+/// its frames repaints the whole window (~1 ms); a slow size/alpha pulse looks the same at 15 Hz,
+/// a quarter of a 60 Hz cost, while it is often the only thing waking an otherwise quiet window.
+const SPINNER_FRAME: Duration = Duration::from_micros(1_000_000 / 15);
 /// One grow-and-shrink cycle of the busy dot, in seconds.
 const PULSE_PERIOD: f64 = 1.2;
 
-/// Orange dot pulsing big and small, like Claude Code's working indicator: an agent is at work.
-/// It animates, and so repaints, whenever visible, focused window or not, so background agents
-/// still read as busy.
+/// Orange six-petalled star (Claude Code's ✻) swelling, shrinking and slowly turning: an agent is
+/// at work. It animates, and so repaints, whenever visible, focused window or not, so background
+/// agents still read as busy.
 pub fn spinner_at(ui: &Ui, rect: Rect) {
-    pulsing_dot(ui, rect, AGENT);
+    let Some((phase, time)) = pulse(ui, rect) else { return };
+    let max_radius = rect.height().min(rect.width()) * 0.5;
+    let radius = max_radius * (0.6 + 0.4 * phase);
+    // A sixth of a turn per pulse: the petals land where the next ones were.
+    let turn = (time / PULSE_PERIOD * std::f64::consts::TAU / 6.0) as f32;
+    star(ui.painter(), rect.center(), radius, turn, AGENT.gamma_multiply(0.7 + 0.3 * phase));
+}
+
+/// Six petals around `center`; each a slim diamond, so egui fills it as the convex shape it is.
+fn star(painter: &Painter, center: Pos2, radius: f32, turn: f32, color: Color32) {
+    let at = |angle: f32, r: f32| center + r * Vec2::angled(angle);
+    for petal in 0..6 {
+        let angle = turn + petal as f32 * std::f32::consts::TAU / 6.0 - std::f32::consts::FRAC_PI_2;
+        let side = 0.38;
+        let points =
+            vec![center, at(angle - side, radius * 0.42), at(angle, radius), at(angle + side, radius * 0.42)];
+        painter.add(Shape::convex_polygon(points, color, Stroke::NONE));
+    }
 }
 
 pub fn spinner(ui: &mut Ui, size: f32) {
@@ -215,15 +232,27 @@ pub fn loading_dot(ui: &mut Ui, size: f32) {
 }
 
 fn pulsing_dot(ui: &Ui, rect: Rect, color: Color32) {
-    if !ui.is_rect_visible(rect) {
-        return;
-    }
-    ui.ctx().request_repaint_after(SPINNER_FRAME);
-    let t = ui.input(|i| i.time) * std::f64::consts::TAU / PULSE_PERIOD;
-    let phase = (0.5 - 0.5 * t.cos()) as f32;
+    let Some((phase, _)) = pulse(ui, rect) else { return };
     let max_radius = rect.height().min(rect.width()) * 0.5 - 1.0;
     let radius = max_radius * (0.4 + 0.6 * phase);
     ui.painter().circle_filled(rect.center(), radius, color.gamma_multiply(0.55 + 0.45 * phase));
+}
+
+/// The shared pulse at this moment, 0 (small) to 1 (big), and the time; schedules the next frame.
+/// `None` when `rect` is off screen, which then costs nothing.
+fn pulse(ui: &Ui, rect: Rect) -> Option<(f32, f64)> {
+    if !ui.is_rect_visible(rect) {
+        return None;
+    }
+    let time = ui.input(|i| i.time);
+    // Snapped to a shared tick so dots and other timed repaints land on the same frames.
+    let frame = SPINNER_FRAME.as_secs_f64();
+    let wait = frame - time.rem_euclid(frame);
+    // A tick that is all but due now would cost an extra frame; wait for the next one.
+    let wait = if wait < 0.002 { wait + frame } else { wait };
+    ui.ctx().request_repaint_after(Duration::from_secs_f64(wait));
+    let t = time * std::f64::consts::TAU / PULSE_PERIOD;
+    Some(((0.5 - 0.5 * t.cos()) as f32, time))
 }
 
 /// Compact relative time like "now", "5m", "3h", "2d".

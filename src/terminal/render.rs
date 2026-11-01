@@ -5,10 +5,10 @@ use alacritty_terminal::term::TermMode;
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::vte::ansi::CursorShape;
 use eframe::egui::text::{LayoutJob, TextFormat};
-use eframe::egui::{Color32, FontFamily, FontId, Painter, Pos2, Rect, Stroke, StrokeKind, Vec2, vec2};
+use eframe::egui::{Color32, FontFamily, FontId, Painter, Pos2, Rect, Stroke, StrokeKind, Vec2, pos2, vec2};
 
 use super::box_drawing;
-use super::render_cache::{Item, PaintCache};
+use super::render_cache::{Item, PaintCache, RowLayout};
 use super::snapshot::{Cell, Frame};
 use super::style::TerminalStyle;
 
@@ -64,7 +64,8 @@ struct BgRun {
 struct Painting<'a> {
     painter: &'a Painter,
     style: &'a TerminalStyle<'a>,
-    /// Geometry with the origin at zero, so what is laid out can be replayed anywhere.
+    /// Geometry with the origin at the laid-out row's top-left corner, so what is laid out can
+    /// be replayed at any row.
     grid: Grid,
 }
 
@@ -80,20 +81,20 @@ impl Painting<'_> {
     }
 
     /// Lays out `text` on its own cell.
-    fn glyph(&self, cache: &mut PaintCache, cell: Rect, text: String, bold: bool, color: Color32) {
-        let job = LayoutJob::single_section(text, self.format(bold, color));
+    fn glyph(&self, cache: &mut RowLayout, cell: Rect, text: String, bold: bool, color: Color32) {
+        let galley = self.painter.layout_job(LayoutJob::single_section(text, self.format(bold, color)));
         let pos = cell.min.to_vec2() + vec2(0.0, self.grid.text_offset);
-        cache.items.push(Item::Glyph { pos, job, color });
+        cache.items.push(Item::Glyph { pos, galley, color });
     }
 
-    fn flush_text(&self, cache: &mut PaintCache, run: &mut Option<TextRun>) {
+    fn flush_text(&self, cache: &mut RowLayout, run: &mut Option<TextRun>) {
         let Some(mut r) = run.take() else { return };
         r.job.append(&r.pending, 0.0, self.format(r.bold, r.color));
         let pos = self.grid.cell_rect(r.row, r.col, 1).min.to_vec2() + vec2(0.0, self.grid.text_offset);
-        cache.runs.push((pos, r.job, r.color));
+        cache.runs.push((pos, self.painter.layout_job(r.job), r.color));
     }
 
-    fn flush_bg(&self, cache: &mut PaintCache, run: &mut Option<BgRun>) {
+    fn flush_bg(&self, cache: &mut RowLayout, run: &mut Option<BgRun>) {
         if let Some(r) = run.take() {
             cache.backgrounds.push((self.grid.cell_rect(r.row, r.col, r.end - r.col), r.color));
         }
@@ -115,10 +116,10 @@ impl Painting<'_> {
 }
 
 /// Backgrounds go down before any text so a row's rect never covers glyphs painted earlier.
-fn layout_backgrounds(p: &Painting<'_>, frame: &Frame, cache: &mut PaintCache) {
+fn layout_backgrounds(p: &Painting<'_>, cells: &[Cell], cache: &mut RowLayout) {
     let background = p.style.theme.background.color();
     let mut bg_run: Option<BgRun> = None;
-    for cell in &frame.cells {
+    for cell in cells {
         let Cell { row, col, bg, width, .. } = *cell;
         let continues = bg_run.as_ref().is_some_and(|r| r.row == row && r.color == bg && r.end == col);
         match bg_run.as_mut() {
@@ -134,12 +135,12 @@ fn layout_backgrounds(p: &Painting<'_>, frame: &Frame, cache: &mut PaintCache) {
     p.flush_bg(cache, &mut bg_run);
 }
 
-/// Lays the frame's cells out into `cache`: backgrounds, decorations, box-drawing glyphs, and
+/// Lays one row's cells out into `cache`: backgrounds, decorations, box-drawing glyphs, and
 /// text runs of consecutive cells sharing a weight.
-fn layout(p: &Painting<'_>, frame: &Frame, cache: &mut PaintCache) {
-    layout_backgrounds(p, frame, cache);
+fn layout(p: &Painting<'_>, cells: &[Cell], cache: &mut RowLayout) {
+    layout_backgrounds(p, cells, cache);
     let mut run: Option<TextRun> = None;
-    for cell in &frame.cells {
+    for cell in cells {
         let Cell { row, col, c, fg, flags, width, .. } = *cell;
         let bold = flags.contains(Flags::BOLD);
         let rect = p.grid.cell_rect(row, col, width);
@@ -195,8 +196,14 @@ fn layout(p: &Painting<'_>, frame: &Frame, cache: &mut PaintCache) {
     p.flush_text(cache, &mut run);
 }
 
-/// Paints the captured frame and cursor; returns the cursor rect for IME placement. The cells
-/// are laid out once per frame generation and style, and replayed from `cache` otherwise.
+/// Forgets layouts and glyph measurements made with the fonts being replaced.
+pub fn fonts_replaced() {
+    FITS_CELL.with_borrow_mut(HashMap::clear);
+    super::render_cache::fonts_replaced();
+}
+
+/// Paints the captured frame and cursor; returns the cursor rect for IME placement. Rows are
+/// laid out once per content and style, and replayed from `cache` otherwise.
 pub fn paint(
     painter: &Painter,
     grid: Grid,
@@ -206,10 +213,15 @@ pub fn paint(
     cursor_state: CursorState,
     preedit: Option<&str>,
 ) -> Rect {
-    if !cache.reuse(frame.generation, style, grid) {
-        let p = Painting { painter, style, grid: Grid { origin: Pos2::ZERO, ..grid } };
-        layout(&p, frame, cache);
+    let mut laid_out = 0;
+    if !cache.reuse(frame.generation, style, grid, painter) {
+        cache.rebuild(&frame.cells, |cells, out| {
+            let origin = pos2(0.0, -(cells[0].row as f32) * grid.cell.y);
+            layout(&Painting { painter, style, grid: Grid { origin, ..grid } }, cells, out);
+        });
+        laid_out = cache.laid_out;
     }
+    crate::bench::paint(laid_out);
     cache.replay(painter, grid);
 
     let p = Painting { painter, style, grid };

@@ -135,6 +135,11 @@ impl Buffers {
         self.open.values().filter(|b| b.is_dirty()).count()
     }
 
+    /// Unsaved files inside `dir`.
+    pub fn dirty_under(&self, dir: &Path) -> usize {
+        self.open.iter().filter(|(path, b)| path.starts_with(dir) && b.is_dirty()).count()
+    }
+
     pub fn save_all(&mut self) {
         for (path, buffer) in &mut self.open {
             if buffer.is_dirty() {

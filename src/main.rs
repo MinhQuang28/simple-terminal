@@ -16,10 +16,13 @@ mod app_panes;
 mod app_pr;
 mod app_resume_session;
 mod app_shortcuts;
+mod app_split;
 mod app_worktree;
 mod attention;
+mod bench;
 mod claude_history;
 mod claude_status_line;
+mod cli;
 mod clipboard_image;
 mod codex_launch;
 mod diff;
@@ -31,10 +34,14 @@ mod file_tree;
 mod finder_service;
 mod font_catalog;
 mod font_install;
+mod git_branch;
+mod git_commit;
 mod git_ignore;
 mod git_status;
 mod git_watcher;
 mod inbox;
+mod keymap;
+mod keymap_hint;
 mod library;
 mod library_cache;
 mod model;
@@ -43,18 +50,23 @@ mod notification_permission;
 mod notification_post;
 mod pane_layout;
 mod pr_status;
+mod program_icon_files;
+mod programs;
 mod session_pool;
 mod shell_env;
 mod shell_events;
 mod shell_integration;
 mod socket_api;
+mod socket_commands;
 mod store;
 mod symbol_fallback_fonts;
 mod tab_title;
 mod terminal;
 mod theme;
 mod theme_presets;
+mod trash;
 mod ui;
+mod window_activity;
 mod worktree;
 
 use eframe::egui;
@@ -74,67 +86,12 @@ fn drop_parent_agent_env() {
     }
 }
 
-const CLI_USAGE: &str = "usage: repodeck notify <text> | open <folder> | claude <folder> | focus [pane] | list | run-codex <codex> [args…]";
-
-/// Command-line mode, used by scripts and hooks inside panes. `notify` emits an OSC 9 sequence
-/// on stdout, which Repodeck (and most other terminals) show as a notification for the pane it
-/// runs in; the rest talk to the running app over its socket.
-fn run_cli() -> bool {
-    use std::io::Write;
-    let mut args = std::env::args_os().skip(1).map(|a| a.to_string_lossy().into_owned());
-    let Some(verb) = args.next() else { return false };
-    if verb == agent_launch::CODEX_VERB {
-        codex_launch::run(args);
-    }
-    let rest: String = args.collect::<Vec<_>>().join(" ").chars().filter(|c| !c.is_control()).collect();
-    let command = match verb.as_str() {
-        "notify" => {
-            let mut out = std::io::stdout().lock();
-            let _ = write!(out, "\x1b]9;{rest}\x07");
-            let _ = out.flush();
-            return true;
-        }
-        "open" | "claude" => {
-            let folder = if rest.is_empty() { ".".to_string() } else { rest };
-            let path = std::fs::canonicalize(&folder).unwrap_or_else(|_| folder.into());
-            format!("{verb} {}", path.display())
-        }
-        "focus" => {
-            let pane =
-                if rest.is_empty() { std::env::var(socket_api::PANE_VAR).unwrap_or_default() } else { rest };
-            format!("focus {pane}")
-        }
-        "list" => "list".to_string(),
-        "-h" | "--help" | "help" => {
-            println!("{CLI_USAGE}");
-            return true;
-        }
-        _ => return false,
-    };
-    match socket_api::send(&command) {
-        Ok(reply) if reply.starts_with("error:") => {
-            eprintln!("{reply}");
-            std::process::exit(1);
-        }
-        Ok(reply) => {
-            if !reply.is_empty() {
-                println!("{reply}");
-            }
-        }
-        Err(err) => {
-            eprintln!("repodeck: {err}");
-            std::process::exit(1);
-        }
-    }
-    true
-}
-
 fn main() -> eframe::Result {
-    if run_cli() {
+    if cli::run() {
         return Ok(());
     }
     if std::env::args_os().len() > 1 {
-        eprintln!("{CLI_USAGE}");
+        eprintln!("{}", cli::USAGE);
         std::process::exit(2);
     }
     drop_parent_agent_env();

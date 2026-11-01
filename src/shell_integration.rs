@@ -5,6 +5,8 @@ use crate::store;
 
 /// Environment variable naming the file the shell appends command events to.
 pub const EVENTS_VAR: &str = "REPODECK_SHELL_EVENTS";
+/// Environment variable holding the path of the Repodeck binary, for the agent wrappers below.
+pub const EXE_VAR: &str = "REPODECK_EXE";
 
 const ZSHENV: &str = r#"# Repodeck shell integration: load the user's config, then add prompt hooks.
 REPODECK_ZDOTDIR="$ZDOTDIR"
@@ -33,6 +35,15 @@ if [[ -n "$REPODECK_SHELL_EVENTS" ]]; then
   }
   add-zsh-hook preexec __repodeck_preexec
   add-zsh-hook precmd __repodeck_precmd
+fi
+# Codex typed here starts with Repodeck's hooks, so the pane shows its status as a Codex tab
+# would. (Claude Code reports its status by itself, through OSC 7501.)
+if [[ -n "$REPODECK_AGENT_EVENTS" && -x "$REPODECK_EXE" ]]; then
+  codex() {
+    local real
+    real=$(whence -p codex) || { print -u2 "zsh: command not found: codex"; return 127; }
+    "$REPODECK_EXE" run-codex "$real" "$@"
+  }
 fi
 "#;
 
@@ -98,12 +109,19 @@ mod tests {
         unsafe { std::env::set_var("REPODECK_DATA_DIR", &root) };
         let events = root.join("events.log");
         fs::write(&events, "").unwrap();
+        // A `codex` on the PATH, which the wrapper must hand to `repodeck run-codex`.
+        let bin = root.join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        fs::write(bin.join("codex"), "#!/bin/sh\necho real codex\n").unwrap();
+        fs::set_permissions(bin.join("codex"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
 
         let mut child = Command::new("/bin/zsh")
             .arg("-i")
             .env_clear()
             .env("HOME", &home)
-            .env("PATH", "/usr/bin:/bin")
+            .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+            .env("REPODECK_AGENT_EVENTS", root.join("agent-events.log"))
+            .env(EXE_VAR, "/bin/echo")
             .env("TERM", "dumb")
             .envs(env("/bin/zsh", &events))
             .env("REPODECK_USER_ZDOTDIR", &home)
@@ -112,10 +130,17 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        child.stdin.take().unwrap().write_all(b"echo rc=$REPODECK_TEST_RC\nfalse\nexit\n").unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(b"echo rc=$REPODECK_TEST_RC\nfalse\ncodex --yolo\nexit\n")
+            .unwrap();
         let output = child.wait_with_output().unwrap();
         let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(stdout.contains("rc=loaded"), "{stdout:?}");
+        let wrapped = format!("run-codex {} --yolo", bin.join("codex").display());
+        assert!(stdout.contains(&wrapped), "codex goes through Repodeck: {stdout:?}");
 
         let log = fs::read_to_string(&events).unwrap();
         assert!(log.lines().any(|l| l.starts_with("S\t") && l.ends_with("\tfalse")), "{log}");

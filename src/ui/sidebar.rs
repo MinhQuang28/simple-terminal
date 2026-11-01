@@ -4,17 +4,21 @@ use eframe::egui::{
 use uuid::Uuid;
 
 use super::Action;
+use super::agent_status;
+use super::agents_list;
 use super::chrome::window_drag_area;
 use super::design::{TEXT_CAPTION, hairline};
 use super::repo_drag::{self, RepoSpan};
+use super::repo_indicators::busy_mark;
 use super::sidebar_rows::repo_block;
 use super::widgets::{glyph_button, icon_button, menu_icon, muted, right_aligned, row_sized};
 use crate::agent_events::AgentStatus;
 use crate::agent_launch::Agent;
 use crate::file_drag::FileDrag;
 use crate::git_watcher::GitWatcher;
-use crate::model::{AppState, Project, Repo, Tab, now_secs};
+use crate::model::{AppState, PaneKind, Project, Repo, SidebarView, Tab, now_secs};
 use crate::pr_status::PrWatcher;
+use crate::programs::{self, Program};
 use crate::session_pool::SessionPool;
 use crate::tab_title;
 
@@ -35,9 +39,14 @@ pub fn show(
     let strip = ui.max_rect().with_max_y(ui.max_rect().top() + TRAFFIC_LIGHTS_HEIGHT);
     window_drag_area(ui, strip);
     ui.add_space(TRAFFIC_LIGHTS_HEIGHT);
+    let view = state.sidebar_view;
     ui.horizontal(|ui| {
         ui.add_space(6.0);
-        ui.label(RichText::new("Projects").color(muted(ui)).size(12.5));
+        ui.spacing_mut().item_spacing.x = 12.0;
+        view_switch(ui, "Projects", view, SidebarView::Projects, actions);
+        let agents = agents_list::count(state, pool);
+        let label = if agents > 0 { format!("Agents {agents}") } else { "Agents".into() };
+        view_switch(ui, &label, view, SidebarView::Agents, actions);
         right_aligned(ui, |ui| {
             // Match the inner shrink of the rows below so the buttons line up.
             ui.add_space(6.0);
@@ -50,11 +59,22 @@ pub fn show(
 
     Panel::bottom("sidebar-footer").show_separator_line(false).frame(Frame::new()).show(ui, |ui| {
         ui.horizontal(|ui| {
-            if icon_button(ui, "⚙").on_hover_text("Settings (⌘,)").clicked() {
+            if icon_button(ui, "⚙")
+                .on_hover_text(crate::keymap_hint::with_hint("Settings", "settings.open"))
+                .clicked()
+            {
                 actions.push(Action::OpenSettings);
             }
         });
     });
+
+    if view == SidebarView::Agents {
+        ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            agents_list::show(ui, state, pool, actions);
+        });
+        return;
+    }
 
     let mut spans: Vec<(Uuid, Rect)> = Vec::new();
     let mut repo_spans: Vec<RepoSpan> = Vec::new();
@@ -66,7 +86,7 @@ pub fn show(
                 project_divider(ui);
             }
             let top = ui.cursor().top();
-            project_row(ui, project, actions);
+            project_row(ui, project, pool, actions);
             if !project.collapsed {
                 ui.add_space(4.0);
                 for repo in &project.repos {
@@ -120,7 +140,17 @@ fn drop_target(ui: &Ui, drag: &FileDrag, spans: &[(Uuid, Rect)], actions: &mut V
     }
 }
 
-fn project_row(ui: &mut Ui, project: &Project, actions: &mut Vec<Action>) {
+/// "Projects" / "Agents" header switch; the current view reads as a heading, the other muted.
+fn view_switch(ui: &mut Ui, text: &str, current: SidebarView, view: SidebarView, actions: &mut Vec<Action>) {
+    let color = if current == view { ui.visuals().text_color() } else { muted(ui) };
+    let label =
+        Label::new(RichText::new(text).color(color).size(12.5)).selectable(false).sense(Sense::click());
+    if ui.add(label).clicked() && current != view {
+        actions.push(Action::SetSidebarView(view));
+    }
+}
+
+fn project_row(ui: &mut Ui, project: &Project, pool: &SessionPool, actions: &mut Vec<Action>) {
     let (response, ()) = row_sized(ui, false, 0.0, 26.0, |ui| {
         right_aligned(ui, |ui| {
             ui.spacing_mut().item_spacing.x = 10.0;
@@ -136,6 +166,18 @@ fn project_row(ui: &mut Ui, project: &Project, actions: &mut Vec<Action>) {
                     actions.push(Action::RemoveProject(project.id));
                 }
             });
+            // A folded project still says when an agent in it works or waits on the user.
+            if project.collapsed {
+                let tabs = || project.repos.iter().flat_map(|r| &r.tabs);
+                if tabs().any(|t| tab_busy(t, pool)) {
+                    busy_mark(ui);
+                }
+                if let Some(status) =
+                    tabs().filter_map(|t| tab_status(t, pool)).filter(|s| s.needs_attention()).max()
+                {
+                    agent_status::pill(ui, status);
+                }
+            }
             // A caption rather than a row, so it doesn't read as another repo.
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                 ui.add_space(6.0);
@@ -154,6 +196,18 @@ fn project_row(ui: &mut Ui, project: &Project, actions: &mut Vec<Action>) {
 }
 
 pub fn tab_menu(ui: &mut Ui, state: &AppState, repo: Uuid, tab: Uuid, actions: &mut Vec<Action>) {
+    // A look at a tab that isn't on screen, without leaving the one that is.
+    let shown =
+        state.selected_repo == Some(repo) && state.repo(repo).is_some_and(|r| r.active_tab == Some(tab));
+    let pane = state
+        .repo(repo)
+        .and_then(|r| r.tabs.iter().find(|t| t.id == tab))
+        .and_then(|t| t.active_pane.or_else(|| t.panes.first().map(|p| p.id)));
+    if let Some(pane) = pane.filter(|_| !shown)
+        && ui.button("Peek").clicked()
+    {
+        actions.push(Action::Peek(pane));
+    }
     if ui.button("Rename tab…").clicked() {
         actions.push(Action::OpenRenameTab { repo, tab });
     }
@@ -169,7 +223,13 @@ pub fn tab_menu(ui: &mut Ui, state: &AppState, repo: Uuid, tab: Uuid, actions: &
             }
         });
     }
-    if ui.add(Button::new("Close tab").shortcut_text("⇧⌘W")).clicked() {
+    let settled =
+        state.repo(repo).and_then(|r| r.tabs.iter().find(|t| t.id == tab)).is_some_and(|t| t.settled);
+    let settle = if settled { "Bring back" } else { "Settle (hide until it needs you)" };
+    if ui.button(settle).clicked() {
+        actions.push(Action::ToggleSettleTab { repo, tab });
+    }
+    if ui.add(Button::new("Close tab").shortcut_text(crate::keymap_hint::hint("tab.close"))).clicked() {
         actions.push(Action::CloseTab { repo, tab });
     }
 }
@@ -179,6 +239,25 @@ pub fn tab_title(tab: &Tab, pool: &SessionPool, fallback: &str) -> String {
     let pane = tab.active_pane.or_else(|| tab.panes.first().map(|p| p.id));
     let live = pane.and_then(|id| pool.get(id)).and_then(|s| s.title());
     tab_title::display(tab, live, fallback)
+}
+
+/// What the tab shows as its icon: the agent in it (one Repodeck started, or one reporting from
+/// a terminal), else what its terminal is running, else the shell.
+pub fn tab_program(tab: &Tab, pool: &SessionPool) -> &'static Program {
+    let sessions = || tab.panes.iter().filter_map(|p| pool.get(p.id));
+    if let Some(agent) = sessions().find_map(|s| s.agent_kind()) {
+        return programs::agent(agent);
+    }
+    if tab.kind() == PaneKind::Agent {
+        return programs::agent(tab_agent(tab, pool));
+    }
+    let pane = tab.active_pane.or_else(|| tab.panes.first().map(|p| p.id));
+    let running = pane.and_then(|id| pool.get(id)).and_then(|s| s.running_command());
+    running
+        .map(|line| {
+            programs::for_command(line).or_else(|| programs::get("program")).unwrap_or(programs::shell())
+        })
+        .unwrap_or(programs::shell())
 }
 
 /// Which agent the tab runs; Claude until its pane has started.

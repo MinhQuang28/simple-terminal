@@ -17,8 +17,18 @@ CLI (`claude`), never calls an LLM API itself, and runs as one Rust process.
   clickable links, in-pane search (⌘F), box-drawing and powerline glyphs drawn as seamless shapes.
 - **Shell integration** — knows each command's start, end and exit status; long commands report
   when they finish.
+- **Program icons** — each tab and sidebar row shows what runs in it (Claude, Codex, Neovim,
+  `cargo`, `npm run dev`, …), from Herdr's program table in `assets/icons/programs.json`.
 - **Command palette** (⇧⌘K) — fuzzy-run any command or jump to any tab; **quick open** (⌘P)
   fuzzy-finds any file in the repo.
+- **Rearrange panes** — ⌃⇧⌘ + arrow swaps the active pane with its neighbour. ⌘T opens a terminal
+  in the active pane's folder.
+- **Launch presets** (Settings → Agent) — commands such as `npm run dev` or `codex` in each repo's
+  **+** menu, run in a terminal or as an agent with status. A terminal preset's command runs
+  again when the pane is restored or restarted.
+- **Rebindable keys** — put overrides in `keys.json` in the data folder, read at startup, e.g.
+  `{"tab.new": "ctrl+t", "tab.reopen": null}`. Command names and defaults are in `src/keymap.rs`; menus and
+  the palette show the keys you bound.
 - **Files panel** (⌘B) with a built-in editor — syntax highlighting, find (⌘F), go to line (⌘L),
   optional word wrap — and a rendered **Markdown preview**. Gitignored files are hidden; the ⊘
   button in the top bar lists them too, muted.
@@ -31,6 +41,11 @@ CLI (`claude`), never calls an LLM API itself, and runs as one Rust process.
 
 ### Coding agents
 
+- **Status from any terminal tab** — Repodeck speaks OSC 7501, the Program Status Protocol, so
+  `claude` typed into an ordinary terminal tab (Claude Code 2.1.295+) shows Working, Done or
+  Approve? too, without hooks; so does any other program that reports it. Codex doesn't speak
+  it yet, so in zsh tabs `codex` is wrapped to start through `repodeck run-codex` and gets the
+  same hook-driven status as an agent tab.
 - **Agent status at a glance** — each agent pane shows *Working*, *Done*, *Your turn*, *Approve?*
   or *Error*, read from the agent's own lifecycle hooks, injected per launch so no global config
   is edited: Claude Code through `claude --settings`, Codex through `-c hooks.…` overrides
@@ -38,6 +53,14 @@ CLI (`claude`), never calls an LLM API itself, and runs as one Rust process.
   `OPENCODE_CONFIG_CONTENT`.
 - **Tabs named after the work** — a tab takes Claude's own summary of the task, and when the
   agent leaves that stale across a turn, the prompt the turn answered.
+- **Agents view** — the sidebar's *Agents* switch lists every agent tab across projects, the
+  ones waiting on you first; pin tabs to the top. A folded project still shows a busy dot and the
+  most pressing status inside it.
+- **Peek** — right-click a tab (or *Peek* in the inbox) to watch its pane live over the current
+  tab without switching; *Go to* switches there. ⌘-click a pane id printed in a terminal (by
+  `repodeck split` or `repodeck list`) to peek at that pane.
+- **Settle tabs** — put a tab away from the sidebar while it keeps running; it comes back when
+  its agent needs you.
 - **Inbox & notifications** — a bell lists every agent that finished or needs you, with what it
   said; allow or deny
   permission prompts without switching panes; ⌃⌘N jumps to the next pane needing attention.
@@ -53,11 +76,14 @@ CLI (`claude`), never calls an LLM API itself, and runs as one Rust process.
 ### Git & GitHub
 
 - **Branch and change count** per repo in the sidebar and status bar, refreshed on file changes.
+- **Switch branches** from the branch chip in the top bar, or start a new one from the current
+  commit; it warns when an agent is mid-turn in that repo.
 - **Worktrees** — create a worktree for a branch in one step: gitignored files listed in
   `.worktreeinclude` are copied over, your setup command runs, and the repo's Claude history is
   copied so its conversations can be resumed there. Remove it (and its merged branch) when done.
 - **Pull requests** — see the branch's PR and CI state (via `gh`), open a new PR, or hand a failed
   CI job's log to Claude.
+- **Commit from the Changes panel** — type a message and commit every change in the repo.
 
 ### Scripting
 
@@ -69,7 +95,15 @@ repodeck open ~/code/api           # open a folder in a new terminal tab
 repodeck claude ~/code/api         # open a folder in a new Claude tab
 repodeck focus "$REPODECK_PANE"    # bring a pane to the front
 repodeck list                      # every pane: repo, path, tab, id, kind, agent status
+repodeck split -- npm run dev      # shell beside this pane running a command; prints its id
+repodeck split --claude -- "review src/"   # a second agent with a first prompt
+repodeck claude . --task "fix the failing test"
+repodeck send --pane <id> "yes"    # type into a pane and press Return
+repodeck read --pane <id> --lines 80       # what a pane shows, scrollback included
+repodeck --skill                   # the guide for agents driving Repodeck
 ```
+
+`open` and `claude` print the new pane's id.
 
 Programs can also raise notifications with the OSC 9 / OSC 777 escape sequences.
 
@@ -136,6 +170,10 @@ script/build-app.sh --install
 > `codesign -dvv /Applications/Repodeck.app 2>&1 | grep Authority`.
 
 For a quick unbundled run while developing: `cargo run`.
+
+To compare drawing cost between builds, start the app with `REPODECK_BENCH=/path/to/bench.jsonl`:
+once a second it appends window frames, terminal paints, terminal rows laid out and the time the
+UI pass took. Run the same workload against each build, with the window visible.
 
 ## Usage
 
@@ -214,3 +252,6 @@ Repodeck is **source-available** under the [PolyForm Noncommercial License 1.0.0
 - ❌ **Commercial use is not permitted** — you may not copy this source into your own product, sell it, charge for access to it, or otherwise use it for commercial purposes without a separate license from the author.
 
 Copyright © Ha Minh Quang.
+
+Program icons in `assets/icons/` come from Simple Icons, Lucide and LobeHub under their own licenses;
+see [assets/icons/LICENSES.md](assets/icons/LICENSES.md).

@@ -1,7 +1,8 @@
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
+use std::process::ExitStatus;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
@@ -22,8 +23,9 @@ use alacritty_terminal::grid::Dimensions;
 use super::colors;
 use super::image_paste::Queued;
 use super::input::paste_bytes;
-use super::osc_notify::NotifyingPty;
-pub use super::repaint::{EventProxy, RepaintGate};
+use super::osc_notify::{NotifyingPty, Osc};
+use super::program_status::ProgramStatus;
+pub use super::repaint::{EventProxy, Presence, RepaintGate};
 use super::snapshot::Frame;
 use crate::agent_events::{self, AgentEvents, AgentStatus};
 use crate::claude_status_line::{self, StatusLine};
@@ -31,6 +33,7 @@ use crate::model::{AgentRenderer, CursorShape};
 use crate::shell_env;
 use crate::shell_events::ShellEvents;
 use crate::shell_integration;
+use crate::shell_integration::EXE_VAR;
 use crate::socket_api;
 use crate::tab_title::{self, task_summary};
 use crate::theme::Theme;
@@ -50,7 +53,8 @@ impl EventProxy {
             tx,
             ctx: egui::Context::default(),
             repaint: Arc::default(),
-            visible: Arc::default(),
+            presence: Arc::default(),
+            shown_title: Arc::default(),
         };
         Term::new(term_config(CursorShape::Block), &TermSize::new(cols, rows), proxy)
     }
@@ -85,8 +89,12 @@ pub struct TerminalSession {
     pub term: Arc<FairMutex<Term<EventProxy>>>,
     sender: EventLoopSender,
     events: Receiver<Event>,
-    notifications: Receiver<String>,
-    visible: Arc<AtomicBool>,
+    notifications: Receiver<Osc>,
+    /// OSC 9/777 messages read off `notifications`, until taken.
+    notes: Vec<String>,
+    /// What the program reports through OSC 7501, for agents without hooks.
+    program: ProgramStatus,
+    presence: Arc<AtomicU8>,
     size: (u16, u16),
     title: Option<String>,
     /// The agent's own title summary when the current turn's prompt was submitted; while the
@@ -95,6 +103,8 @@ pub struct TerminalSession {
     /// Title made from the prompt of the last finished turn whose live title went stale.
     prompt_title: Option<String>,
     pub exited: bool,
+    /// How the child process ended, once it has.
+    pub exit_status: Option<ExitStatus>,
     pub last_output: Instant,
     last_user_input: Instant,
     pub(super) spawned_at: Instant,
@@ -135,8 +145,14 @@ impl TerminalSession {
             agent_hide_api_keys,
         } = config;
         let (tx, events) = mpsc::channel();
-        let visible = Arc::new(AtomicBool::new(true));
-        let proxy = EventProxy { tx, ctx: ctx.clone(), repaint, visible: visible.clone() };
+        let presence = Arc::new(AtomicU8::new(Presence::Visible as u8));
+        let proxy = EventProxy {
+            tx,
+            ctx: ctx.clone(),
+            repaint,
+            presence: presence.clone(),
+            shown_title: Arc::default(),
+        };
 
         let (cols, rows) = (80, 24);
         let config = term::Config { scrolling_history: scrollback_lines as usize, ..term_config(cursor) };
@@ -152,7 +168,11 @@ impl TerminalSession {
             Launch::LoginShell if shell.is_empty() => None,
             Launch::LoginShell => Some(Shell::new(shell_program.clone(), vec!["-l".into()])),
             Launch::Command(command) | Launch::Agent(command) => {
-                let script = format!("{command}; exec {shell_program} -l");
+                // Ctrl-C stopping the command (a dev server) would end an interactive shell's
+                // whole list, `exec` included, and close the pane; trapped, it only stops the
+                // command, whose own handling is the default again. A newline, not `;`, so a
+                // trailing `# comment` in the command can't swallow the `exec`.
+                let script = format!("trap true INT\n{command}\ntrap - INT\nexec {shell_program} -l");
                 let flags: &[&str] = if captured.is_some() { &["-c"] } else { &["-l", "-i", "-c"] };
                 let args = flags.iter().map(|f| f.to_string()).chain([script]).collect();
                 Some(Shell::new(shell_program.clone(), args))
@@ -175,6 +195,12 @@ impl TerminalSession {
         }
         if let Some(agent) = &agent {
             env.insert(agent_events::EVENTS_VAR.into(), agent.path().to_string_lossy().into_owned());
+            if let Ok(exe) = std::env::current_exe() {
+                env.insert(EXE_VAR.into(), exe.to_string_lossy().into_owned());
+            }
+        }
+        // Agent panes set up their agent; a terminal tab's only gets the events file above.
+        if let Some(agent) = agent.as_ref().filter(|_| matches!(launch, Launch::Agent(_))) {
             env.insert(
                 agent_events::HOOKS_VAR.into(),
                 agent_events::hooks_settings(cwd, agent_hide_api_keys),
@@ -220,10 +246,13 @@ impl TerminalSession {
             sender,
             events,
             notifications,
-            visible,
+            notes: Vec::new(),
+            program: ProgramStatus::default(),
+            presence,
             size: (cols as u16, rows as u16),
             title: None,
             exited: false,
+            exit_status: None,
             last_output: Instant::now(),
             last_user_input: Instant::now(),
             spawned_at: Instant::now(),
@@ -251,9 +280,13 @@ impl TerminalSession {
         self.term.lock().set_options(config);
     }
 
-    /// Whether the pane is on screen, which decides how eagerly output repaints the window.
-    pub fn set_visible(&self, visible: bool) {
-        self.visible.store(visible, Ordering::Relaxed);
+    /// How closely the pane is watched, which decides how eagerly output repaints the window.
+    pub fn set_presence(&self, presence: Presence) {
+        self.presence.store(presence as u8, Ordering::Relaxed);
+    }
+
+    pub fn presence(&self) -> Presence {
+        Presence::load(&self.presence)
     }
 
     pub fn note_user_input(&mut self) {
@@ -279,16 +312,27 @@ impl TerminalSession {
             return;
         }
         let seen = *self.done_seen_at.get_or_insert_with(Instant::now);
-        if seen.elapsed() >= DONE_LINGER
-            && let Some(agent) = &mut self.agent
-        {
-            agent.acknowledge_done();
+        if seen.elapsed() >= DONE_LINGER {
+            match &mut self.agent {
+                Some(agent) if !agent.ended() => agent.acknowledge_done(),
+                _ => self.program.acknowledge_done(),
+            }
             self.done_seen_at = None;
         }
     }
 
+    /// From the agent's hooks while they report, else from what the program says over OSC 7501
+    /// (an agent typed into a terminal tab).
     pub fn agent_status(&self) -> Option<AgentStatus> {
-        self.agent.as_ref().map(AgentEvents::status)
+        match &self.agent {
+            Some(agent) if !agent.ended() => Some(agent.status()),
+            agent => {
+                // After an agent typed into a terminal tab exits, only an unseen result stays.
+                let last = agent.as_ref().filter(|a| a.reported()).map(AgentEvents::status);
+                let last = last.filter(|s| self.agent_kind.is_some() || s.needs_attention());
+                self.program.status().or(last)
+            }
+        }
     }
 
     pub fn agent_status_line(&self) -> Option<StatusLine> {
@@ -297,7 +341,10 @@ impl TerminalSession {
 
     /// What the agent is waiting for permission to do, if anything.
     pub fn approval_request(&self) -> Option<&str> {
-        self.agent.as_ref()?.request()
+        match &self.agent {
+            Some(agent) if !agent.ended() => agent.request(),
+            _ => self.program.request(),
+        }
     }
 
     /// Answers the agent's permission prompt as the user would at the keyboard: Enter accepts
@@ -313,7 +360,8 @@ impl TerminalSession {
 
     /// The agent the pane runs, when it was started as an agent pane.
     pub fn agent_kind(&self) -> Option<agent_launch::Agent> {
-        self.agent_kind
+        let started = self.agent.as_ref().filter(|a| !a.ended()).and_then(AgentEvents::kind);
+        self.agent_kind.or(started).or_else(|| self.program.agent())
     }
 
     /// The terminal title as the program set it.
@@ -338,7 +386,25 @@ impl TerminalSession {
 
     /// Messages programs in the pane sent with OSC 9 or OSC 777 since the last call.
     pub fn take_notifications(&mut self) -> Vec<String> {
-        self.notifications.try_iter().collect()
+        self.drain_osc();
+        std::mem::take(&mut self.notes)
+    }
+
+    /// Files what programs sent alongside their output: notifications to take, status reports
+    /// applied (a change is reported as an agent's would be, unless hooks already report).
+    fn drain_osc(&mut self) {
+        while let Ok(osc) = self.notifications.try_recv() {
+            match osc {
+                Osc::Notify(text) => self.notes.push(text),
+                Osc::Status(report) => {
+                    let change = self.program.apply(report);
+                    if !self.is_agent() && change.is_some() {
+                        self.status_change = change;
+                    }
+                }
+                Osc::StatusQuery => {}
+            }
+        }
     }
 
     /// Running a coding agent whose lifecycle hooks report to this pane; false again once it
@@ -373,6 +439,7 @@ impl TerminalSession {
 
     /// Drains PTY events; returns text the terminal asked to put on the clipboard.
     pub fn process_events(&mut self) -> Option<String> {
+        self.drain_osc();
         let mut clipboard = None;
         while let Ok(event) = self.events.try_recv() {
             match event {
@@ -400,7 +467,11 @@ impl TerminalSession {
                 | Event::TextAreaSizeRequest(_)
                 | Event::MouseCursorDirty
                 | Event::CursorBlinkingChange => {}
-                Event::Exit | Event::ChildExit(_) => self.exited = true,
+                Event::Exit => self.exited = true,
+                Event::ChildExit(status) => {
+                    self.exited = true;
+                    self.exit_status = Some(status);
+                }
             }
         }
         self.flush_queued();
@@ -425,8 +496,11 @@ impl TerminalSession {
                 let term = term.lock();
                 term.grid().history_size() + term.grid().cursor.point.line.0.max(0) as usize
             });
-            if prompted && let Some(agent) = &mut self.agent {
-                agent.note_shell_prompt();
+            if prompted {
+                self.program.prompt_started();
+                if let Some(agent) = &mut self.agent {
+                    agent.note_shell_prompt();
+                }
             }
         }
         clipboard

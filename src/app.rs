@@ -59,6 +59,8 @@ pub struct RepodeckApp {
     pub(crate) dialog: Option<Dialog>,
     pub(crate) palette: Option<Palette>,
     pub(crate) pending_focus: Option<Uuid>,
+    /// Pane shown in the peek overlay.
+    pub(crate) peek: Option<Uuid>,
     pub(crate) pending_goto: Option<(usize, usize)>,
     pub(crate) dirty: bool,
     pub(crate) settings_open: bool,
@@ -91,6 +93,9 @@ pub struct RepodeckApp {
 impl RepodeckApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let ctx = cc.egui_ctx.clone();
+        // Draws the program icons, which are SVGs.
+        crate::keymap_hint::install(crate::keymap::Keymap::load());
+        egui_extras::install_image_loaders(&ctx);
         let app_ctx = ctx.clone();
         let state = store::load();
         shell_env::prefetch(shell_env::program(&state.settings.shell));
@@ -108,6 +113,7 @@ impl RepodeckApp {
         let prs = PrWatcher::spawn(ctx.clone());
         let (job_tx, jobs) = mpsc::channel();
         socket_api::listen(job_tx.clone(), ctx.clone());
+        crate::bench::start();
         crate::editor::warm_up();
         #[cfg(target_os = "macos")]
         crate::app_menu::install("Repodeck", job_tx.clone(), ctx.clone());
@@ -124,6 +130,7 @@ impl RepodeckApp {
             dialog: None,
             palette: None,
             pending_focus,
+            peek: None,
             pending_goto: None,
             dirty: false,
             settings_open: false,
@@ -296,6 +303,7 @@ impl RepodeckApp {
             ui_scale: font_install::ui_scale(settings.ui_font_size),
         };
         font_install::apply(ctx, choice);
+        crate::terminal::fonts_replaced();
         self.applied_font = Some(key);
     }
 
@@ -383,14 +391,22 @@ impl RepodeckApp {
 
     fn visible_panes(&self) -> HashSet<Uuid> {
         if self.settings_open {
-            return HashSet::new();
+            return self.peek.into_iter().collect();
         }
-        self.state
+        let mut visible: HashSet<Uuid> = self
+            .state
             .selected_repo
             .and_then(|id| self.state.repo(id))
             .and_then(|r| r.tabs.iter().find(|t| Some(t.id) == r.active_tab))
-            .map(|t| t.panes.iter().map(|p| p.id).collect())
-            .unwrap_or_default()
+            .map(|t| match t.zoomed.filter(|z| t.panes.iter().any(|p| p.id == *z)) {
+                // A zoomed pane is the only one drawn; the others are drained in the background.
+                Some(zoomed) => HashSet::from([zoomed]),
+                None => t.panes.iter().map(|p| p.id).collect(),
+            })
+            .unwrap_or_default();
+        // The peek overlay draws its pane, so the overlay's view drains it as a pane's view does.
+        visible.extend(self.peek);
+        visible
     }
 }
 
@@ -429,20 +445,31 @@ impl eframe::App for RepodeckApp {
             job(self);
         }
         let visible = self.visible_panes();
-        let window_focused = ctx.input(|i| i.focused && !i.viewport().minimized.unwrap_or(false));
-        self.pool.pump_background(&visible, ctx);
+        // Read from the viewport rather than `i.focused`, which only updates on full passes: a
+        // locked screen or covered window runs `logic` alone and would keep a stale "focused".
+        let (window_focused, window_shown) = ctx.input(|i| {
+            let viewport = i.viewport();
+            let shown = !viewport.minimized.unwrap_or(false) && !viewport.occluded.unwrap_or(false);
+            (viewport.focused.unwrap_or(i.raw.focused) && shown, shown)
+        });
+        if crate::window_activity::set_active(window_focused) {
+            self.git.wake();
+            self.prs.wake();
+        }
+        self.pool.pump_background(&visible, window_shown, ctx);
         self.track_activity(&visible, window_focused, ctx);
         self.save_when_due(ctx);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let started = Instant::now();
         let ctx = ui.ctx().clone();
         self.sync_font(&ctx);
         while let Ok(job) = self.jobs.try_recv() {
             job(self);
         }
         while let Ok(request) = self.folder_requests.try_recv() {
-            self.open_folder(request);
+            let _ = self.open_folder(request);
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
         }
         self.drag = FileDrag::read(&ctx);
@@ -456,6 +483,16 @@ impl eframe::App for RepodeckApp {
             self.layout(ui, &mut actions);
         }
 
+        if let Some(pane) = self.peek {
+            // Keys typed while peeking (Esc to close it) mustn't reach the terminal underneath.
+            ctx.memory_mut(|m| {
+                if let Some(id) = m.focused() {
+                    m.surrender_focus(id);
+                }
+            });
+            crate::ui::peek::show(&ctx, &self.state, &mut self.pool, pane, &mut actions);
+        }
+        crate::ui::toast::show(&ctx);
         self.show_dialog(&ctx);
         if let Some(palette) = &mut self.palette
             && palette.show(&ctx, &self.state, &self.pool, &mut self.file_index, &mut actions)
@@ -473,5 +510,6 @@ impl eframe::App for RepodeckApp {
         self.save_when_due(&ctx);
         // Keep relative timestamps fresh without busy-looping; they only show whole minutes.
         ctx.request_repaint_after(Duration::from_secs(60));
+        crate::bench::frame(started);
     }
 }

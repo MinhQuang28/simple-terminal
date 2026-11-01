@@ -8,78 +8,76 @@ use crate::ui::palette::Palette;
 
 impl RepodeckApp {
     pub(crate) fn handle_shortcuts(&mut self, ctx: &egui::Context, actions: &mut Vec<Action>) {
-        if self.dialog.is_some() {
+        // The peek overlay covers the workspace; shortcuts would act on the tab beneath it.
+        if self.dialog.is_some() || self.peek.is_some() {
             return;
         }
-        let cmd = Modifiers::COMMAND;
-        let cmd_shift = Modifiers::COMMAND | Modifiers::SHIFT;
-        let cmd_alt = Modifiers::COMMAND | Modifiers::ALT;
-        let cmd_alt_shift = Modifiers::COMMAND | Modifiers::ALT | Modifiers::SHIFT;
-        let pressed = |mods, key| ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(mods, key)));
         let repo = self.state.selected_repo;
 
         // ⌘K without Shift clears the focused terminal (handled by the pane).
-        if pressed(cmd_shift, Key::K) {
+        let keys = crate::keymap_hint::active();
+        if keys.pressed(ctx, "palette.toggle") {
             self.palette = if self.palette.is_none() { Some(Palette::default()) } else { None };
         }
         if self.palette.is_some() {
             return;
         }
-        if pressed(cmd_alt_shift, Key::ArrowLeft) {
+        let fired = keys.fired(ctx, &["palette.toggle"]);
+        let pressed = |command: &str| fired.contains(&command);
+        if pressed("tab.move_left") {
             actions.extend(self.active_tab_move(-1));
         }
-        if pressed(cmd_alt_shift, Key::ArrowRight) {
+        if pressed("tab.move_right") {
             actions.extend(self.active_tab_move(1));
         }
-        for (key, nav) in [
-            (Key::ArrowLeft, Nav::Left),
-            (Key::ArrowRight, Nav::Right),
-            (Key::ArrowUp, Nav::Up),
-            (Key::ArrowDown, Nav::Down),
-        ] {
-            if pressed(cmd_alt, key) {
+        let navs = [("left", Nav::Left), ("right", Nav::Right), ("up", Nav::Up), ("down", Nav::Down)];
+        for (side, nav) in navs {
+            if pressed(&format!("pane.swap_{side}")) {
+                actions.push(Action::SwapNeighbor(nav));
+            }
+        }
+        for (side, nav) in navs {
+            if pressed(&format!("pane.focus_{side}")) {
                 actions.push(Action::FocusNeighbor(nav));
             }
         }
-        if pressed(cmd_alt, Key::T) {
+        if pressed("tab.reopen") {
             actions.push(Action::ReopenClosedTab);
         }
-        if pressed(cmd_shift, Key::Enter) {
+        if pressed("pane.zoom") {
             actions.push(Action::ToggleZoom);
         }
-        if pressed(cmd_shift, Key::OpenBracket) {
+        if pressed("tab.previous") {
             actions.push(Action::SelectAdjacentTab(-1));
         }
-        if pressed(cmd_shift, Key::CloseBracket) {
+        if pressed("tab.next") {
             actions.push(Action::SelectAdjacentTab(1));
         }
-
-        // Shift variants first: consume_shortcut treats a missing Shift as "don't care".
-        if pressed(cmd_shift, Key::T) {
+        if pressed("tab.new_agent") {
             actions.extend(repo.map(|repo| Action::NewTab { repo, kind: PaneKind::Agent }));
         }
-        if pressed(cmd_shift, Key::D) {
+        if pressed("pane.split_down") {
             actions.push(Action::Split { dir: SplitDir::Down, kind: PaneKind::Shell });
         }
-        if pressed(cmd_shift, Key::P) {
+        if pressed("palette.prompts") {
             self.palette = Some(Palette::with_query("Prompt: "));
         }
-        if pressed(cmd_shift, Key::W) {
+        if pressed("tab.close") {
             actions.push(Action::CloseActiveTab);
         }
-        if pressed(Modifiers::COMMAND | Modifiers::CTRL, Key::N) {
+        if pressed("attention.next") {
             actions.push(Action::FocusNextAttention);
         }
-        if pressed(cmd, Key::T) {
+        if pressed("tab.new") {
             actions.extend(repo.map(|repo| Action::NewTab { repo, kind: PaneKind::Shell }));
         }
-        if pressed(cmd, Key::P) && repo.is_some() {
+        if pressed("palette.files") && repo.is_some() {
             self.palette = Some(Palette::files());
         }
-        if pressed(cmd, Key::D) {
+        if pressed("pane.split_right") {
             actions.push(Action::Split { dir: SplitDir::Right, kind: PaneKind::Shell });
         }
-        if pressed(cmd, Key::W) {
+        if pressed("pane.close") {
             let active_file_tab = repo
                 .and_then(|id| self.state.repo(id))
                 .and_then(|r| r.tabs.iter().find(|t| Some(t.id) == r.active_tab && t.is_document()));
@@ -88,18 +86,18 @@ impl RepodeckApp {
                 _ => Action::CloseActivePane,
             });
         }
-        if pressed(cmd, Key::S) {
+        if pressed("file.save") {
             actions.push(Action::SaveActiveFile);
         }
-        if pressed(cmd, Key::B) {
+        if pressed("panel.toggle") {
             actions.push(Action::ToggleSidePanel);
         }
-        if pressed(cmd, Key::Comma) {
+        if pressed("settings.open") {
             actions.push(Action::OpenSettings);
         }
-        let font_delta = if pressed(cmd, Key::Equals) || pressed(cmd, Key::Plus) {
+        let font_delta = if pressed("font.bigger") {
             1.0
-        } else if pressed(cmd, Key::Minus) {
+        } else if pressed("font.smaller") {
             -1.0
         } else {
             0.0
@@ -109,6 +107,7 @@ impl RepodeckApp {
             *size = (*size + font_delta).clamp(8.0, 32.0);
             self.dirty = true;
         }
+        let cmd = Modifiers::COMMAND;
         let digits = [
             Key::Num1,
             Key::Num2,
@@ -121,7 +120,7 @@ impl RepodeckApp {
             Key::Num9,
         ];
         for (i, key) in digits.into_iter().enumerate() {
-            if pressed(cmd, key)
+            if ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(cmd, key)))
                 && let Some(repo) = repo.and_then(|id| self.state.repo(id))
                 && let Some(tab) = repo.tabs.get(i)
             {

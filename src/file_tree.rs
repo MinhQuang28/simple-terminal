@@ -91,6 +91,13 @@ impl FileTree {
         self.cache[dir].1.clone()
     }
 
+    /// Drops the cached listing of `dir` so the next show re-reads it, e.g. after deleting
+    /// something in it.
+    pub fn forget(&mut self, dir: &Path) {
+        self.cache.remove(dir);
+        self.pending.remove(dir);
+    }
+
     pub fn is_expanded(&self, dir: &Path) -> bool {
         self.expanded.contains(dir)
     }

@@ -58,7 +58,7 @@ impl Palette {
             .into_iter()
             .map(|i| Item {
                 label: listing.paths[i].clone(),
-                hint: "",
+                hint: String::new(),
                 kind: Kind::File,
                 action: Action::OpenFile { repo: repo.id, path: repo.path.join(&listing.paths[i]) },
             })
@@ -190,7 +190,7 @@ fn row(ui: &mut Ui, item: &Item, selected: bool) -> bool {
         ui.new_child(UiBuilder::new().max_rect(inner).layout(Layout::right_to_left(Align::Center)));
     child.spacing_mut().item_spacing.x = 8.0;
     if !item.hint.is_empty() {
-        kbd(&mut child, item.hint);
+        kbd(&mut child, &item.hint);
     }
     let kind = match item.kind {
         Kind::Command => None,

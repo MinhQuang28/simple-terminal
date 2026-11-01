@@ -40,7 +40,7 @@ pub fn show(
                 ui.label(RichText::new(err).color(Color32::LIGHT_RED).size(12.0));
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let button = Button::new("Save").shortcut_text("⌘S");
+                let button = Button::new("Save").shortcut_text(crate::keymap_hint::hint("file.save"));
                 save = ui.add_enabled(buffer.is_dirty(), button).clicked();
                 if is_markdown(path) {
                     ui.add_space(8.0);

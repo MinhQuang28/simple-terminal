@@ -36,3 +36,16 @@ fn resize_keeps_a_minimum_share() {
     let PaneLayout::Split { sizes, .. } = &layout else { panic!() };
     assert!((sizes[1] - 0.1).abs() < 1e-5);
 }
+
+#[test]
+fn swapping_exchanges_two_panes_places() {
+    let [a, b, c] = ids(3)[..] else { unreachable!() };
+    let mut layout = PaneLayout::Leaf(a);
+    layout.split(a, SplitDir::Right, b);
+    layout.split(b, SplitDir::Down, c);
+    assert!(layout.swap(a, c));
+    assert_eq!(layout.leaves(), vec![c, b, a]);
+    assert!(!layout.swap(a, a));
+    assert!(!layout.swap(a, Uuid::new_v4()));
+    assert_eq!(layout.leaves(), vec![c, b, a]);
+}

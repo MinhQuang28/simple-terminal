@@ -7,12 +7,20 @@ use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::Term;
 use alacritty_terminal::term::cell::{Cell, Flags};
 
+use uuid::Uuid;
+
 use super::session::EventProxy;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Link {
     Url(String),
-    File { path: PathBuf, line: Option<u32>, col: Option<u32> },
+    File {
+        path: PathBuf,
+        line: Option<u32>,
+        col: Option<u32>,
+    },
+    /// A pane id, as `repodeck split` and `repodeck list` print them; ⌘-click peeks at it.
+    Pane(Uuid),
 }
 
 /// A link and the viewport cells it spans: a column range on each row it covers, as a link the
@@ -23,6 +31,9 @@ pub struct Span {
     pub link: Link,
 }
 
+/// Whether an id names an open pane; other UUIDs (a Claude session id) aren't links.
+pub type IsPane<'a> = &'a dyn Fn(Uuid) -> bool;
+
 const URL_SCHEMES: [&str; 3] = ["http://", "https://", "file://"];
 /// Most rows one wrapped line is followed across, each way, looking for a link.
 const MAX_WRAPPED_ROWS: i32 = 32;
@@ -30,8 +41,8 @@ const TRAILING_PUNCTUATION: &[char] = &['.', ',', ';', ':', '!', '?', ')', ']', 
 
 /// The link under viewport cell `(row, col)`: an OSC 8 hyperlink if the cell has one, else a
 /// URL or an existing file path (optionally `:line:col`) written in the text of the line, rows
-/// the terminal wrapped included.
-pub fn at(term: &Term<EventProxy>, row: i32, col: usize, cwd: &Path) -> Option<Span> {
+/// the terminal wrapped included, or the id of a pane `is_pane` knows.
+pub fn at(term: &Term<EventProxy>, row: i32, col: usize, cwd: &Path, is_pane: IsPane) -> Option<Span> {
     let line = Line(row - term.grid().display_offset() as i32);
     // A row above the viewport may lie past the start of history in a fresh pane.
     if line < term.grid().topmost_line() {
@@ -49,7 +60,7 @@ pub fn at(term: &Term<EventProxy>, row: i32, col: usize, cwd: &Path) -> Option<S
     let offset = term.grid().display_offset() as i32;
     let index = cells.iter().position(|&(l, c)| (l.0 + offset, c) == (row, col))?;
     let (token, range) = token_at(&text, index)?;
-    let link = parse(&token, cwd)?;
+    let link = parse(&token, cwd, is_pane)?;
     Some(Span { rows: row_ranges(&cells[range], offset), link })
 }
 
@@ -126,9 +137,16 @@ fn is_url(token: &str) -> bool {
     URL_SCHEMES.iter().any(|s| token.starts_with(s))
 }
 
-pub fn parse(token: &str, cwd: &Path) -> Option<Link> {
+pub fn parse(token: &str, cwd: &Path, is_pane: IsPane) -> Option<Link> {
     if is_url(token) {
         return Some(Link::Url(token.to_string()));
+    }
+    // Hyphenated only: a bare 32-digit hex run is more often a hash than a pane.
+    if token.len() == 36
+        && let Ok(id) = Uuid::parse_str(token)
+        && is_pane(id)
+    {
+        return Some(Link::Pane(id));
     }
     let (path, line, col) = split_position(token);
     let expanded = match path.strip_prefix("~/") {
@@ -182,9 +200,9 @@ mod tests {
         parser.advance(&mut term, b"go https://a.io/xyz ok\r\nnext");
         let url = Link::Url("https://a.io/xyz".into());
         let span = Span { rows: vec![(0, 3..10), (1, 0..9)], link: url };
-        assert_eq!(at(&term, 1, 4, Path::new("/")), Some(span.clone()));
-        assert_eq!(at(&term, 0, 5, Path::new("/")), Some(span));
-        assert_eq!(at(&term, 2, 1, Path::new("/")), None, "a row after the line ended");
+        assert_eq!(at(&term, 1, 4, Path::new("/"), &|_| false), Some(span.clone()));
+        assert_eq!(at(&term, 0, 5, Path::new("/"), &|_| false), Some(span));
+        assert_eq!(at(&term, 2, 1, Path::new("/"), &|_| false), None, "a row after the line ended");
     }
 
     #[test]
@@ -192,12 +210,18 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("repodeck-links-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(dir.join("src")).unwrap();
         std::fs::write(dir.join("src/main.rs"), "").unwrap();
-        assert_eq!(parse("https://a.b/c", &dir), Some(Link::Url("https://a.b/c".into())));
+        let no = &|_| false;
+        assert_eq!(parse("https://a.b/c", &dir, no), Some(Link::Url("https://a.b/c".into())));
         assert_eq!(
-            parse("src/main.rs:7:2", &dir),
+            parse("src/main.rs:7:2", &dir, no),
             Some(Link::File { path: dir.join("src/main.rs"), line: Some(7), col: Some(2) })
         );
-        assert_eq!(parse("src/missing.rs", &dir), None);
+        assert_eq!(parse("src/missing.rs", &dir, no), None);
+        let id = uuid::Uuid::new_v4();
+        let open = &move |p| p == id;
+        assert_eq!(parse(&id.to_string(), &dir, open), Some(Link::Pane(id)));
+        assert_eq!(parse(&id.to_string(), &dir, no), None, "not an open pane");
+        assert_eq!(parse(&id.simple().to_string(), &dir, open), None, "unhyphenated hex is a hash");
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

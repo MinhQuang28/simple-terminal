@@ -136,3 +136,34 @@ fn the_classic_renderer_reaches_agent_panes_through_the_environment() {
     }
     assert_eq!(got, ["NF=0"]);
 }
+
+/// A program asks whether status reports are understood, gets the answer straight away, and
+/// its report then gives the pane a status and an agent, as Claude Code does in a terminal tab.
+#[test]
+fn program_status_query_is_answered_and_reports_are_kept() {
+    let ctx = egui::Context::default();
+    let theme = Theme::default();
+    let cwd = std::env::temp_dir();
+    let script = "stty raw -echo; printf '\\033]7501;?\\033\\\\'; \
+        r=$(dd bs=1 count=11 2>/dev/null); stty sane; \
+        case \"$r\" in *7501*) printf '\\033]7501;state=working:app=claude-code\\033\\\\';; esac; sleep 5";
+    let config = SessionConfig {
+        pane: Uuid::new_v4(),
+        cwd: &cwd,
+        launch: Launch::Command(script),
+        shell: "/bin/sh",
+        cursor: CursorShape::Block,
+        scrollback_lines: 100,
+        theme: &theme,
+        agent_renderer: AgentRenderer::default(),
+        agent_hide_api_keys: false,
+    };
+    let mut session = TerminalSession::spawn(config, None, Arc::default(), &ctx).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while session.agent_status().is_none() && Instant::now() < deadline {
+        session.process_events();
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(session.agent_status(), Some(crate::agent_events::AgentStatus::Working));
+    assert_eq!(session.agent_kind(), Some(crate::agent_launch::Agent::Claude));
+}

@@ -1,8 +1,9 @@
-pub mod agent_icon;
 pub mod agent_status;
+mod agents_list;
+mod branch_menu;
 pub mod chrome;
 pub(crate) mod claude_icon;
-mod codex_icon;
+pub mod commit_box;
 pub mod design;
 pub(crate) mod dialog_kit;
 pub mod dialogs;
@@ -15,12 +16,15 @@ mod library_panel;
 pub mod palette;
 mod palette_items;
 mod pane_chrome;
+pub mod peek;
+mod program_icon;
 mod repo_drag;
 mod repo_indicators;
 pub mod settings;
 pub mod sidebar;
 mod sidebar_rows;
 mod tab_bar;
+pub mod toast;
 mod usage_panel;
 pub(crate) mod widgets;
 pub mod workspace;
@@ -29,7 +33,7 @@ use std::path::PathBuf;
 
 use uuid::Uuid;
 
-use crate::model::{PaneKind, SidePanel, SplitDir};
+use crate::model::{PaneKind, SidePanel, SidebarView, SplitDir};
 use crate::pane_layout::Nav;
 
 /// User intents emitted by the UI and applied by the app after the frame's layout.
@@ -40,10 +44,44 @@ pub enum Action {
     OpenSettings,
     RemoveProject(Uuid),
     ToggleProject(Uuid),
+    /// Checks out another local branch of the repo, or a new one at the current commit.
+    SwitchBranch {
+        repo: Uuid,
+        branch: String,
+        create: bool,
+    },
+    /// Stages and commits every change in the repo.
+    CommitAll {
+        repo: Uuid,
+        message: String,
+    },
+    /// Swaps the active pane with the one beside it.
+    SwapNeighbor(Nav),
+    /// Shows a pane live over the current tab without switching to it.
+    Peek(Uuid),
+    ClosePeek,
+    /// Switches to whatever repo and tab hold the pane.
+    GoToPane(Uuid),
+    SetSidebarView(SidebarView),
+    TogglePinTab {
+        repo: Uuid,
+        tab: Uuid,
+    },
+    ToggleSettleTab {
+        repo: Uuid,
+        tab: Uuid,
+    },
     ToggleRepoTabs(Uuid),
     AddRepos(Uuid),
     RemoveRepo(Uuid),
     RevealRepo(Uuid),
+    /// Shows a file or folder in the Finder.
+    RevealPath(PathBuf),
+    /// Moves a file or folder of the repo to the Trash, closing tabs open on it.
+    TrashPath {
+        repo: Uuid,
+        path: PathBuf,
+    },
     SelectRepo(Uuid),
     SelectTab {
         repo: Uuid,
@@ -52,6 +90,11 @@ pub enum Action {
     NewTab {
         repo: Uuid,
         kind: PaneKind,
+    },
+    /// Opens a tab running `Settings::presets[preset]`.
+    RunPreset {
+        repo: Uuid,
+        preset: usize,
     },
     CloseTab {
         repo: Uuid,

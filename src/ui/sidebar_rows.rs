@@ -1,18 +1,17 @@
-use eframe::egui::{
-    Align, Align2, Button, CornerRadius, FontId, Label, Layout, RichText, Sense, Stroke, Ui, pos2, vec2,
-};
+use eframe::egui::{Align, Button, Label, Layout, RichText, Stroke, Ui, pos2};
 
 use super::Action;
-use super::agent_icon;
 use super::agent_status;
 use super::claude_icon::ICON_SIZE;
+use super::program_icon;
 use super::repo_drag;
 use super::repo_indicators::{RepoRow, busy_mark, indicators, tabs_chevron};
-use super::sidebar::{tab_agent, tab_busy, tab_menu, tab_status, tab_title};
+use super::sidebar::{tab_agent, tab_busy, tab_menu, tab_program, tab_status, tab_title};
 use super::widgets::{avatar, glyph_button, menu_icon, muted, right_aligned, row_sized};
 use crate::git_watcher::GitWatcher;
 use crate::model::{AppState, PaneKind, Repo, Tab};
-use crate::pr_status::{CheckState, PrWatcher, PullRequest};
+use crate::pr_status::{CheckState, PrWatcher};
+use crate::programs;
 use crate::session_pool::SessionPool;
 use crate::worktree;
 
@@ -38,13 +37,22 @@ pub fn repo_block(
     actions: &mut Vec<Action>,
 ) {
     let selected = state.selected_repo == Some(repo.id);
-    let tabs: Vec<&Tab> = repo.tabs.iter().filter(|t| !t.is_document()).collect();
     let active_tab = selected.then_some(repo.active_tab).flatten();
+    // Settled tabs stay out of the tree unless they are the one on screen.
+    let tabs: Vec<&Tab> =
+        repo.tabs.iter().filter(|t| !t.is_document() && (!t.settled || Some(t.id) == active_tab)).collect();
     let tab_active = tabs.iter().any(|t| Some(t.id) == active_tab);
 
     let pr = prs.pr(&repo.path).flatten();
     let status = git.status(&repo.path);
-    let row = RepoRow { repo, status: status.as_deref(), pr: pr.as_deref(), pool, now };
+    let row = RepoRow {
+        repo,
+        status: status.as_deref(),
+        pr: pr.as_deref(),
+        pool,
+        now,
+        presets: &state.settings.presets,
+    };
     let expandable = !tabs.is_empty();
     if state.settings.sidebar_branches {
         repo_row(ui, &row, None, actions);
@@ -74,8 +82,11 @@ fn tab_row(
 ) {
     // The branch row above already names the branch, so idle tabs show what runs in them.
     let agent = tab_agent(tab, pool);
+    let program = tab_program(tab, pool);
     let fallback = match tab.kind() {
         PaneKind::Agent => agent.label(),
+        // A terminal names what it is running, e.g. "Neovim".
+        PaneKind::Shell if !std::ptr::eq(program, programs::shell()) => program.name.as_str(),
         PaneKind::Shell => "Terminal",
     };
     let title = tab_title(tab, pool, fallback);
@@ -92,10 +103,7 @@ fn tab_row(
                 agent_status::pill(ui, status);
             }
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                match tab.kind() {
-                    PaneKind::Agent => agent_icon::icon(ui, ICON_SIZE, agent),
-                    PaneKind::Shell => terminal_icon(ui),
-                }
+                program_icon::icon(ui, ICON_SIZE, program);
                 let color = if selected {
                     ui.visuals().text_color()
                 } else {
@@ -123,20 +131,6 @@ fn tree_connector(ui: &Ui, x: f32, row: eframe::egui::Rect, last: bool) {
     ui.painter().line_segment([pos2(x, row.center().y), pos2(x + 8.0, row.center().y)], stroke);
 }
 
-/// Small rounded square with a prompt glyph.
-fn terminal_icon(ui: &mut Ui) {
-    let (rect, _) = ui.allocate_exact_size(vec2(ICON_SIZE, ICON_SIZE), Sense::hover());
-    let painter = ui.painter();
-    painter.rect_filled(rect, CornerRadius::same(3), muted(ui).gamma_multiply(0.5));
-    painter.text(
-        rect.center() + vec2(0.0, -0.5),
-        Align2::CENTER_CENTER,
-        ">_",
-        FontId::proportional(ICON_SIZE * 0.7),
-        ui.visuals().extreme_bg_color,
-    );
-}
-
 /// The repo's avatar and name. `compact` (selected, expandable) also puts the activity and the tab
 /// chevron here, for when there's no branch row below.
 fn repo_row(ui: &mut Ui, row: &RepoRow, compact: Option<(bool, bool)>, actions: &mut Vec<Action>) {
@@ -145,7 +139,7 @@ fn repo_row(ui: &mut Ui, row: &RepoRow, compact: Option<(bool, bool)>, actions: 
     let (response, ()) = row_sized(ui, selected, REPO_INDENT, 32.0, |ui| {
         right_aligned(ui, |ui| {
             ui.spacing_mut().item_spacing.x = 10.0;
-            menu_icon(ui, "+", |ui| new_tab_menu(ui, repo, actions)).on_hover_text("New tab");
+            menu_icon(ui, "+", |ui| new_tab_menu(ui, row, actions)).on_hover_text("New tab");
             if compact.is_some() {
                 indicators(ui, row, actions);
             }
@@ -168,9 +162,7 @@ fn repo_row(ui: &mut Ui, row: &RepoRow, compact: Option<(bool, bool)>, actions: 
     if response.clicked() {
         actions.push(Action::SelectRepo(repo.id));
     }
-    response
-        .on_hover_text(repo.path.display().to_string())
-        .context_menu(|ui| repo_menu(ui, repo, row.pr, actions));
+    response.on_hover_text(repo.path.display().to_string()).context_menu(|ui| repo_menu(ui, row, actions));
 }
 
 /// Branch name with sync state and recency; selecting it shows the repo without a terminal.
@@ -204,20 +196,35 @@ fn branch_row(ui: &mut Ui, row: &RepoRow, selected: bool, expandable: bool, acti
     if response.clicked() {
         actions.push(Action::SelectRepo(repo.id));
     }
-    response.context_menu(|ui| repo_menu(ui, repo, row.pr, actions));
+    response.context_menu(|ui| repo_menu(ui, row, actions));
 }
 
-fn new_tab_menu(ui: &mut Ui, repo: &Repo, actions: &mut Vec<Action>) {
-    if ui.add(Button::new("New terminal").shortcut_text("⌘T")).clicked() {
+fn new_tab_menu(ui: &mut Ui, row: &RepoRow, actions: &mut Vec<Action>) {
+    let repo = row.repo;
+    if ui.add(Button::new("New terminal").shortcut_text(crate::keymap_hint::hint("tab.new"))).clicked() {
         actions.push(Action::NewTab { repo: repo.id, kind: PaneKind::Shell });
     }
-    if ui.add(Button::new("New Claude session").shortcut_text("⇧⌘T")).clicked() {
+    if ui
+        .add(Button::new("New Claude session").shortcut_text(crate::keymap_hint::hint("tab.new_agent")))
+        .clicked()
+    {
         actions.push(Action::NewTab { repo: repo.id, kind: PaneKind::Agent });
+    }
+    let presets = row.presets.iter().enumerate().filter(|(_, p)| !p.command.trim().is_empty());
+    for (i, (preset, p)) in presets.enumerate() {
+        if i == 0 {
+            ui.separator();
+        }
+        let name = if p.name.trim().is_empty() { p.command.trim() } else { p.name.trim() };
+        if ui.button(name).on_hover_text(&p.command).clicked() {
+            actions.push(Action::RunPreset { repo: repo.id, preset });
+        }
     }
 }
 
-fn repo_menu(ui: &mut Ui, repo: &Repo, pr: Option<&PullRequest>, actions: &mut Vec<Action>) {
-    new_tab_menu(ui, repo, actions);
+fn repo_menu(ui: &mut Ui, row: &RepoRow, actions: &mut Vec<Action>) {
+    let (repo, pr) = (row.repo, row.pr);
+    new_tab_menu(ui, row, actions);
     ui.separator();
     match pr {
         Some(pr) => {

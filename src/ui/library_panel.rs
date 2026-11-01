@@ -19,7 +19,12 @@ pub fn show(
 ) {
     section(ui, "Prompts", Some(Action::OpenEditPrompt(None)), actions);
     if settings.prompts.is_empty() {
-        hint(ui, "Reusable snippets to paste into a pane. ⇧⌘P picks one from the keyboard.");
+        let keys = crate::keymap_hint::hint("palette.prompts");
+        let text = match keys.as_str() {
+            "" => "Reusable snippets to paste into a pane.".to_string(),
+            keys => format!("Reusable snippets to paste into a pane. {keys} picks one from the keyboard."),
+        };
+        hint(ui, &text);
     }
     for (index, prompt) in settings.prompts.iter().enumerate() {
         let (response, ()) = row(ui, false, 0.0, |ui| {

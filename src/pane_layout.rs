@@ -183,6 +183,29 @@ impl PaneLayout {
         }
     }
 
+    /// Exchanges the places of panes `a` and `b`; false unless both are in the tree.
+    pub fn swap(&mut self, a: Uuid, b: Uuid) -> bool {
+        fn visit(node: &mut PaneLayout, f: &mut impl FnMut(&mut Uuid)) {
+            match node {
+                PaneLayout::Leaf(id) => f(id),
+                PaneLayout::Split { children, .. } => children.iter_mut().for_each(|c| visit(c, f)),
+            }
+        }
+        let mut found = 0;
+        visit(self, &mut |id| found += usize::from(*id == a || *id == b));
+        if a == b || found != 2 {
+            return false;
+        }
+        visit(self, &mut |id| {
+            if *id == a {
+                *id = b;
+            } else if *id == b {
+                *id = a;
+            }
+        });
+        true
+    }
+
     /// The pane beside `from` in direction `nav`, judged by geometry.
     pub fn neighbor(&self, from: Uuid, nav: Nav) -> Option<Uuid> {
         let rects = self.rects(Rect::from_min_max(pos2(0.0, 0.0), pos2(1000.0, 1000.0)), 0.0);

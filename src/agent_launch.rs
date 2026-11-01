@@ -74,6 +74,33 @@ pub fn with_hooks(command: &str) -> String {
     out.join(" ")
 }
 
+/// `command` with `task` as the agent's first prompt: Claude Code and Codex take it as an
+/// argument, OpenCode as `--prompt`.
+pub fn with_first_prompt(command: &str, task: &str) -> String {
+    // A prompt starting with "-" would read as a flag; a leading space keeps it a prompt.
+    let task = if task.starts_with('-') { format!(" {task}") } else { task.to_string() };
+    let word = shell_word(&task);
+    match agent_of(command) {
+        Some(Agent::OpenCode) => format!("{command} --prompt {word}"),
+        _ => format!("{command} {word}"),
+    }
+}
+
+/// `text` as one word for POSIX shells and fish alike: single-quoted, with quotes and
+/// backslashes (which fish reads as escapes even inside single quotes) put outside the quotes.
+fn shell_word(text: &str) -> String {
+    let mut out = String::from("'");
+    for c in text.chars() {
+        match c {
+            '\'' => out.push_str(r"'\''"),
+            '\\' => out.push_str(r"'\\'"),
+            c => out.push(c),
+        }
+    }
+    out.push('\'');
+    out
+}
+
 /// The command line's words, each flagged when it begins a command.
 fn command_tokens(command: &str) -> impl Iterator<Item = (bool, &str)> {
     let mut start = true;
@@ -123,6 +150,19 @@ pub fn opencode_config(data_dir: &Path, existing: Option<&str>) -> Option<String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn first_prompt_is_one_shell_word() {
+        let run = |command: &str| {
+            let out =
+                std::process::Command::new("sh").args(["-c", &format!("printf '%s|' {command}")]).output();
+            String::from_utf8(out.unwrap().stdout).unwrap()
+        };
+        let line = with_first_prompt("", r"it's a \ test; rm -rf x $(id)");
+        assert_eq!(run(&line), r"it's a \ test; rm -rf x $(id)|");
+        assert_eq!(run(&with_first_prompt("", "-p print")), " -p print|", "kept from reading as a flag");
+        assert_eq!(with_first_prompt("opencode", "hi"), "opencode --prompt 'hi'");
+    }
 
     #[test]
     fn hooks_only_the_first_word_of_each_command() {

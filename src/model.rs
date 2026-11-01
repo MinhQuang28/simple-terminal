@@ -41,6 +41,16 @@ pub enum CursorShape {
     Underline,
 }
 
+/// A command offered in the new-tab menu: a dev server, another agent.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LaunchPreset {
+    pub name: String,
+    pub command: String,
+    /// Run as an agent (status, hooks, inbox) rather than in a terminal's shell.
+    pub agent: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -78,6 +88,8 @@ pub struct Settings {
     pub agent_prompt_at_bottom: bool,
     /// Post system notifications for panes the user isn't watching.
     pub notifications: bool,
+    /// Commands offered in each repo's new-tab menu besides a terminal and a Claude session.
+    pub presets: Vec<LaunchPreset>,
     /// Play the system alert sound with each notification.
     pub notification_sound: bool,
     /// Command for ⌘-clicked file paths, with `{path}`, `{line}` and `{col}` placeholders; empty
@@ -114,6 +126,7 @@ impl Default for Settings {
             agent_hide_api_keys: true,
             agent_prompt_at_bottom: true,
             notifications: true,
+            presets: Vec::new(),
             notification_sound: true,
             external_editor: String::new(),
             editor_word_wrap: false,
@@ -131,6 +144,14 @@ pub enum SidePanel {
     Library,
 }
 
+/// What the sidebar lists: the project tree, or every agent across projects by urgency.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SidebarView {
+    #[default]
+    Projects,
+    Agents,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppState {
@@ -144,6 +165,7 @@ pub struct AppState {
     /// Tabs closed most recently last, with the repo each came from, for "Reopen closed tab".
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub closed_tabs: Vec<(Uuid, Tab)>,
+    pub sidebar_view: SidebarView,
 }
 
 impl Default for AppState {
@@ -156,6 +178,7 @@ impl Default for AppState {
             side_panel: SidePanel::default(),
             show_ignored_files: false,
             closed_tabs: Vec::new(),
+            sidebar_view: SidebarView::default(),
         }
     }
 }
@@ -220,6 +243,13 @@ pub struct Tab {
     /// Title chosen by the user, which agents and shells can't overwrite.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Kept at the top of the Agents list.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pinned: bool,
+    /// Put away: left out of the sidebar while it keeps running, until its agent needs the user
+    /// or the tab is opened again.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub settled: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -238,6 +268,11 @@ pub struct Pane {
     /// Claude Code session an agent pane resumes instead of starting a new conversation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
+    /// What the pane runs, from a launch preset: for an agent, the
+    /// command used instead of the one in Settings; for a terminal, a command its shell runs at
+    /// start, again whenever the pane is restored or restarted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
 }
 
 impl Project {
@@ -275,7 +310,7 @@ impl Repo {
 
 impl Tab {
     pub fn new(kind: PaneKind) -> Self {
-        let pane = Pane { id: Uuid::new_v4(), kind: kind.clone(), cwd: None, session: None };
+        let pane = Pane { id: Uuid::new_v4(), kind: kind.clone(), cwd: None, session: None, command: None };
         let title = match kind {
             PaneKind::Shell => "Terminal",
             PaneKind::Agent => "Claude",
@@ -292,6 +327,8 @@ impl Tab {
             layout: None,
             zoomed: None,
             name: None,
+            pinned: false,
+            settled: false,
         }
     }
 
@@ -309,6 +346,8 @@ impl Tab {
             layout: None,
             zoomed: None,
             name: None,
+            pinned: false,
+            settled: false,
         }
     }
 

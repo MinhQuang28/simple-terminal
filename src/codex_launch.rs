@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
+use crate::agent_events::{EVENTS_VAR, started_line};
 use crate::agent_launch::codex_hook_flags;
 use crate::store;
 
@@ -27,6 +28,12 @@ pub fn run(mut args: impl Iterator<Item = String>) -> ! {
         eprintln!("usage: repodeck run-codex <codex> [args…]");
         std::process::exit(2)
     };
+    // Names the agent to the pane, which for a terminal tab can't tell from how it started.
+    if let Some(events) = std::env::var_os(EVENTS_VAR)
+        && let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(events)
+    {
+        let _ = writeln!(file, "{}", started_line("codex"));
+    }
     let flags = codex_hook_flags();
     let mut command = Command::new(&codex);
     command.args(&flags);

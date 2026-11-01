@@ -18,6 +18,21 @@ pub fn content_rows(term: &Term<EventProxy>) -> usize {
     (last_used.max(cursor) + 1) as usize
 }
 
+/// The last screen row with words on it, trimmed: what a program printed before it exited.
+/// Rows of only borders or symbols (a TUI's frame) are passed over.
+pub fn last_text_line(term: &Term<EventProxy>) -> Option<String> {
+    let grid = term.grid();
+    (0..term.screen_lines() as i32).rev().find_map(|l| {
+        let text: String = grid[Line(l)]
+            .into_iter()
+            .filter(|c| !c.flags.intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER))
+            .map(|c| c.c)
+            .collect();
+        let text = text.trim();
+        text.chars().any(char::is_alphanumeric).then(|| text.to_string())
+    })
+}
+
 /// Whether the cell shows anything: a glyph, a decoration (drawn even on spaces), or a background
 /// that differs from the pane's.
 fn is_visible(cell: &Cell) -> bool {

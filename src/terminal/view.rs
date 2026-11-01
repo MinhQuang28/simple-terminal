@@ -10,15 +10,16 @@ use eframe::egui::{
     vec2,
 };
 
+use super::drag_scroll::DragScroll;
 use super::find::{self, FindState};
 use super::input::{key_to_bytes, paste_bytes};
-use super::links::Link;
+use super::links::{IsPane, Link};
 use super::mouse::{self, MouseReportState};
 use super::prompt_click::PromptClick;
 use super::render::{self, CursorState, Grid};
 use super::render_cache::PaintCache;
 use super::scroll::{self, ScrollState};
-use super::session::TerminalSession;
+use super::session::{Presence, TerminalSession};
 use super::snapshot::Frame;
 use super::style::TerminalStyle;
 use super::view_chrome::{
@@ -41,8 +42,9 @@ pub struct ViewState {
     reported_focus: Option<bool>,
     /// egui time of the last keystroke; the cursor stays solid right after typing.
     last_input: f64,
-    paint: PaintCache,
+    pub(super) paint: PaintCache,
     link: LinkCache,
+    drag_scroll: DragScroll,
 }
 
 /// What a frame of the terminal view produced for its caller.
@@ -69,6 +71,7 @@ pub fn show(
     id: Id,
     style: &TerminalStyle<'_>,
     cwd: &Path,
+    is_pane: IsPane,
 ) -> Shown {
     let rect = ui.available_rect_before_wrap();
     // egui already turned this frame's arrow/Tab presses into a focus move before the lock filter
@@ -81,7 +84,6 @@ pub fn show(
     if response.clicked() || response.drag_started() {
         response.request_focus();
     }
-    session.set_visible(true);
     session.sync_theme(style.theme);
 
     let painter = ui.painter_at(rect);
@@ -97,6 +99,8 @@ pub fn show(
 
     let mut state = std::mem::take(&mut session.view);
     let focused = response.has_focus();
+    let watched = focused && ui.input(|i| i.focused);
+    session.set_presence(if watched { Presence::Focused } else { Presence::Visible });
     state.find.shortcut(ui, focused);
     if focused && ui.data_mut(|d| d.remove_temp::<bool>(find_request_id())).is_some() {
         state.find.open = true;
@@ -143,6 +147,7 @@ pub fn show(
     if !scroll::overlay(ui, session, &mut state.scroll, rect, id)
         && !mouse::report(ui, &response, session, mode, grid, (cols, rows), &mut state.mouse)
     {
+        state.drag_scroll.step(ui, &response, session, &mut state.scroll, grid);
         handle_selection(&response, session, grid, (cols, rows));
         // A plain click in an agent's prompt box moves its caret there, as in a text field.
         if response.clicked()
@@ -164,7 +169,7 @@ pub fn show(
     }
     exit_badge(ui, session, rect, style);
     starting_indicator(ui, session, rect);
-    let open_file = hover_link(ui, &response, session, &mut state.link, grid, (cols, rows), cwd);
+    let open_file = hover_link(ui, &response, session, &mut state.link, grid, (cols, rows), cwd, is_pane);
     if state.find.open {
         find::overlay(ui, session, &mut state.find, rect, grid, &response, style);
     }
@@ -191,7 +196,7 @@ pub fn show(
 /// Claude's classic renderer draws its prompt box right under the conversation, which would
 /// otherwise walk down the pane until the screen fills. (The frame itself leaves full-screen
 /// programs alone.)
-fn anchored(session: &TerminalSession, style: &TerminalStyle<'_>) -> bool {
+pub(super) fn anchored(session: &TerminalSession, style: &TerminalStyle<'_>) -> bool {
     style.agent_prompt_at_bottom && session.is_agent()
 }
 

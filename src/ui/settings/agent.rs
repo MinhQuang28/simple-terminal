@@ -1,6 +1,7 @@
 use eframe::egui::{TextEdit, Ui};
 
 use super::controls::{card, section_label, segmented, toggle};
+use super::presets;
 use crate::model::{AgentRenderer, Settings};
 
 const COMMAND_WIDTH: f32 = 300.0;
@@ -62,4 +63,5 @@ pub fn show(ui: &mut Ui, settings: &mut Settings) {
             },
         );
     });
+    presets::show(ui, settings);
 }

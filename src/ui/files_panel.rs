@@ -4,9 +4,10 @@ use std::sync::Arc;
 use eframe::egui::{Color32, CornerRadius, FontId, Label, RichText, ScrollArea, Sense, StrokeKind, Ui, vec2};
 
 use super::Action;
+use super::commit_box;
 use super::library_panel;
 use super::widgets::{file_icon, muted, right_aligned, row};
-use crate::file_tree::FileTree;
+use crate::file_tree::{Entry, FileTree};
 use crate::git_status::{ChangedFile, GitStatus};
 use crate::library_cache::LibraryCache;
 use crate::model::{AppState, Repo, SidePanel};
@@ -47,6 +48,7 @@ pub fn show(
         SidePanel::Library => library_panel::show(ui, repo, &state.settings, library, actions),
         SidePanel::Changes => match status {
             Some(status) if !status.files.is_empty() => {
+                commit_box::show(ui, repo, status.files.len(), actions);
                 for file in &status.files {
                     change_row(ui, repo, file, open_file.as_deref(), actions);
                 }
@@ -115,9 +117,23 @@ fn directory(
                 actions.push(Action::OpenFile { repo: repo.id, path: entry.path.clone() });
             }
         }
+        response.context_menu(|ui| entry_menu(ui, repo, entry, actions));
         if expanded {
             directory(ui, tree, repo, &entry.path, depth + 1, open_file, actions);
         }
+    }
+}
+
+fn entry_menu(ui: &mut Ui, repo: &Repo, entry: &Entry, actions: &mut Vec<Action>) {
+    if !entry.is_dir && ui.button("Open file").clicked() {
+        actions.push(Action::OpenFile { repo: repo.id, path: entry.path.clone() });
+    }
+    if ui.button("Reveal in Finder").clicked() {
+        actions.push(Action::RevealPath(entry.path.clone()));
+    }
+    ui.separator();
+    if ui.button("Move to Trash…").clicked() {
+        actions.push(Action::TrashPath { repo: repo.id, path: entry.path.clone() });
     }
 }
 

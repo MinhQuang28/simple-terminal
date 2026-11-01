@@ -3,6 +3,7 @@ use std::path::Path;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+use crate::agent_launch::Agent;
 use crate::claude_status_line::{self, StatusFile, StatusLine};
 use crate::event_log::EventLog;
 
@@ -90,7 +91,16 @@ pub struct AgentEvents {
     prompt: Option<String>,
     /// The agent reported its session over and hasn't started another since.
     ended: bool,
+    /// Which agent wrote here, when a wrapper said so (an agent started in a terminal tab).
+    kind: Option<Agent>,
 }
+
+/// The line a wrapper writes before starting an agent in a terminal tab, naming it.
+pub fn started_line(agent: &str) -> String {
+    json!({ STARTED_KEY: agent }).to_string()
+}
+
+const STARTED_KEY: &str = "repodeck_agent";
 
 impl AgentEvents {
     pub fn create(pane: Uuid) -> Option<Self> {
@@ -103,7 +113,24 @@ impl AgentEvents {
             message: None,
             prompt: None,
             ended: false,
+            kind: None,
         })
+    }
+
+    /// Events for a terminal tab, waiting for an agent started from its shell: reports nothing
+    /// until that agent's hooks write here.
+    pub fn create_dormant(pane: Uuid) -> Option<Self> {
+        Some(Self { ended: true, ..Self::create(pane)? })
+    }
+
+    /// The agent a wrapper started here, if one did.
+    pub fn kind(&self) -> Option<Agent> {
+        self.kind
+    }
+
+    /// Whether an agent has reported here at all, as opposed to a terminal tab still waiting.
+    pub fn reported(&self) -> bool {
+        self.session_id.is_some() || self.kind.is_some()
     }
 
     pub fn path(&self) -> &Path {
@@ -164,6 +191,9 @@ impl AgentEvents {
         self.status_line.poll();
         for line in self.log.poll_lines() {
             let Ok(event) = serde_json::from_str::<Value>(&line) else { continue };
+            if let Some(agent) = event[STARTED_KEY].as_str().and_then(Agent::of) {
+                self.kind = Some(agent);
+            }
             if let Some(id) = event["session_id"].as_str() {
                 self.session_id = Some(id.to_string());
             }

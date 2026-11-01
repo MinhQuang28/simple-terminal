@@ -10,6 +10,8 @@ use std::time::{Duration, Instant};
 use eframe::egui;
 use serde_json::Value;
 
+use crate::window_activity;
+
 /// How often the worker looks for repos to re-read; a branch switch is noticed within this.
 const TICK: Duration = Duration::from_secs(30);
 /// Repos with an open pull request re-read it this often, so review and CI changes land soon.
@@ -67,6 +69,8 @@ impl PullRequest {
 enum Msg {
     Paths(Vec<PathBuf>),
     Refresh(PathBuf),
+    /// The window came back to the front: ask about repos that came due meanwhile.
+    Wake,
 }
 
 /// When a repo was last asked, and what its HEAD pointed at then.
@@ -102,6 +106,10 @@ impl PrWatcher {
         let _ = self.tx.send(Msg::Refresh(path.to_path_buf()));
     }
 
+    pub fn wake(&self) {
+        let _ = self.tx.send(Msg::Wake);
+    }
+
     /// `Some(None)` once the repo was checked and has no PR.
     pub fn pr(&self, path: &Path) -> Option<Option<Arc<PullRequest>>> {
         self.shared.lock().ok()?.get(path).cloned()
@@ -130,12 +138,21 @@ fn run(
                 Vec::new()
             }
             Ok(Msg::Refresh(path)) => vec![path],
-            Err(RecvTimeoutError::Timeout) => Vec::new(),
+            Ok(Msg::Wake) | Err(RecvTimeoutError::Timeout) => Vec::new(),
             Err(RecvTimeoutError::Disconnected) => return,
         };
+        // Each check costs a `gh` process and a network round trip; while the user is in another
+        // app only explicit refreshes run, and `Wake` catches up on return.
+        let active = window_activity::is_active();
+        if forced.is_empty() && !active {
+            continue;
+        }
         let now = Instant::now();
         let mut due = Vec::new();
         for path in &repos {
+            if !active && !forced.contains(path) {
+                continue;
+            }
             let head = head_ref(path);
             let has_pr = shared.lock().ok().and_then(|map| map.get(path).cloned()).flatten().is_some();
             if forced.contains(path) || is_due(checked.get(path), &head, has_pr, now) {

@@ -4,6 +4,7 @@ mod controls;
 mod fields;
 mod nav;
 mod notifications;
+mod presets;
 mod terminal;
 mod typography;
 

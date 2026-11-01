@@ -11,20 +11,29 @@ use crate::model::{PaneKind, Project, Repo};
 const FINDER_PROJECT: &str = "Finder";
 
 impl RepodeckApp {
-    /// Opens a new tab at `path`, inside the repo that contains it or a newly added one.
-    pub(crate) fn open_folder(&mut self, request: FolderRequest) {
+    /// Opens a new tab at `path`, inside the repo that contains it or a newly added one; returns
+    /// the tab's pane.
+    pub(crate) fn open_folder(&mut self, request: FolderRequest) -> Option<Uuid> {
+        self.open_folder_tab(request, true)
+    }
+
+    /// Like [`Self::open_folder`]; with `select` false the tab opens without switching to it, for
+    /// work an agent starts on the side.
+    pub(crate) fn open_folder_tab(&mut self, request: FolderRequest, select: bool) -> Option<Uuid> {
         let FolderRequest { path, kind } = request;
         if !path.is_dir() {
             log::warn!("Ignoring Services request for non-folder {}", path.display());
-            return;
+            return None;
         }
         let repo_id = match self.repo_containing(&path) {
             Some(id) => id,
             None => self.add_repo_to(None, &path),
         };
         let at_root = self.state.repo(repo_id).is_some_and(|r| r.path == path);
-        self.new_tab(repo_id, kind, (!at_root).then_some(path));
+        let cwd = (!at_root).then_some(path);
+        let pane = if select { self.new_tab(repo_id, kind, cwd) } else { self.add_tab(repo_id, kind, cwd) };
         self.dirty = true;
+        pane
     }
 
     /// Adds folders dropped from Finder as repos and selects the first; a repo without tabs gets a

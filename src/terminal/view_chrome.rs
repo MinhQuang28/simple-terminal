@@ -5,7 +5,7 @@ use std::time::Duration;
 use alacritty_terminal::term::TermMode;
 use eframe::egui::{self, CursorIcon, Response, Stroke, Ui, vec2};
 
-use super::links::{self, Link, Span};
+use super::links::{self, IsPane, Link, Span};
 use super::render::Grid;
 use super::session::TerminalSession;
 use super::style::TerminalStyle;
@@ -22,6 +22,7 @@ const STARTING_FOR: Duration = Duration::from_secs(30);
 /// The link last looked up under the pointer, keyed by frame generation, row and column.
 pub(super) type LinkCache = Option<((u64, i32, usize), Option<Span>)>;
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn hover_link(
     ui: &Ui,
     response: &Response,
@@ -30,6 +31,7 @@ pub(super) fn hover_link(
     grid: Grid,
     size: (u16, u16),
     cwd: &Path,
+    is_pane: IsPane,
 ) -> Option<Link> {
     let pos = response.hover_pos()?;
     if !ui.input(|i| i.modifiers.command) {
@@ -45,7 +47,7 @@ pub(super) fn hover_link(
     let span = match cache {
         Some((k, span)) if *k == key => span.clone(),
         _ => {
-            let span = links::at(&session.term.lock(), row, col, cwd);
+            let span = links::at(&session.term.lock(), row, col, cwd, is_pane);
             *cache = Some((key, span.clone()));
             span
         }
@@ -66,7 +68,7 @@ pub(super) fn hover_link(
             }
             None
         }
-        file @ Link::File { .. } => Some(file),
+        other => Some(other),
     }
 }
 

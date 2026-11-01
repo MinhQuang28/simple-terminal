@@ -60,6 +60,11 @@ impl ShellEvents {
         self.marks.clear();
     }
 
+    /// The command line the shell is running now, between its preexec and the next prompt.
+    pub fn running(&self) -> Option<&str> {
+        self.running.as_ref().map(|(_, command)| command.as_str())
+    }
+
     /// Applies new events; `prompt_line` is where the next prompt is being drawn right now.
     /// Returns whether the shell printed a prompt.
     pub fn poll(&mut self, prompt_line: impl Fn() -> usize) -> bool {

@@ -79,11 +79,11 @@ fn a_cached_frame_replays_its_shapes_where_the_grid_moved() {
     };
     let mut cache = PaintCache::default();
     let first = shapes(&ctx, &frame, &mut cache, 0.0);
-    assert!(!cache.runs.is_empty() && !cache.items.is_empty(), "text runs and items laid out");
-    let laid_out = cache.runs.len() + cache.items.len();
+    let laid_out = cache.shape_count();
+    assert!(laid_out >= 2, "text runs and items laid out");
 
     let moved = shapes(&ctx, &frame, &mut cache, 32.0);
-    assert_eq!(cache.runs.len() + cache.items.len(), laid_out, "replayed, not laid out again");
+    assert_eq!(cache.shape_count(), laid_out, "replayed, not laid out again");
     assert_eq!(first.len(), moved.len());
     for ((y0, _), (y1, _)) in first.iter().zip(&moved) {
         assert!((y1 - y0 - 32.0).abs() < 0.01, "shapes move with the grid: {y0} -> {y1}");
@@ -92,5 +92,41 @@ fn a_cached_frame_replays_its_shapes_where_the_grid_moved() {
     frame.generation += 1;
     frame.cells.truncate(1);
     shapes(&ctx, &frame, &mut cache, 0.0);
-    assert_eq!(cache.runs.len() + cache.items.len(), 1, "a new generation is laid out afresh");
+    assert_eq!(cache.shape_count(), 1, "a new generation is laid out afresh");
+}
+
+/// A new frame lays out only rows whose content is new: an unchanged row, or one that moved up
+/// a line as output scrolled, keeps its layout.
+#[test]
+fn only_changed_rows_are_laid_out_again() {
+    let settings = Settings::default();
+    let style = TerminalStyle::new(&settings);
+    let row = |row: i32, text: &str| -> Vec<Cell> {
+        text.chars().enumerate().map(|(col, c)| Cell { row, ..cell(col, c, Color32::BLACK) }).collect()
+    };
+    let mut frame = Frame::default();
+    frame.cells = [row(0, "one"), row(1, "two"), row(2, "three")].into_iter().flatten().collect();
+    frame.cursor = Cursor { row: 5, col: 0, shape: CursorShape::Hidden, under: None };
+    let ctx = Context::default();
+    let mut cache = PaintCache::default();
+    let paint_frame = |frame: &Frame, cache: &mut PaintCache| {
+        ctx.begin_pass(RawInput::default());
+        let painter = Painter::new(
+            ctx.clone(),
+            LayerId::background(),
+            Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0)),
+        );
+        let grid = Grid { origin: pos2(0.0, 0.0), cell: vec2(8.0, 16.0), text_offset: 0.0 };
+        paint(&painter, grid, &style, frame, cache, CursorState { focused: true, visible: true }, None);
+        let mut output = ctx.end_pass();
+        output.textures_delta.clear();
+    };
+    paint_frame(&frame, &mut cache);
+    assert_eq!(cache.laid_out, 3);
+
+    // Output scrolled the screen up a line and printed a new last row.
+    frame.generation += 1;
+    frame.cells = [row(0, "two"), row(1, "three"), row(2, "four")].into_iter().flatten().collect();
+    paint_frame(&frame, &mut cache);
+    assert_eq!(cache.laid_out, 1, "only the new row is laid out");
 }

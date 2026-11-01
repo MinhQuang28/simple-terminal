@@ -16,7 +16,7 @@ const GENERIC_TITLES: &[&str] = &[
 ];
 
 /// Claude Code alternates these in its title while working and shows `✳` when idle.
-const WORKING_GLYPHS: [char; 2] = ['◐', '◑'];
+pub const WORKING_GLYPHS: [char; 2] = ['◐', '◑'];
 
 /// Whether the title says an agent is mid-task.
 pub fn is_working(raw: &str) -> bool {

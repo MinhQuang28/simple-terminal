@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::fs::File;
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::sync::Arc;
 use std::sync::mpsc::Sender;
 
@@ -8,13 +8,25 @@ use alacritty_terminal::event::{OnResize, WindowSize};
 use alacritty_terminal::tty::{ChildEvent, EventedPty, EventedReadWrite, Pty};
 use polling::{Event, PollMode, Poller};
 
+use super::program_status;
+
 /// Longest notification sequence kept while waiting for its terminator.
 const MAX_OSC: usize = 4096;
 const ESC: u8 = 0x1b;
 const BEL: u8 = 0x07;
 
-/// Picks `OSC 9` (iTerm2/ConEmu) and `OSC 777;notify` (rxvt-unicode) notifications out of PTY
-/// output, which the terminal parser itself discards.
+/// What a program said in a sequence the terminal parser itself discards.
+#[derive(Debug, PartialEq)]
+pub enum Osc {
+    /// `OSC 9` (iTerm2/ConEmu) or `OSC 777;notify` (rxvt-unicode).
+    Notify(String),
+    /// `OSC 7501` status report.
+    Status(program_status::Report),
+    /// `OSC 7501;?`: the program asks whether status reports are understood.
+    StatusQuery,
+}
+
+/// Picks notifications and program status reports out of PTY output.
 #[derive(Default)]
 pub struct OscScanner {
     /// Start of a sequence whose terminator hasn't arrived yet.
@@ -22,8 +34,8 @@ pub struct OscScanner {
 }
 
 impl OscScanner {
-    /// Feeds a chunk of output; returns the messages of the notifications completed by it.
-    pub fn feed(&mut self, chunk: &[u8]) -> Vec<String> {
+    /// Feeds a chunk of output; returns the sequences completed by it.
+    pub fn feed(&mut self, chunk: &[u8]) -> Vec<Osc> {
         let buf: Cow<[u8]> = if self.pending.is_empty() {
             Cow::Borrowed(chunk)
         } else {
@@ -94,8 +106,19 @@ fn terminator(payload: &[u8]) -> End {
     End::Incomplete
 }
 
-fn parse(payload: &[u8]) -> Option<String> {
+fn parse(payload: &[u8]) -> Option<Osc> {
     let text = std::str::from_utf8(payload).ok()?;
+    if let Some(body) = text.strip_prefix("7501;") {
+        return if body == "?" {
+            Some(Osc::StatusQuery)
+        } else {
+            program_status::parse(body).map(Osc::Status)
+        };
+    }
+    notification(text).map(Osc::Notify)
+}
+
+fn notification(text: &str) -> Option<String> {
     if let Some(message) = text.strip_prefix("9;") {
         // `9;4;…` is ConEmu's progress bar, not a message.
         if message.starts_with("4;") {
@@ -114,18 +137,25 @@ fn parse(payload: &[u8]) -> Option<String> {
     Some(message)
 }
 
-/// The PTY's read side, forwarding notifications found in the output as it passes through.
+/// The PTY's read side, forwarding notifications and status reports found in the output as it
+/// passes through.
 pub struct NotifyReader {
     file: File,
     scanner: OscScanner,
-    tx: Sender<String>,
+    tx: Sender<Osc>,
 }
 
 impl Read for NotifyReader {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.file.read(buf)?;
-        for message in self.scanner.feed(&buf[..n]) {
-            let _ = self.tx.send(message);
+        for osc in self.scanner.feed(&buf[..n]) {
+            if osc == Osc::StatusQuery {
+                // Answered here, before the parser even sees the `CSI c` a program sends after
+                // the query: a device-attributes reply arriving first means "unsupported".
+                let _ = (&self.file).write_all(program_status::QUERY_REPLY);
+                continue;
+            }
+            let _ = self.tx.send(osc);
         }
         Ok(n)
     }
@@ -138,7 +168,7 @@ pub struct NotifyingPty {
 }
 
 impl NotifyingPty {
-    pub fn new(inner: Pty, tx: Sender<String>) -> io::Result<Self> {
+    pub fn new(inner: Pty, tx: Sender<Osc>) -> io::Result<Self> {
         let file = inner.file().try_clone()?;
         Ok(Self { inner, reader: NotifyReader { file, scanner: OscScanner::default(), tx } })
     }
@@ -185,11 +215,25 @@ impl OnResize for NotifyingPty {
 mod tests {
     use super::*;
 
+    fn notes(found: Vec<Osc>) -> Vec<String> {
+        found.into_iter().filter_map(|o| if let Osc::Notify(text) = o { Some(text) } else { None }).collect()
+    }
+
+    #[test]
+    fn extracts_program_status_reports_and_queries() {
+        let mut scanner = OscScanner::default();
+        let out = scanner.feed(b"\x1b]7501;?\x1b\\\x1b[c\x1b]7501;state=working:app=claude-code\x07");
+        assert_eq!(out[0], Osc::StatusQuery);
+        assert!(
+            matches!(&out[1], Osc::Status(r) if r.status == Some(crate::agent_events::AgentStatus::Working))
+        );
+    }
+
     #[test]
     fn extracts_osc_9_and_777_messages() {
         let mut scanner = OscScanner::default();
         let out = scanner.feed(b"ls\n\x1b]9;Build done\x07more\x1b]777;notify;Tests;3 failed\x1b\\");
-        assert_eq!(out, ["Build done", "Tests: 3 failed"]);
+        assert_eq!(notes(out), ["Build done", "Tests: 3 failed"]);
     }
 
     #[test]
@@ -201,7 +245,7 @@ mod tests {
     #[test]
     fn an_aborted_sequence_does_not_hide_later_ones() {
         let mut scanner = OscScanner::default();
-        assert_eq!(scanner.feed(b"\x1b]0;title\x1b[0m\x1b]9;hi\x07"), ["hi"]);
+        assert_eq!(notes(scanner.feed(b"\x1b]0;title\x1b[0m\x1b]9;hi\x07")), ["hi"]);
         assert!(scanner.pending.is_empty());
         assert!(scanner.feed(b"\x1b]9;4;3;50\x07").is_empty());
     }
@@ -211,9 +255,9 @@ mod tests {
         let mut scanner = OscScanner::default();
         assert!(scanner.feed(b"abc\x1b").is_empty());
         assert!(scanner.feed(b"]9;hel").is_empty());
-        assert_eq!(scanner.feed(b"lo\x07rest"), ["hello"]);
+        assert_eq!(notes(scanner.feed(b"lo\x07rest")), ["hello"]);
         assert!(scanner.feed(b"\x1b]9;tail\x1b").is_empty());
-        assert_eq!(scanner.feed(b"\\"), ["tail"]);
+        assert_eq!(notes(scanner.feed(b"\\")), ["tail"]);
     }
 
     #[test]

@@ -1,9 +1,10 @@
 use eframe::egui::{
-    Align2, CornerRadius, FontId, Frame, Label, Margin, Rect, Response, RichText, Sense, Stroke, StrokeKind,
-    Ui, ViewportCommand, pos2, vec2,
+    Align2, CornerRadius, FontId, Rect, Response, RichText, Sense, Stroke, StrokeKind, Ui, ViewportCommand,
+    pos2, vec2,
 };
 
 use super::Action;
+use super::branch_menu;
 use super::inbox_panel;
 use super::usage_panel;
 use super::widgets::{icon_button_frame, muted, right_aligned};
@@ -47,12 +48,14 @@ pub fn top_bar(
             ui.label(RichText::new(&repo.name).strong());
             if let Some(status) = status {
                 ui.add_space(6.0);
-                branch_chip(ui, &status.branch);
+                branch_menu::chip(ui, repo, &status.branch, pool, actions);
             }
         }
         right_aligned(ui, |ui| {
             ui.add_space(4.0);
-            if side_panel_icon(ui, state.show_side_panel).on_hover_text("Toggle files panel (⌘B)").clicked()
+            if side_panel_icon(ui, state.show_side_panel)
+                .on_hover_text(crate::keymap_hint::with_hint("Toggle files panel", "panel.toggle"))
+                .clicked()
             {
                 actions.push(Action::ToggleSidePanel);
             }
@@ -70,16 +73,6 @@ pub fn top_bar(
             }
         });
     });
-}
-
-/// The checked-out branch on a filled pill, so it reads at a glance next to the repo name.
-fn branch_chip(ui: &mut Ui, branch: &str) {
-    let text = RichText::new(format!("⎇ {branch}")).size(12.5).color(ui.visuals().text_color());
-    Frame::new()
-        .fill(ui.visuals().widgets.inactive.weak_bg_fill)
-        .corner_radius(CornerRadius::same(6))
-        .inner_margin(Margin::symmetric(8, 3))
-        .show(ui, |ui| ui.add(Label::new(text).selectable(false)));
 }
 
 /// Outlined window with a divider marking the right-hand panel.
@@ -117,7 +110,10 @@ pub fn status_bar(ui: &mut Ui, state: &AppState, status: Option<&GitStatus>) {
     ui.horizontal_centered(|ui| {
         ui.add_space(4.0);
         let Some(status) = status else { return };
-        ui.label(RichText::new(format!("⎇ {}", status.branch)).color(muted(ui)).size(12.0));
+        ui.spacing_mut().item_spacing.x = 5.0;
+        branch_menu::inline_glyph(ui, muted(ui));
+        ui.label(RichText::new(&status.branch).color(muted(ui)).size(12.0));
+        ui.add_space(3.0);
         if status.ahead > 0 || status.behind > 0 {
             ui.label(
                 RichText::new(format!("↑{} ↓{}", status.ahead, status.behind)).color(muted(ui)).size(12.0),

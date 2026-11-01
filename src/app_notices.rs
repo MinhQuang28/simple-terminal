@@ -48,6 +48,17 @@ impl RepodeckApp {
                 }
                 Report::Message(text) => (AgentStatus::NeedsInput, "Notification".to_string(), text),
             };
+            // A settled tab comes back when its agent needs the user.
+            if status.needs_attention()
+                && let Some(tab) = self
+                    .state
+                    .repo_mut(source.repo)
+                    .and_then(|r| r.tabs.iter_mut().find(|t| t.id == source.tab))
+                && tab.settled
+            {
+                tab.settled = false;
+                self.dirty = true;
+            }
             let settings = &self.state.settings;
             if !watching && settings.notifications && self.inbox.allow_system_notice(source.pane) {
                 let body = if detail.is_empty() { &tab_title } else { &detail };

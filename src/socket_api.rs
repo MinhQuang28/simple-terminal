@@ -10,6 +10,7 @@ use uuid::Uuid;
 use crate::app::{Job, RepodeckApp};
 use crate::finder_service::FolderRequest;
 use crate::model::PaneKind;
+use crate::socket_commands;
 use crate::store;
 
 /// Environment variable naming the socket, so `repodeck` run inside a pane finds its app.
@@ -39,7 +40,8 @@ pub fn listen(jobs: Sender<Job>, ctx: egui::Context) {
             if BufReader::new(&stream).read_line(&mut line).is_err() {
                 continue;
             }
-            let command = line.trim().to_string();
+            // Only the line ending goes: trailing tabs separate empty fields of the newer commands.
+            let command = line.trim_end_matches(['\r', '\n']).to_string();
             let job: Job = Box::new(move |app| {
                 let reply = apply(app, &command);
                 let mut stream = stream;
@@ -58,6 +60,10 @@ pub fn listen(jobs: Sender<Job>, ctx: egui::Context) {
 
 /// Runs a command line of the form `verb args…`; returns the reply text.
 fn apply(app: &mut RepodeckApp, command: &str) -> String {
+    if command.contains('\t') {
+        return socket_commands::apply(app, command);
+    }
+    let command = command.trim();
     let (verb, rest) = command.split_once(' ').unwrap_or((command, ""));
     let rest = rest.trim();
     match verb {
@@ -67,9 +73,10 @@ fn apply(app: &mut RepodeckApp, command: &str) -> String {
                 return format!("error: not a folder: {rest}");
             }
             let kind = if verb == "claude" { PaneKind::Agent } else { PaneKind::Shell };
-            app.open_folder(FolderRequest { path, kind });
+            let pane = app.open_folder(FolderRequest { path, kind });
             app.ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-            "ok".into()
+            // The new pane, so a script can `send` to it or `read` it.
+            pane.map_or_else(|| "ok".into(), |p| p.to_string())
         }
         "focus" => match Uuid::parse_str(rest) {
             Ok(pane) if app.focus_pane(pane) => {

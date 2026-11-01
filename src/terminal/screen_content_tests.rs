@@ -46,3 +46,15 @@ fn ignores_the_scroll_position() {
     assert_eq!(term.grid().display_offset(), 1);
     assert_eq!(content_rows(&term), 1);
 }
+
+#[test]
+fn last_text_line_skips_trailing_blank_rows() {
+    let mut term = EventProxy::test_term(40, 6);
+    assert_eq!(last_text_line(&term), None);
+    feed(&mut term, b"$ foo\r\nzsh: command not found: foo  \r\n\r\n");
+    assert_eq!(last_text_line(&term).as_deref(), Some("zsh: command not found: foo"));
+
+    // A TUI's bottom border is not what it said.
+    feed(&mut term, "╰──────╯\r\n".as_bytes());
+    assert_eq!(last_text_line(&term).as_deref(), Some("zsh: command not found: foo"));
+}

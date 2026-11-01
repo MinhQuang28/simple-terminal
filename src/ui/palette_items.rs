@@ -2,6 +2,7 @@
 
 use super::Action;
 use super::sidebar::tab_title;
+use crate::keymap_hint;
 use crate::model::{AppState, PaneKind, SidePanel, SplitDir};
 use crate::pane_layout::Nav;
 use crate::session_pool::SessionPool;
@@ -20,27 +21,30 @@ pub enum Kind {
 pub struct Item {
     pub label: String,
     /// The shortcut, for commands that have one.
-    pub hint: &'static str,
+    pub hint: String,
     pub kind: Kind,
     pub action: Action,
 }
 
 pub fn items(state: &AppState, pool: &SessionPool) -> Vec<Item> {
     let mut items = Vec::new();
-    let mut push = |label: &str, hint: &'static str, action: Action| {
+    // `hint` is a keymap command whose key is shown, a fixed key such as "⌘F", or the kind of a
+    // non-command item.
+    let mut push = |label: &str, hint: &str, action: Action| {
         let (kind, hint) = match hint {
-            "repo" => (Kind::Repo, ""),
-            "tab" => (Kind::Tab, ""),
-            "prompt" => (Kind::Prompt, ""),
-            keys => (Kind::Command, keys),
+            "repo" => (Kind::Repo, String::new()),
+            "tab" => (Kind::Tab, String::new()),
+            "prompt" => (Kind::Prompt, String::new()),
+            command if command.contains('.') => (Kind::Command, keymap_hint::hint(command)),
+            keys => (Kind::Command, keys.to_string()),
         };
         items.push(Item { label: label.to_string(), hint, kind, action });
     };
     let selected = state.selected_repo.and_then(|id| state.repo(id));
     let active_tab = selected.and_then(|r| r.tabs.iter().find(|t| Some(t.id) == r.active_tab));
     if let Some(repo) = selected {
-        push("New terminal", "⌘T", Action::NewTab { repo: repo.id, kind: PaneKind::Shell });
-        push("New Claude session", "⇧⌘T", Action::NewTab { repo: repo.id, kind: PaneKind::Agent });
+        push("New terminal", "tab.new", Action::NewTab { repo: repo.id, kind: PaneKind::Shell });
+        push("New Claude session", "tab.new_agent", Action::NewTab { repo: repo.id, kind: PaneKind::Agent });
         push("Reveal repository in Finder", "", Action::RevealRepo(repo.id));
         push("New git worktree…", "", Action::OpenNewWorktree(repo.id));
         push("Worktree setup command…", "", Action::OpenRepoSetup(repo.id));
@@ -55,45 +59,53 @@ pub fn items(state: &AppState, pool: &SessionPool) -> Vec<Item> {
             Some(tab) if !tab.is_document() => push("Find in terminal", "⌘F", Action::OpenFind),
             _ => {}
         }
-        push("Open file…", "⌘P", Action::OpenQuickOpen);
-        push("Next tab", "⇧⌘]", Action::SelectAdjacentTab(1));
-        push("Previous tab", "⇧⌘[", Action::SelectAdjacentTab(-1));
+        push("Open file…", "palette.files", Action::OpenQuickOpen);
+        push("Next tab", "tab.next", Action::SelectAdjacentTab(1));
+        push("Previous tab", "tab.previous", Action::SelectAdjacentTab(-1));
     }
     if let (Some(repo), Some(tab)) = (selected, active_tab) {
         push("Rename tab…", "", Action::OpenRenameTab { repo: repo.id, tab: tab.id });
-        push("Close tab", "⇧⌘W", Action::CloseActiveTab);
+        push("Close tab", "tab.close", Action::CloseActiveTab);
         let index = repo.tabs.iter().position(|t| t.id == tab.id).unwrap_or(0);
         if index > 0 {
-            push("Move tab left", "⌥⇧⌘←", Action::MoveTab { repo: repo.id, tab: tab.id, to: index - 1 });
+            push(
+                "Move tab left",
+                "tab.move_left",
+                Action::MoveTab { repo: repo.id, tab: tab.id, to: index - 1 },
+            );
         }
         if index + 1 < repo.tabs.len() {
-            push("Move tab right", "⌥⇧⌘→", Action::MoveTab { repo: repo.id, tab: tab.id, to: index + 1 });
+            push(
+                "Move tab right",
+                "tab.move_right",
+                Action::MoveTab { repo: repo.id, tab: tab.id, to: index + 1 },
+            );
         }
         if let Some(pane) = tab.active_pane {
             push("Restart pane", "", Action::RestartPane(pane));
         }
     }
-    push("Split pane right", "⌘D", Action::Split { dir: SplitDir::Right, kind: PaneKind::Shell });
-    push("Split pane down", "⇧⌘D", Action::Split { dir: SplitDir::Down, kind: PaneKind::Shell });
+    push(
+        "Split pane right",
+        "pane.split_right",
+        Action::Split { dir: SplitDir::Right, kind: PaneKind::Shell },
+    );
+    push("Split pane down", "pane.split_down", Action::Split { dir: SplitDir::Down, kind: PaneKind::Shell });
     push("Split pane right with Claude", "", Action::Split { dir: SplitDir::Right, kind: PaneKind::Agent });
     push("Split pane down with Claude", "", Action::Split { dir: SplitDir::Down, kind: PaneKind::Agent });
-    push("Close pane", "⌘W", Action::CloseActivePane);
-    push("Zoom pane", "⇧⌘↩", Action::ToggleZoom);
-    for (label, hint, nav) in [
-        ("Focus pane left", "⌥⌘←", Nav::Left),
-        ("Focus pane right", "⌥⌘→", Nav::Right),
-        ("Focus pane up", "⌥⌘↑", Nav::Up),
-        ("Focus pane down", "⌥⌘↓", Nav::Down),
-    ] {
-        push(label, hint, Action::FocusNeighbor(nav));
+    push("Close pane", "pane.close", Action::CloseActivePane);
+    push("Zoom pane", "pane.zoom", Action::ToggleZoom);
+    for (side, nav) in [("left", Nav::Left), ("right", Nav::Right), ("up", Nav::Up), ("down", Nav::Down)] {
+        push(&format!("Focus pane {side}"), &format!("pane.focus_{side}"), Action::FocusNeighbor(nav));
+        push(&format!("Swap pane {side}"), &format!("pane.swap_{side}"), Action::SwapNeighbor(nav));
     }
-    push("Reopen closed tab", "⌥⌘T", Action::ReopenClosedTab);
-    push("Next pane needing attention", "⌃⌘N", Action::FocusNextAttention);
+    push("Reopen closed tab", "tab.reopen", Action::ReopenClosedTab);
+    push("Next pane needing attention", "attention.next", Action::FocusNextAttention);
     push("Mark all notifications read", "", Action::MarkNoticesRead);
-    push("Toggle files panel", "⌘B", Action::ToggleSidePanel);
+    push("Toggle files panel", "panel.toggle", Action::ToggleSidePanel);
     push("Show files", "", Action::SetSidePanel(SidePanel::Files));
     push("Show changes", "", Action::SetSidePanel(SidePanel::Changes));
-    push("Settings", "⌘,", Action::OpenSettings);
+    push("Settings", "settings.open", Action::OpenSettings);
     push("Show library", "", Action::SetSidePanel(SidePanel::Library));
     push("New prompt…", "", Action::OpenEditPrompt(None));
     for prompt in &state.settings.prompts {
