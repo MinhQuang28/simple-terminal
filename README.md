@@ -253,5 +253,6 @@ Repodeck is **source-available** under the [PolyForm Noncommercial License 1.0.0
 
 Copyright © Ha Minh Quang.
 
-Program icons in `assets/icons/` come from Simple Icons, Lucide and LobeHub under their own licenses;
+Program icons and the program table in `assets/icons/` come from Herdr (Apache-2.0), Simple Icons,
+Lucide and LobeHub under their own licenses;
 see [assets/icons/LICENSES.md](assets/icons/LICENSES.md).
