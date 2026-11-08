@@ -3432,6 +3432,7 @@ dependencies = [
  "objc2-user-notifications 0.3.2",
  "png 0.18.1",
  "polling",
+ "regex",
  "rfd",
  "serde",
  "serde_json",

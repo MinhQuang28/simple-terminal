@@ -6,7 +6,8 @@ use eframe::egui::{
 use super::Action;
 use super::claude_icon;
 use super::design::{self, RADIUS_ROW, TEXT_BODY, TEXT_SECONDARY};
-use super::widgets::{AGENT, ago, icon_button_frame, loading_dot, muted};
+use super::spinner::loading_spinner;
+use super::widgets::{AGENT, ago, icon_button_frame, muted};
 use crate::claude_history::{ClaudeHistory, Session};
 use crate::model::{Repo, now_secs};
 
@@ -25,7 +26,7 @@ pub fn show(ui: &mut Ui, repo: &Repo, history: &ClaudeHistory, actions: &mut Vec
         match history.sessions(&repo.path) {
             None => {
                 ui.horizontal(|ui| {
-                    loading_dot(ui, 12.0);
+                    loading_spinner(ui, 12.0);
                     ui.label(RichText::new("Loading conversations…").size(TEXT_SECONDARY).color(muted(ui)));
                 });
             }

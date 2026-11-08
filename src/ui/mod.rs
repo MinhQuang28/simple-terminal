@@ -1,15 +1,22 @@
+mod activity_bar;
 pub mod agent_status;
 mod agents_list;
 mod branch_menu;
+mod changes_panel;
 pub mod chrome;
 pub(crate) mod claude_icon;
+pub mod code_sidebar;
+mod code_tabs;
+mod code_view;
 pub mod commit_box;
+pub mod definition_peek;
 pub mod design;
 pub(crate) mod dialog_kit;
 pub mod dialogs;
 pub(crate) mod diff_comments;
 pub mod diff_view;
-pub mod files_panel;
+mod file_explorer;
+mod file_icon;
 mod history_menu;
 mod inbox_panel;
 mod library_panel;
@@ -20,9 +27,11 @@ pub mod peek;
 mod program_icon;
 mod repo_drag;
 mod repo_indicators;
+mod search_panel;
 pub mod settings;
 pub mod sidebar;
 mod sidebar_rows;
+pub(crate) mod spinner;
 mod tab_bar;
 pub mod toast;
 mod usage_panel;
@@ -156,6 +165,21 @@ pub enum Action {
     /// Opens a shell tab at a folder dropped from Finder.
     OpenFolderTab(PathBuf),
     ToggleSidePanel,
+    /// Shows the selected repo's Code view (files and diffs), or its terminals with `false`.
+    ShowCode(bool),
+    /// Shows the Code view with the Search panel, its query box focused.
+    OpenSearch,
+    /// Looks for where `word` is defined in the repo: one place opens, several (or `peek`) list.
+    GoToDefinition {
+        repo: Uuid,
+        word: String,
+        peek: bool,
+    },
+    ClosePeekDefinition,
+    /// Runs the file's formatter (rustfmt, prettier, gofmt, ruff…) over the active file.
+    FormatActiveFile,
+    /// Shows the active file a second time beside itself, or closes that second editor.
+    ToggleSplitEditor,
     /// Opens the find bar in the active terminal pane.
     OpenFind,
     /// Opens the palette listing the selected repo's files.

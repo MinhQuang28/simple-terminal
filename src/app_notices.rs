@@ -97,7 +97,7 @@ impl RepodeckApp {
         let Source { repo, tab, pane } = next;
         self.state.selected_repo = Some(repo);
         if let Some(t) = self.state.repo_mut(repo).and_then(|r| {
-            r.active_tab = Some(tab);
+            r.activate(tab);
             r.tabs.iter_mut().find(|t| t.id == tab)
         }) {
             t.active_pane = Some(pane);
@@ -120,7 +120,7 @@ impl RepodeckApp {
         let Some(Source { repo, tab, pane }) = found else { return false };
         self.state.selected_repo = Some(repo);
         if let Some(t) = self.state.repo_mut(repo).and_then(|r| {
-            r.active_tab = Some(tab);
+            r.activate(tab);
             r.tabs.iter_mut().find(|t| t.id == tab)
         }) {
             t.active_pane = Some(pane);

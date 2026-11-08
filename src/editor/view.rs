@@ -2,6 +2,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use super::buffer::{Buffer, Content, is_markdown};
+use super::commands::{self, EditorCommand, Request};
+use super::cursors;
 use super::find_bar::{self, BarKind, EditorBar, Found, Jump, char_index, line_of};
 use super::{highlight, markdown};
 use crate::model::Settings;
@@ -15,8 +17,16 @@ use eframe::egui::{
 /// Highlighting re-runs on every edit, so very large files are shown as plain text.
 const MAX_HIGHLIGHT_CHARS: usize = 200_000;
 
-/// Shows the editor for `path`; returns true when the user asked to save. `goto` places the
-/// cursor at a one-based line and column and scrolls it into view.
+/// What the user asked of the editor this frame.
+#[derive(Default)]
+pub struct Shown {
+    pub save: bool,
+    pub request: Option<Request>,
+}
+
+/// Shows the editor for `path`. `goto` places the cursor at a one-based line and column and
+/// scrolls it into view; `commands` are run on this editor's text and drained.
+#[allow(clippy::too_many_arguments)]
 pub fn show(
     ui: &mut Ui,
     buffer: &mut Buffer,
@@ -25,13 +35,16 @@ pub fn show(
     settings: &Settings,
     id: Id,
     goto: Option<(usize, usize)>,
-) -> bool {
+    commands: &mut Vec<EditorCommand>,
+) -> Shown {
     let mut save = false;
     let muted = ui.visuals().text_color().gamma_multiply(0.55);
     Frame::new().inner_margin(Margin::symmetric(14, 8)).show(ui, |ui| {
         ui.horizontal(|ui| {
+            // A breadcrumb, as VS Code shows the file's place in the repo.
             let relative = path.strip_prefix(root).unwrap_or(path);
-            ui.label(RichText::new(relative.display().to_string()).color(muted).size(12.5));
+            let crumbs: Vec<_> = relative.iter().map(|part| part.to_string_lossy()).collect();
+            ui.label(RichText::new(crumbs.join(" › ")).color(muted).size(12.5));
             if buffer.is_dirty() {
                 ui.label(RichText::new("●").color(settings.theme.ansi[3].color()).size(11.0))
                     .on_hover_text("Unsaved changes");
@@ -57,17 +70,17 @@ pub fn show(
         Content::Unavailable(_) => 0,
     };
     let gutter = buffer.gutter(lines).to_string();
-    let Buffer { content, markdown: cache, preview, bar, .. } = buffer;
+    let Buffer { content, markdown: cache, preview, bar, extra_cursors: extra, .. } = buffer;
     let text = match content {
         Content::Text(text) => text,
         Content::Unavailable(reason) => {
             ui.centered_and_justified(|ui| ui.label(RichText::new(reason.as_str()).color(muted)));
-            return save;
+            return Shown { save, request: None };
         }
     };
     if *preview {
         markdown::show(ui, cache, text, id);
-        return save;
+        return Shown { save, request: None };
     }
 
     let font = FontId::monospace(settings.font_size);
@@ -134,6 +147,21 @@ pub fn show(
     }
     let matches = bar.as_ref().filter(|b| b.kind == BarKind::Find).map(|b| b.matches());
     let accent = settings.theme.accent();
+    // Queued commands (⌘D, ⌥↑, ⌘/, …) run on the text and cursors before the editor draws.
+    let mut request = None;
+    let commanded = !commands.is_empty();
+    if commanded {
+        let mut primary = cursors::primary(ui, id);
+        for command in commands.drain(..) {
+            request = commands::run(command, text, &mut primary, extra, path).or(request);
+        }
+        cursors::set_primary(ui, id, primary);
+        ui.memory_mut(|m| m.request_focus(id));
+    }
+    cursors::take_input(ui, id, text, extra);
+    let (pressed, modifiers) = ui.input(|i| (i.pointer.primary_pressed(), i.modifiers));
+    let before_click = cursors::primary(ui, id);
+    let caret_color = ui.visuals().text_cursor.stroke.color;
     area.show(ui, |ui| {
         ui.horizontal_top(|ui| {
             ui.spacing_mut().item_spacing.x = 12.0;
@@ -151,9 +179,30 @@ pub fn show(
             if let Some((matches, current)) = matches {
                 paint_matches(ui, &output, matches, current, row_height, wrap, accent);
             }
+            // ⌥click adds a cursor, a plain click drops the extras, ⌘click goes to a definition.
+            if pressed && output.response.hovered() {
+                let now = cursors::primary(ui, id);
+                if modifiers.alt && before_click != now {
+                    extra.push(before_click);
+                } else if !modifiers.alt {
+                    extra.clear();
+                }
+                if modifiers.command {
+                    let word = super::multi_cursor::word_at(text, now.1);
+                    let word = word.map(|(s, e)| text.chars().skip(s).take(e - s).collect::<String>());
+                    request = word.map(|word| Request::Definition { word, peek: false }).or(request.take());
+                }
+            }
+            cursors::paint(ui, &output, extra, caret_color);
+            if commanded {
+                let head = cursors::primary(ui, id).1;
+                let caret =
+                    output.galley.pos_from_cursor(CCursor::new(head)).translate(output.galley_pos.to_vec2());
+                ui.scroll_to_rect(caret.expand(row_height), None);
+            }
         });
     });
-    save
+    Shown { save, request }
 }
 
 /// Highlights the matches on view. Measuring a match walks the galley's rows, so only matches

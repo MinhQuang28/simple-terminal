@@ -136,10 +136,13 @@ impl Default for Settings {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SidePanel {
+    /// The folder tree.
     #[default]
     Files,
+    /// Search across the repo's files.
+    Search,
     Changes,
     Library,
 }
@@ -158,8 +161,10 @@ pub struct AppState {
     pub projects: Vec<Project>,
     pub selected_repo: Option<Uuid>,
     pub settings: Settings,
-    pub show_side_panel: bool,
-    pub side_panel: SidePanel,
+    /// What the Code view's sidebar shows, which takes the project sidebar's place there.
+    pub code_panel: SidePanel,
+    /// Shows the Code view's sidebar; ⌘B there toggles it.
+    pub show_code_panel: bool,
     /// List gitignored files in the Files panel too, muted.
     pub show_ignored_files: bool,
     /// Tabs closed most recently last, with the repo each came from, for "Reopen closed tab".
@@ -174,8 +179,8 @@ impl Default for AppState {
             projects: Vec::new(),
             selected_repo: None,
             settings: Settings::default(),
-            show_side_panel: true,
-            side_panel: SidePanel::default(),
+            code_panel: SidePanel::default(),
+            show_code_panel: true,
             show_ignored_files: false,
             closed_tabs: Vec::new(),
             sidebar_view: SidebarView::default(),
@@ -208,6 +213,15 @@ pub struct Repo {
     /// Shell command run in the first terminal of each new worktree, e.g. `npm install`.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub setup_command: String,
+    /// Shows the Code view (file and diff tabs) instead of the terminals; see `repo_view`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub code_view: bool,
+    /// Active tab of the view that isn't showing, brought back when switching to it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parked_tab: Option<Uuid>,
+    /// File tab shown again in a second editor beside the active one (⌘\\).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub split_tab: Option<Uuid>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -295,6 +309,9 @@ impl Repo {
             active_tab: None,
             tabs_collapsed: false,
             setup_command: String::new(),
+            code_view: false,
+            parked_tab: None,
+            split_tab: None,
         }
     }
 

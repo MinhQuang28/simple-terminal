@@ -6,7 +6,8 @@ use super::claude_icon::ICON_SIZE;
 use super::history_menu;
 use super::program_icon;
 use super::sidebar::{tab_busy, tab_menu, tab_program, tab_status, tab_title};
-use super::widgets::{accent, muted, right_aligned, spinner_at};
+use super::spinner::spinner_at;
+use super::widgets::{accent, muted, right_aligned};
 use crate::agent_events::AgentStatus;
 use crate::claude_history::ClaudeHistory;
 use crate::editor::Buffers;
@@ -42,9 +43,10 @@ pub fn show(
         ui.set_height(TAB_HEIGHT);
         ui.spacing_mut().item_spacing.x = 2.0;
         ui.add_space(10.0);
-        let mut centers = Vec::with_capacity(repo.tabs.len());
+        let mut centers = Vec::new();
         let mut dragging = None;
-        for (index, tab) in repo.tabs.iter().enumerate() {
+        // Files and diffs have their own strip in the Code view.
+        for (index, tab) in repo.view_tabs().enumerate() {
             let fallback = branch.unwrap_or(&repo.name);
             let title = truncate(&tab_title(tab, pool, fallback), MAX_TITLE_CHARS);
             let tab_state = TabState {

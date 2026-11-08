@@ -4,7 +4,6 @@ use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 use crate::app::{PendingPaste, RepodeckApp};
-use crate::app_actions::close_tab;
 use crate::model::{PaneKind, Tab};
 
 /// Pasting into a freshly opened Claude tab waits for Claude to take over the terminal.
@@ -14,7 +13,7 @@ impl RepodeckApp {
     pub(crate) fn close_tab(&mut self, repo_id: Uuid, tab_id: Uuid) {
         let Some(repo) = self.state.repo_mut(repo_id) else { return };
         let file = repo.tabs.iter().find(|t| t.id == tab_id).and_then(|t| t.file.clone());
-        if let Some(tab) = close_tab(repo, tab_id) {
+        if let Some(tab) = repo.remove_tab(tab_id) {
             self.state.closed_tabs.push((repo_id, tab));
             let excess = self.state.closed_tabs.len().saturating_sub(20);
             self.state.closed_tabs.drain(..excess);
@@ -47,7 +46,7 @@ impl RepodeckApp {
                 id
             }
         };
-        repo.active_tab = Some(tab_id);
+        repo.activate(tab_id);
         self.state.selected_repo = Some(repo_id);
         self.pending_focus = Some(tab_id);
     }
@@ -64,7 +63,7 @@ impl RepodeckApp {
             }
         };
         self.diffs.forget(&path);
-        repo.active_tab = Some(tab_id);
+        repo.activate(tab_id);
         self.state.selected_repo = Some(repo_id);
         self.pending_focus = Some(tab_id);
     }
@@ -92,7 +91,7 @@ impl RepodeckApp {
         if let Some(tab) = tab {
             self.state.selected_repo = Some(repo_id);
             if let Some(r) = self.state.repo_mut(repo_id) {
-                r.active_tab = Some(tab);
+                r.activate(tab);
             }
             self.pending_focus = Some(pane);
         }

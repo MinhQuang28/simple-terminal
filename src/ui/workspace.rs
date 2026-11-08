@@ -7,13 +7,14 @@ use eframe::egui::{
 use uuid::Uuid;
 
 use super::Action;
+use super::code_view;
 use super::diff_view;
 use super::pane_chrome::{exited_overlay, pane_menu};
 use super::tab_bar;
 use super::widgets::{accent, muted};
 use crate::claude_history::ClaudeHistory;
 use crate::diff::DiffCache;
-use crate::editor::{self, Buffers};
+use crate::editor::{self, Buffers, EditorCommand, Request};
 use crate::file_drag::{self, FileDrag};
 use crate::git_watcher::GitWatcher;
 use crate::model::{AppState, Repo, SplitDir, Tab};
@@ -40,10 +41,12 @@ pub struct Workspace<'a> {
     pub pending_focus: &'a mut Option<Uuid>,
     /// Line and column to place the editor cursor at once the file tab shows.
     pub goto: &'a mut Option<(usize, usize)>,
+    /// Editor commands from the keymap, for the editor that has focus (or the main one).
+    pub editor_commands: &'a mut Vec<EditorCommand>,
     pub actions: &'a mut Vec<Action>,
 }
 
-/// Contents of the rounded card: the tab strip plus the active terminal panes or file editor.
+/// Contents of the rounded card: the repo's Code view, or its tab strip and terminal panes.
 pub fn show(ui: &mut Ui, ws: &mut Workspace<'_>) {
     let state = ws.state;
     let card = ui.max_rect();
@@ -52,6 +55,10 @@ pub fn show(ui: &mut Ui, ws: &mut Workspace<'_>) {
         folder_drop(ui, ws.drag, card, ws.actions);
         return;
     };
+    if repo.code_view {
+        code_view::show(ui, ws, repo);
+        return;
+    }
     // Dropping a folder on the tab strip opens a shell there, like the Finder service.
     folder_drop(ui, ws.drag, card.with_max_y(card.top() + tab_bar::TAB_HEIGHT), ws.actions);
     let branch = ws.git.status(&repo.path).map(|s| s.branch.clone());
@@ -75,13 +82,29 @@ pub fn show(ui: &mut Ui, ws: &mut Workspace<'_>) {
         });
         return;
     };
+    match tab.is_document() {
+        true => document(ui, ws, repo, tab, 0, true),
+        false => panes(ui, ws, repo, tab),
+    }
+}
+
+/// The file editor or diff a document tab shows. `group` tells apart the editors of a split, and
+/// `target` marks the one that takes the keymap's editor commands.
+pub(super) fn document(
+    ui: &mut Ui,
+    ws: &mut Workspace<'_>,
+    repo: &Repo,
+    tab: &Tab,
+    group: usize,
+    target: bool,
+) {
     match (&tab.file, &tab.diff) {
-        (Some(path), _) => file_editor(ui, ws, repo, path),
+        (Some(path), _) => file_editor(ui, ws, repo, path, group, target),
         (None, Some(path)) => {
             let status = ws.git.status(&repo.path);
             let text = ws.diffs.get(&repo.path, path, status.as_ref());
             let (galley, comments) = ws.diffs.view_slots(path);
-            let settings = &state.settings;
+            let settings = &ws.state.settings;
             diff_view::show(
                 ui,
                 repo.id,
@@ -94,18 +117,34 @@ pub fn show(ui: &mut Ui, ws: &mut Workspace<'_>) {
                 ws.actions,
             );
         }
-        (None, None) => panes(ui, ws, repo, tab),
+        (None, None) => {}
     }
 }
 
-fn file_editor(ui: &mut Ui, ws: &mut Workspace<'_>, repo: &Repo, path: &Path) {
-    let id = Id::unique(("editor", path));
-    if ws.pending_focus.take().is_some() {
+/// The editor widget's id; the second editor of a split has its own, for its own cursor.
+pub(super) fn editor_id(path: &Path, group: usize) -> Id {
+    match group {
+        0 => Id::unique(("editor", path)),
+        _ => Id::unique(("editor", path, group)),
+    }
+}
+
+fn file_editor(ui: &mut Ui, ws: &mut Workspace<'_>, repo: &Repo, path: &Path, group: usize, target: bool) {
+    let id = editor_id(path, group);
+    let main = group == 0;
+    if main && ws.pending_focus.take().is_some() {
         ui.memory_mut(|m| m.request_focus(id));
     }
+    let goto = if main { ws.goto.take() } else { None };
+    let mut none = Vec::new();
+    let commands = if target { &mut *ws.editor_commands } else { &mut none };
     let buffer = ws.buffers.get(path);
-    if editor::show(ui, buffer, path, &repo.path, &ws.state.settings, id, ws.goto.take()) {
+    let shown = editor::show(ui, buffer, path, &repo.path, &ws.state.settings, id, goto, commands);
+    if shown.save {
         buffer.save(path);
+    }
+    if let Some(Request::Definition { word, peek }) = shown.request {
+        ws.actions.push(Action::GoToDefinition { repo: repo.id, word, peek });
     }
 }
 

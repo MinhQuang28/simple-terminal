@@ -31,6 +31,7 @@ use crate::shell_env;
 use crate::socket_api;
 use crate::store::{self, Saver};
 use crate::tab_title::task_summary;
+use crate::text_search_runner::TextSearch;
 use crate::ui::Action;
 use crate::ui::dialogs::{self, Dialog, DialogResult};
 use crate::ui::palette::Palette;
@@ -69,6 +70,11 @@ pub struct RepodeckApp {
     pub(crate) pending_paste: Option<PendingPaste>,
     pub(crate) file_tree: FileTree,
     pub(crate) file_index: FileIndex,
+    pub(crate) search: TextSearch,
+    /// Editor commands from this frame's keys, run by the editor showing; dropped after the frame.
+    pub(crate) editor_commands: Vec<crate::editor::EditorCommand>,
+    /// Definitions listed in the peek window.
+    pub(crate) peek_definition: Option<crate::definitions::Peek>,
     pub(crate) claude_history: ClaudeHistory,
     pub(crate) library: LibraryCache,
     pub(crate) drag: FileDrag,
@@ -97,7 +103,8 @@ impl RepodeckApp {
         crate::keymap_hint::install(crate::keymap::Keymap::load());
         egui_extras::install_image_loaders(&ctx);
         let app_ctx = ctx.clone();
-        let state = store::load();
+        let mut state = store::load();
+        state.projects.iter_mut().flat_map(|p| &mut p.repos).for_each(|r| r.normalize_view());
         shell_env::prefetch(shell_env::program(&state.settings.shell));
         state.settings.theme.apply_to(&ctx);
         // Install the bundled font immediately so the bold family exists before the first paint.
@@ -139,6 +146,9 @@ impl RepodeckApp {
             pending_paste: None,
             file_tree,
             file_index,
+            search: TextSearch::new(ctx.clone()),
+            editor_commands: Vec::new(),
+            peek_definition: None,
             claude_history,
             library,
             drag: FileDrag::default(),
@@ -481,6 +491,10 @@ impl eframe::App for RepodeckApp {
             self.show_settings(ui);
         } else {
             self.layout(ui, &mut actions);
+        }
+        self.editor_commands.clear();
+        if let Some(peek) = &self.peek_definition {
+            crate::ui::definition_peek::show(&ctx, peek, &mut actions);
         }
 
         if let Some(pane) = self.peek {

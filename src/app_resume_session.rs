@@ -13,7 +13,7 @@ impl RepodeckApp {
             .find(|t| t.panes.iter().any(|p| p.session.as_deref() == Some(session.as_str())))
             .map(|t| t.id);
         if let Some(tab) = existing {
-            repo.active_tab = Some(tab);
+            repo.activate(tab);
             self.state.selected_repo = Some(repo_id);
             self.focus_active_pane();
             return;

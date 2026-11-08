@@ -10,7 +10,7 @@ use crate::app::RepodeckApp;
 use crate::editor::{BarKind, EditorBar};
 use crate::finder_service::FolderRequest;
 use crate::library;
-use crate::model::{PaneKind, Project, Repo, Tab};
+use crate::model::{PaneKind, Project, Repo, SidePanel, Tab};
 use crate::trash;
 use crate::ui::Action;
 use crate::ui::dialogs::Dialog;
@@ -161,7 +161,7 @@ impl RepodeckApp {
             Action::SelectTab { repo, tab } => {
                 self.state.selected_repo = Some(repo);
                 if let Some(r) = self.state.repo_mut(repo) {
-                    r.active_tab = Some(tab);
+                    r.activate(tab);
                     // Opening a settled tab brings it back.
                     r.tabs.iter_mut().filter(|t| t.id == tab).for_each(|t| t.settled = false);
                 }
@@ -246,7 +246,37 @@ impl RepodeckApp {
             Action::OpenFolderTab(path) => {
                 self.open_folder(FolderRequest { path, kind: PaneKind::Shell });
             }
-            Action::ToggleSidePanel => self.state.show_side_panel = !self.state.show_side_panel,
+            // Only the Code view has a sidebar to fold; the terminals keep the project sidebar.
+            Action::ToggleSidePanel if self.code_view() => {
+                self.state.show_code_panel = !self.state.show_code_panel;
+            }
+            Action::ToggleSidePanel => return,
+            Action::GoToDefinition { repo, word, peek } => {
+                self.go_to_definition(repo, word, peek);
+                return;
+            }
+            Action::ClosePeekDefinition => {
+                self.peek_definition = None;
+                self.focus_active_pane();
+                return;
+            }
+            Action::FormatActiveFile => {
+                self.format_active_file();
+                return;
+            }
+            Action::ToggleSplitEditor => self.toggle_split_editor(),
+            Action::OpenSearch => {
+                let Some(repo) = self.selected_repo_mut() else { return };
+                repo.show_code(true);
+                self.state.code_panel = SidePanel::Search;
+                self.state.show_code_panel = true;
+                self.search.focus = true;
+            }
+            Action::ShowCode(code) => {
+                let Some(repo) = self.selected_repo_mut() else { return };
+                repo.show_code(code);
+                self.focus_active_pane();
+            }
             Action::OpenQuickOpen => self.palette = Some(Palette::files()),
             Action::OpenFind => {
                 if let Some(path) = self.active_file() {
@@ -269,9 +299,11 @@ impl RepodeckApp {
                 }
                 return;
             }
+            // The changes and library live in the Code view's sidebar, so asking for them goes there.
             Action::SetSidePanel(panel) => {
-                self.state.side_panel = panel;
-                self.state.show_side_panel = true;
+                let Some(repo) = self.selected_repo_mut() else { return };
+                repo.show_code(true);
+                (self.state.code_panel, self.state.show_code_panel) = (panel, true);
             }
             Action::ToggleIgnoredFiles => self.state.show_ignored_files = !self.state.show_ignored_files,
             Action::Split { dir, kind } => {
@@ -292,8 +324,9 @@ impl RepodeckApp {
             Action::ReopenClosedTab => {
                 let Some((repo_id, tab)) = self.state.closed_tabs.pop() else { return };
                 let Some(repo) = self.state.repo_mut(repo_id) else { return };
-                repo.active_tab = Some(tab.id);
+                let id = tab.id;
                 repo.tabs.push(tab);
+                repo.activate(id);
                 self.state.selected_repo = Some(repo_id);
                 self.focus_active_pane();
             }
@@ -441,7 +474,9 @@ impl RepodeckApp {
     pub(crate) fn new_tab(&mut self, repo_id: Uuid, kind: PaneKind, cwd: Option<PathBuf>) -> Option<Uuid> {
         let pane = self.add_tab(repo_id, kind, cwd)?;
         let repo = self.state.repo_mut(repo_id)?;
-        repo.active_tab = repo.tabs.last().map(|t| t.id);
+        if let Some(tab) = repo.tabs.last().map(|t| t.id) {
+            repo.activate(tab);
+        }
         self.state.selected_repo = Some(repo_id);
         self.pending_focus = Some(pane);
         Some(pane)
@@ -481,6 +516,11 @@ impl RepodeckApp {
         if let Some(parent) = path.parent() {
             self.file_tree.forget(parent);
         }
+    }
+
+    /// Whether the selected repo shows its Code view.
+    pub(crate) fn code_view(&self) -> bool {
+        self.state.selected_repo.and_then(|id| self.state.repo(id)).is_some_and(|r| r.code_view)
     }
 
     pub(crate) fn selected_repo_mut(&mut self) -> Option<&mut Repo> {
@@ -556,15 +596,4 @@ fn open_externally(template: &str, path: &Path, line: Option<u32>, col: Option<u
         .replace("{line}", &line.unwrap_or(1).to_string())
         .replace("{col}", &col.unwrap_or(1).to_string());
     Command::new("/bin/sh").args(["-lc", &command]).spawn().map(|_| ()).map_err(|e| format!("{command}: {e}"))
-}
-
-/// Removes the tab, activating its neighbour; returns it so it can be reopened.
-pub(crate) fn close_tab(repo: &mut Repo, tab_id: Uuid) -> Option<Tab> {
-    let index = repo.tabs.iter().position(|t| t.id == tab_id)?;
-    let tab = repo.tabs.remove(index);
-    if repo.active_tab == Some(tab_id) {
-        let next = index.min(repo.tabs.len().saturating_sub(1));
-        repo.active_tab = repo.tabs.get(next).map(|t| t.id);
-    }
-    Some(tab)
 }

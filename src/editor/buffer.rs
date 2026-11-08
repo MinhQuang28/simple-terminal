@@ -32,6 +32,8 @@ pub struct Buffer {
     gutter: (usize, String),
     /// Find or go-to-line bar, while open.
     pub bar: Option<EditorBar>,
+    /// Cursors besides the editor's own, as (anchor, cursor) character indices.
+    pub extra_cursors: Vec<super::line_ops::Sel>,
 }
 
 /// Whether `path` is a Markdown document, which opens in preview.
@@ -62,6 +64,7 @@ impl Buffer {
             markdown: CommonMarkCache::default(),
             gutter: (0, String::new()),
             bar: None,
+            extra_cursors: Vec::new(),
         }
     }
 
@@ -151,6 +154,25 @@ impl Buffers {
     pub fn save(&mut self, path: &Path) {
         if let Some(buffer) = self.open.get_mut(path) {
             buffer.save(path);
+        }
+    }
+
+    /// The open file's text, if it is shown as text.
+    pub fn text(&mut self, path: &Path) -> Option<String> {
+        match &self.get(path).content {
+            Content::Text(text) => Some(text.clone()),
+            Content::Unavailable(_) => None,
+        }
+    }
+
+    /// Replaces the file's text with `new` if it still reads `expected`; false when it changed.
+    pub fn replace_text(&mut self, path: &Path, expected: &str, new: String) -> bool {
+        match self.open.get_mut(path).map(|b| &mut b.content) {
+            Some(Content::Text(text)) if text == expected => {
+                *text = new;
+                true
+            }
+            _ => false,
         }
     }
 

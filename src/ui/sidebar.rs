@@ -22,7 +22,7 @@ use crate::programs::{self, Program};
 use crate::session_pool::SessionPool;
 use crate::tab_title;
 
-const TRAFFIC_LIGHTS_HEIGHT: f32 = 34.0;
+pub(super) const TRAFFIC_LIGHTS_HEIGHT: f32 = 34.0;
 /// Space on each side of the hairline that separates projects.
 const PROJECT_GAP: f32 = 10.0;
 

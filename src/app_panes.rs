@@ -2,7 +2,6 @@ use eframe::egui;
 use uuid::Uuid;
 
 use crate::app::RepodeckApp;
-use crate::app_actions::close_tab;
 use crate::model::{PaneKind, Tab};
 use crate::ui::Action;
 use crate::ui::dialogs::Dialog;
@@ -66,33 +65,23 @@ impl RepodeckApp {
             }
             Action::MoveTab { repo, tab, to } => {
                 let Some(repo) = self.state.repo_mut(repo) else { return false };
-                let Some(from) = repo.tabs.iter().position(|t| t.id == tab) else { return false };
-                let moved = repo.tabs.remove(from);
-                repo.tabs.insert(to.min(repo.tabs.len()), moved);
+                repo.move_in_view(tab, to);
             }
             Action::MoveTabToRepo { from, tab, to } => {
                 let Some(repo) = self.state.repo_mut(from) else { return false };
-                let Some(index) = repo.tabs.iter().position(|t| t.id == tab) else { return false };
-                let moved = repo.tabs.remove(index);
-                if repo.active_tab == Some(tab) {
-                    repo.active_tab =
-                        repo.tabs.get(index.min(repo.tabs.len().saturating_sub(1))).map(|t| t.id);
-                }
+                let Some(moved) = repo.remove_tab(tab) else { return false };
                 let Some(target) = self.state.repo_mut(to) else { return false };
-                target.active_tab = Some(moved.id);
                 target.tabs.push(moved);
+                target.activate(tab);
                 self.state.selected_repo = Some(to);
                 self.focus_active_pane();
             }
             Action::SelectAdjacentTab(offset) => {
                 let Some(repo) = self.selected_repo_mut() else { return false };
-                let Some(index) = repo.tabs.iter().position(|t| Some(t.id) == repo.active_tab) else {
-                    return false;
-                };
-                let next = (index as i32 + offset).rem_euclid(repo.tabs.len() as i32) as usize;
-                repo.active_tab = Some(repo.tabs[next].id);
+                let Some(next) = repo.adjacent_tab(offset) else { return false };
+                repo.active_tab = Some(next);
                 // Stepping onto a settled tab brings it back, as selecting it does.
-                repo.tabs[next].settled = false;
+                repo.tabs.iter_mut().filter(|t| t.id == next).for_each(|t| t.settled = false);
                 self.focus_active_pane();
             }
             _ => return false,
@@ -125,7 +114,7 @@ impl RepodeckApp {
                 tab.zoomed = None;
             }
             if tab.panes.is_empty() {
-                close_tab(repo, tab_id);
+                repo.remove_tab(tab_id);
             } else if tab.active_pane == Some(pane_id) {
                 tab.active_pane = tab.panes.last().map(|p| p.id);
             }

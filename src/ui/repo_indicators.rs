@@ -3,7 +3,8 @@ use eframe::egui::{Button, Color32, RichText, Ui, vec2};
 use super::Action;
 use super::agent_status;
 use super::sidebar::{tab_busy, tab_status};
-use super::widgets::{accent, ago, muted, spinner, tag};
+use super::spinner::spinner;
+use super::widgets::{accent, ago, muted, tag};
 use crate::git_status::GitStatus;
 use crate::model::{LaunchPreset, Repo};
 use crate::pr_status::{CheckState, PullRequest};
@@ -52,7 +53,7 @@ pub fn indicators(ui: &mut Ui, row: &RepoRow, actions: &mut Vec<Action>) {
     ui.add_space(4.0);
 }
 
-/// Work-in-progress mark: a pulsing dot on every repo or tab with an agent at work.
+/// Work-in-progress mark: Herdr's turning arc on every repo or tab with an agent at work.
 pub fn busy_mark(ui: &mut Ui) {
     spinner(ui, 11.0);
 }

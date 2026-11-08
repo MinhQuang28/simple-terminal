@@ -102,8 +102,12 @@ pub fn items(state: &AppState, pool: &SessionPool) -> Vec<Item> {
     push("Reopen closed tab", "tab.reopen", Action::ReopenClosedTab);
     push("Next pane needing attention", "attention.next", Action::FocusNextAttention);
     push("Mark all notifications read", "", Action::MarkNoticesRead);
-    push("Toggle files panel", "panel.toggle", Action::ToggleSidePanel);
-    push("Show files", "", Action::SetSidePanel(SidePanel::Files));
+    push("Toggle sidebar", "panel.toggle", Action::ToggleSidePanel);
+    push("Show terminals", "view.terminals", Action::ShowCode(false));
+    push("Show code", "view.code", Action::ShowCode(true));
+    push("Search in files", "search.files", Action::OpenSearch);
+    push("Format document", "editor.format", Action::FormatActiveFile);
+    push("Split editor", "editor.split", Action::ToggleSplitEditor);
     push("Show changes", "", Action::SetSidePanel(SidePanel::Changes));
     push("Settings", "settings.open", Action::OpenSettings);
     push("Show library", "", Action::SetSidePanel(SidePanel::Library));

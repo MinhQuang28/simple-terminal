@@ -13,6 +13,24 @@ use crate::store;
 /// with Shift has to come before the same key without it, since a binding without Shift also
 /// matches with Shift held.
 pub const DEFAULTS: &[(&str, &[&str])] = &[
+    // The Code view's editor keys, as VS Code binds them; they act only while it shows.
+    ("editor.copy_line_up", &["alt+shift+up"]),
+    ("editor.copy_line_down", &["alt+shift+down"]),
+    ("editor.cursor_above", &["cmd+alt+up"]),
+    ("editor.cursor_below", &["cmd+alt+down"]),
+    ("editor.select_all_matches", &["cmd+shift+l"]),
+    ("editor.delete_line", &["cmd+shift+k"]),
+    ("editor.format", &["alt+shift+f"]),
+    ("editor.peek_definition", &["alt+f12"]),
+    ("editor.move_line_up", &["alt+up"]),
+    ("editor.move_line_down", &["alt+down"]),
+    ("editor.select_next", &["cmd+d"]),
+    ("editor.undo_cursor", &["cmd+u"]),
+    ("editor.toggle_comment", &["cmd+/"]),
+    ("editor.go_to_line", &["ctrl+g"]),
+    ("editor.split", &["cmd+\\"]),
+    ("editor.definition", &["f12"]),
+    ("editor.command_palette", &["cmd+shift+p", "f1"]),
     ("palette.toggle", &["cmd+shift+k"]),
     ("tab.move_left", &["cmd+alt+shift+left"]),
     ("tab.move_right", &["cmd+alt+shift+right"]),
@@ -39,6 +57,9 @@ pub const DEFAULTS: &[(&str, &[&str])] = &[
     ("pane.close", &["cmd+w"]),
     ("file.save", &["cmd+s"]),
     ("panel.toggle", &["cmd+b"]),
+    ("search.files", &["cmd+shift+f"]),
+    ("view.terminals", &["ctrl+1"]),
+    ("view.code", &["ctrl+2"]),
     ("settings.open", &["cmd+,"]),
     ("font.bigger", &["cmd+=", "cmd++"]),
     ("font.smaller", &["cmd+-"]),
@@ -160,8 +181,9 @@ pub fn parse(text: &str) -> Option<KeyboardShortcut> {
             .or_else(|| Key::from_name(&capitalized(other)))
             .or_else(|| Key::ALL.iter().copied().find(|k| k.name().eq_ignore_ascii_case(other))),
     }?;
-    // A bare key would take that key away from typing.
-    (!modifiers.is_none()).then(|| KeyboardShortcut::new(modifiers, key))
+    // A bare key would take that key away from typing; function keys type nothing.
+    let function_key = key.name().strip_prefix('F').is_some_and(|n| n.parse::<u8>().is_ok());
+    (!modifiers.is_none() || function_key).then(|| KeyboardShortcut::new(modifiers, key))
 }
 
 fn capitalized(text: &str) -> String {

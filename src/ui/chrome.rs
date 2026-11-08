@@ -11,7 +11,7 @@ use super::widgets::{icon_button_frame, muted, right_aligned};
 use crate::font_catalog::SYSTEM_FONT;
 use crate::git_status::GitStatus;
 use crate::inbox::Inbox;
-use crate::model::{AppState, SidePanel};
+use crate::model::{AppState, Repo};
 use crate::session_pool::SessionPool;
 
 /// Makes `rect` drag the window, since the native titlebar is hidden.
@@ -50,16 +50,21 @@ pub fn top_bar(
                 ui.add_space(6.0);
                 branch_menu::chip(ui, repo, &status.branch, pool, actions);
             }
+            ui.add_space(14.0);
+            view_switch(ui, repo, actions);
         }
         right_aligned(ui, |ui| {
             ui.add_space(4.0);
-            if side_panel_icon(ui, state.show_side_panel)
-                .on_hover_text(crate::keymap_hint::with_hint("Toggle files panel", "panel.toggle"))
-                .clicked()
+            // The sidebar and gitignored-files toggles belong to the Code view.
+            let code = state.selected_repo.and_then(|id| state.repo(id)).is_some_and(|r| r.code_view);
+            if code
+                && side_panel_icon(ui, state.show_code_panel)
+                    .on_hover_text(crate::keymap_hint::with_hint("Toggle sidebar", "panel.toggle"))
+                    .clicked()
             {
                 actions.push(Action::ToggleSidePanel);
             }
-            if state.show_side_panel && state.side_panel == SidePanel::Files {
+            if code {
                 let hint =
                     if state.show_ignored_files { "Hide gitignored files" } else { "Show gitignored files" };
                 if ignored_icon(ui, state.show_ignored_files).on_hover_text(hint).clicked() {
@@ -73,6 +78,39 @@ pub fn top_bar(
             }
         });
     });
+}
+
+/// Herdr-style pills that switch the repo between its terminals and its code, each with its key.
+fn view_switch(ui: &mut Ui, repo: &Repo, actions: &mut Vec<Action>) {
+    ui.spacing_mut().item_spacing.x = 6.0;
+    let views = [("Terminals", "view.terminals", false), ("Code", "view.code", true)];
+    for (label, command, code) in views {
+        let selected = repo.code_view == code;
+        let color = if selected { ui.visuals().strong_text_color() } else { muted(ui) };
+        let name = ui.painter().layout_no_wrap(label.into(), FontId::proportional(13.0), color);
+        let keys = crate::keymap_hint::hint(command);
+        let key =
+            ui.painter().layout_no_wrap(keys, FontId::proportional(11.0), muted(ui).gamma_multiply(0.8));
+        let key_width = if key.size().x > 0.0 { key.size().x + 7.0 } else { 0.0 };
+        let size = vec2(12.0 + name.size().x + key_width + 12.0, 26.0);
+        let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+        let visuals = &ui.visuals().widgets;
+        let radius = CornerRadius::same(7);
+        if selected {
+            ui.painter().rect_filled(rect, radius, visuals.inactive.weak_bg_fill);
+        } else if response.hovered() {
+            ui.painter().rect_filled(rect, radius, visuals.hovered.weak_bg_fill);
+        }
+        ui.painter().rect_stroke(rect, radius, visuals.noninteractive.bg_stroke, StrokeKind::Inside);
+        let y = rect.center().y;
+        let name_width = name.size().x;
+        ui.painter().galley(pos2(rect.left() + 12.0, y - name.size().y / 2.0), name, color);
+        let key_pos = pos2(rect.left() + 12.0 + name_width + 7.0, y - key.size().y / 2.0);
+        ui.painter().galley(key_pos, key, color);
+        if response.clicked() && !selected {
+            actions.push(Action::ShowCode(code));
+        }
+    }
 }
 
 /// Outlined window with a divider marking the right-hand panel.

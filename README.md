@@ -29,7 +29,13 @@ CLI (`claude`), never calls an LLM API itself, and runs as one Rust process.
 - **Rebindable keys** — put overrides in `keys.json` in the data folder, read at startup, e.g.
   `{"tab.new": "ctrl+t", "tab.reopen": null}`. Command names and defaults are in `src/keymap.rs`; menus and
   the palette show the keys you bound.
-- **Files panel** (⌘B) with a built-in editor — syntax highlighting, find (⌘F), go to line (⌘L),
+- **Code view** (⌃2; ⌃1 back to the terminals) — each repo's files and diffs open in their own
+  VS Code-style view, an explorer beside file tabs and a breadcrumb, never mixed in with the
+  terminal and agent tabs, with [vscode-icons](https://github.com/vscode-icons/vscode-icons) file
+  and folder icons. Each view remembers its own active tab. There a VS Code-style sidebar
+  takes the project sidebar's place — Files, Search (⇧⌘F, with match case, whole word and regex),
+  Changes and Library — and ⌘B toggles it. The terminals keep the project sidebar alone.
+- **Built-in editor** — syntax highlighting, find (⌘F), go to line (⌘L),
   optional word wrap — and a rendered **Markdown preview**. Gitignored files are hidden; the ⊘
   button in the top bar lists them too, muted.
 - **Paste images** straight into a pane; they are saved to a temp file whose path is typed for you.
@@ -186,8 +192,26 @@ UI pass took. Run the same workload against each build, with the window visible.
 | ⌘P       | Open file in the repo        | ⌘L       | Go to line (editor)        |
 | ⇧⌘[ ⇧⌘]  | Previous / next tab          | ⌘W       | Close pane                 |
 | ⌥⌘T      | Reopen closed tab            | ⇧⌘W      | Close tab                  |
-| ⌃⌘N      | Next pane needing attention  | ⌘B       | Toggle files panel         |
+| ⌃⌘N      | Next pane needing attention  | ⌘B       | Toggle Code sidebar        |
 | ⌘,       | Settings                     | ⌘K       | Clear terminal             |
+| ⌃1       | Terminals view               | ⌃2       | Code view                  |
+
+In the Code view the editor takes VS Code's keys (rebindable as `editor.*` in `keys.json`):
+
+| Shortcut     | Action                                  | Shortcut     | Action                             |
+| ------------ | --------------------------------------- | ------------ | ---------------------------------- |
+| ⌘D           | Select the next match (another cursor)  | ⌥↑ ⌥↓        | Move line up / down                |
+| ⇧⌘L          | Select every match                      | ⌥⇧↑ ⌥⇧↓      | Copy line up / down                |
+| ⌥Click       | Add a cursor                            | ⇧⌘K          | Delete line                        |
+| ⌥⌘↑ ⌥⌘↓      | Add a cursor above / below              | ⌘/           | Toggle comment                     |
+| ⌘U           | Undo the last cursor (Esc drops all)    | ⌥⇧F          | Format (rustfmt, prettier, gofmt, ruff/black) |
+| F12, ⌘Click  | Go to definition                        | ⌥F12         | Peek definition                    |
+| ⇧⌘P, F1      | Command palette                         | ⌃G           | Go to line                         |
+| ⇧⌘F          | Search in files                         | ⌘\\           | Split editor                       |
+| ⌘B           | Toggle the sidebar                      |              |                                    |
+
+Go to definition has no language server: it finds lines that declare the name (`fn`, `struct`,
+`class`, `function`, `def`, `func`, `const x =`…) across the repo, the open file first.
 
 **Settings** (⌘,) covers appearance (theme, ANSI palette), typography (terminal font and size,
 a separate interface font and size, line height), notifications (on/off, sound, and whether
