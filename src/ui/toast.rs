@@ -1,5 +1,5 @@
 //! A short message that floats above the status bar for a few seconds, for things that
-//! succeeded quietly (a commit, a branch switch). Failures go to the inbox instead.
+//! finished quietly (a commit, a branch switch). Failures also go to the inbox, with details.
 
 use std::time::Duration;
 

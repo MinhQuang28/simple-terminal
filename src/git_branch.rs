@@ -24,6 +24,17 @@ pub fn switch(repo: &Path, branch: &str, create: bool) -> Result<(), String> {
     git(repo, args).map(|_| ())
 }
 
+/// One line for a toast out of what `switch` returned: git lists every file it refused over.
+pub fn failure_summary(err: &str) -> String {
+    if err.contains("would be overwritten") {
+        let files = err.lines().filter(|l| l.starts_with('\t')).count();
+        let noun = if files == 1 { "file" } else { "files" };
+        return format!("{files} changed {noun} would be overwritten. Commit or stash first.");
+    }
+    let first = err.lines().next().unwrap_or_default();
+    first.trim_start_matches("error: ").trim_start_matches("fatal: ").to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use std::process::Command;
@@ -54,6 +65,46 @@ mod tests {
         assert_eq!(git(&dir, &["branch", "--show-current"]).unwrap(), "fix/new");
         assert!(switch(&dir, "main", true).is_err(), "taken");
         assert!(switch(&dir, "bad name", true).is_err(), "invalid");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn summarizes_a_switch_refused_over_local_changes() {
+        let dir = std::env::temp_dir().join(format!("repodeck-refused-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let run = |args: &[&str]| {
+            let ok = Command::new("git")
+                .arg("-C")
+                .arg(&dir)
+                .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+                .args(args)
+                .output()
+                .unwrap()
+                .status
+                .success();
+            assert!(ok, "git {args:?}");
+        };
+        let write = |text: &str| {
+            std::fs::write(dir.join("a.txt"), text).unwrap();
+            std::fs::write(dir.join("b.txt"), text).unwrap();
+        };
+        run(&["init", "-q", "-b", "main"]);
+        write("one");
+        run(&["add", "."]);
+        run(&["commit", "-qm", "one"]);
+        run(&["switch", "-qc", "feature"]);
+        write("two");
+        run(&["commit", "-qam", "two"]);
+        run(&["switch", "-q", "main"]);
+        write("dirty");
+
+        let err = switch(&dir, "feature", false).unwrap_err();
+        assert_eq!(failure_summary(&err), "2 changed files would be overwritten. Commit or stash first.");
+        assert_eq!(git(&dir, &["branch", "--show-current"]).unwrap(), "main");
+
+        let err = switch(&dir, "missing", false).unwrap_err();
+        assert!(!failure_summary(&err).starts_with("fatal"));
+        assert!(!failure_summary(&err).contains('\n'));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

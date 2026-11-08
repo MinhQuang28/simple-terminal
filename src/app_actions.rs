@@ -52,6 +52,7 @@ impl RepodeckApp {
                 if unsaved > 0 && !create {
                     let files = if unsaved == 1 { "file" } else { "files" };
                     let detail = format!("Save or revert {unsaved} unsaved {files} in this repo first.");
+                    crate::ui::toast::post(ctx, format!("Didn't switch to {branch}: {detail}"));
                     self.report_error(&format!("Didn't switch to {branch}"), detail);
                     return;
                 }
@@ -59,7 +60,12 @@ impl RepodeckApp {
                     let result = crate::git_branch::switch(&path, &branch, create);
                     Box::new(move |app: &mut RepodeckApp| match result {
                         Ok(()) => crate::ui::toast::post(&app.ctx, format!("Switched to {branch}")),
-                        Err(err) => app.report_error(&format!("Couldn't switch to {branch}"), err),
+                        Err(err) => {
+                            // The click must answer where it was made; the inbox keeps the details.
+                            let why = crate::git_branch::failure_summary(&err);
+                            crate::ui::toast::post(&app.ctx, format!("Couldn't switch to {branch}: {why}"));
+                            app.report_error(&format!("Couldn't switch to {branch}"), err);
+                        }
                     })
                 });
                 return;
