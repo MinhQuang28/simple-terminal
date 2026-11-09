@@ -90,8 +90,14 @@ pub fn show(
             if !project.collapsed {
                 ui.add_space(4.0);
                 for repo in &project.repos {
+                    // A worktree shows inside the repo it was made from.
+                    if repo.worktree_of.is_some_and(|main| project.repos.iter().any(|r| r.id == main)) {
+                        continue;
+                    }
+                    let worktrees: Vec<&Repo> =
+                        project.repos.iter().filter(|r| r.worktree_of == Some(repo.id)).collect();
                     let top = ui.cursor().top();
-                    repo_block(ui, repo, state, git, prs, pool, now, actions);
+                    repo_block(ui, repo, &worktrees, state, git, prs, pool, now, actions);
                     let rect = Rect::from_x_y_ranges(ui.max_rect().x_range(), top..=ui.cursor().top());
                     repo_spans.push(RepoSpan { project: project.id, repo: repo.id, rect });
                 }

@@ -54,7 +54,7 @@ impl RepodeckApp {
     }
 
     /// The innermost known repo whose directory contains `path`.
-    fn repo_containing(&self, path: &Path) -> Option<Uuid> {
+    pub(crate) fn repo_containing(&self, path: &Path) -> Option<Uuid> {
         self.state
             .projects
             .iter()

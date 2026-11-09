@@ -36,6 +36,7 @@ use crate::ui::Action;
 use crate::ui::dialogs::{self, Dialog, DialogResult};
 use crate::ui::palette::Palette;
 use crate::ui::settings::{self, Page};
+use crate::worktree_branch_name;
 
 /// How long output must be idle before a tab's "last active" timestamp is persisted again.
 const ACTIVITY_SAVE_GRANULARITY: u64 = 60;
@@ -104,6 +105,7 @@ impl RepodeckApp {
         egui_extras::install_image_loaders(&ctx);
         let app_ctx = ctx.clone();
         let mut state = store::load();
+        state.link_worktrees();
         state.projects.iter_mut().flat_map(|p| &mut p.repos).for_each(|r| r.normalize_view());
         shell_env::prefetch(shell_env::program(&state.settings.shell));
         state.settings.theme.apply_to(&ctx);
@@ -230,7 +232,9 @@ impl RepodeckApp {
                     t.name = Some(name);
                 }
             }
-            Some(DialogResult::CreateWorktree { repo, branch }) => self.create_worktree(repo, &branch),
+            Some(DialogResult::CreateWorktree { repo, branch }) => {
+                self.create_worktree(repo, Some(&branch), None)
+            }
             Some(DialogResult::RemoveWorktree { repo, delete_branch }) => {
                 self.remove_worktree(repo, delete_branch)
             }
@@ -322,6 +326,7 @@ impl RepodeckApp {
     fn track_activity(&mut self, visible: &HashSet<Uuid>, window_focused: bool, ctx: &egui::Context) {
         let now = now_secs();
         let mut reports = Vec::new();
+        let mut to_name = Vec::new();
         for repo in self.state.projects.iter_mut().flat_map(|p| &mut p.repos) {
             for tab in &mut repo.tabs {
                 for pane in &mut tab.panes {
@@ -347,6 +352,15 @@ impl RepodeckApp {
                     let cwd = session.cwd().filter(|c| pane.cwd.as_deref() != Some(*c) && *c != repo.path);
                     if let Some(cwd) = cwd.filter(|c| c.is_dir()).map(Path::to_path_buf) {
                         pane.cwd = Some(cwd);
+                        self.dirty = true;
+                    }
+                    let prompt = session.agent_prompt().filter(|p| worktree_branch_name::worth_naming(p));
+                    if let Some(prompt) = prompt.filter(|_| repo.temp_branch.is_some()) {
+                        to_name.push((
+                            repo.id,
+                            repo.temp_branch.take().unwrap_or_default(),
+                            prompt.to_owned(),
+                        ));
                         self.dirty = true;
                     }
                     let source = Source { repo: repo.id, tab: tab.id, pane: pane.id };
@@ -378,6 +392,9 @@ impl RepodeckApp {
                     }
                 }
             }
+        }
+        for (repo, temp, prompt) in to_name {
+            self.name_worktree_branch(repo, temp, prompt);
         }
         self.deliver(reports, window_focused, visible);
         let badge = self.pool.attention_count();

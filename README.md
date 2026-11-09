@@ -84,9 +84,13 @@ CLI (`claude`), never calls an LLM API itself, and runs as one Rust process.
 - **Branch and change count** per repo in the sidebar and status bar, refreshed on file changes.
 - **Switch branches** from the branch chip in the top bar, or start a new one from the current
   commit; it warns when an agent is mid-turn in that repo.
-- **Worktrees** — create a worktree for a branch in one step: gitignored files listed in
-  `.worktreeinclude` are copied over, your setup command runs, and the repo's Claude history is
-  copied so its conversations can be resumed there. Remove it (and its merged branch) when done.
+- **Worktrees** — "New Claude session in worktree" (⌘⌥⇧T) checks out a new branch from the
+  default branch (`origin/HEAD`, else `main`/`master`) in a folder beside the repo and opens
+  Claude there. The branch starts as `wt-…` and is renamed after Claude's first prompt (e.g.
+  `fix/login-timeout`, suggested by Claude Haiku). "New worktree on a branch…" takes a name or an
+  existing branch instead. Gitignored files matched by `.worktreeinclude` are copied over, your
+  setup command runs in a shell tab beside Claude, and the repo's Claude history is copied so its
+  conversations can be resumed there. Remove it (and its merged branch) when done.
 - **Pull requests** — see the branch's PR and CI state (via `gh`), open a new PR, or hand a failed
   CI job's log to Claude.
 - **Commit from the Changes panel** — type a message and commit every change in the repo.
@@ -104,6 +108,7 @@ repodeck list                      # every pane: repo, path, tab, id, kind, agen
 repodeck split -- npm run dev      # shell beside this pane running a command; prints its id
 repodeck split --claude -- "review src/"   # a second agent with a first prompt
 repodeck claude . --task "fix the failing test"
+repodeck worktree . --task "add rate limiting"   # same, in a new worktree and branch
 repodeck send --pane <id> "yes"    # type into a pane and press Return
 repodeck read --pane <id> --lines 80       # what a pane shows, scrollback included
 repodeck --skill                   # the guide for agents driving Repodeck
@@ -226,7 +231,9 @@ the bottom** (on by default) draws the pane's content against its bottom edge, s
 box stays put while the conversation above it grows.
 
 Per repo, a **setup command** runs in each new worktree, and a `.worktreeinclude` file at the repo
-root lists gitignored paths (one per line, e.g. `.env`) to copy into new worktrees.
+root picks gitignored files to copy into new worktrees, in `.gitignore` syntax (`.env*`,
+`!.env.example`, `secrets/**/*.json`). Only files Git ignores are copied, never over existing
+ones; ignored folders no pattern points into, like `node_modules/`, aren't scanned.
 
 ## Development
 
@@ -261,6 +268,8 @@ script/package-release.sh --publish
 | `src/claude_status_line.rs`    | Subscription limits from Claude Code's status line               |
 | `src/claude_history.rs`        | Past Claude conversations per repo                               |
 | `src/worktree.rs`              | Git worktree creation and removal                                |
+| `src/worktree_include.rs`      | Copying `.worktreeinclude` matches into a new worktree           |
+| `src/worktree_branch_name.rs`  | Temporary worktree branches and naming them after the task       |
 | `src/socket_api.rs`            | The `repodeck` CLI's socket                                      |
 | `macos/`                       | Info.plist extensions, entitlements, app icon                    |
 | `script/build-app.sh`          | Bundle, sign, and optionally install the `.app`                  |

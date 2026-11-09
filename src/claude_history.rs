@@ -9,7 +9,7 @@ use std::time::{Duration, Instant, UNIX_EPOCH};
 use eframe::egui;
 use serde_json::Value;
 
-use crate::worktree::copy_path;
+use crate::worktree_include::copy_path;
 
 /// How long a repo's session list is reused before it is rescanned in the background.
 const REFRESH_AFTER: Duration = Duration::from_secs(15);

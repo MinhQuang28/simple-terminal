@@ -7,6 +7,7 @@ use std::io::Write;
 use crate::{agent_launch, codex_launch, socket_api};
 
 pub const USAGE: &str = "usage: repodeck notify <text> | open [folder] | claude [folder] [--task <text>] | \
+worktree [folder] [--task <text>] | \
 focus [pane] | list | split [--down] [--claude] [--pane <id>] [-- <command or task>] | \
 send [--pane <id>] [--no-enter] <text> | read [--pane <id>] [--lines <n>] | --skill";
 
@@ -41,6 +42,12 @@ pub fn run() -> bool {
                 Some(task) => format!("claude\t{}\t{}", path.display(), clean(&task)),
                 None => format!("{verb} {}", path.display()),
             }
+        }
+        "worktree" => {
+            let task = take_value(&mut args, "--task").unwrap_or_default();
+            let folder = if args.is_empty() { ".".to_string() } else { args.join(" ") };
+            let path = std::fs::canonicalize(&folder).unwrap_or_else(|_| folder.into());
+            format!("worktree\t{}\t{}", path.display(), clean(&task))
         }
         "focus" => format!("focus {}", if args.is_empty() { this_pane() } else { clean(&args.join(" ")) }),
         "list" => "list".to_string(),

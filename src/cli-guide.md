@@ -16,11 +16,14 @@ agent status (Working, Done, Your turn, Approve?, Error, or empty).
     repodeck split --down -- cargo test      # same, below
     repodeck split --claude -- "review the diff in src/"   # a second agent with a first prompt
     repodeck claude ~/code/api --task "fix the failing test"  # agent in a new tab of that repo
+    repodeck worktree ~/code/api --task "add rate limiting"  # agent in a new worktree of that repo
     repodeck open ~/code/api                 # shell in a new tab; prints its pane id
 
 `split` and `claude --task` start right away and don't move the user's view: a split appears
 beside the pane it was made from, a task's tab in its repo's tab list. `open`, and `claude`
-without a task, switch the window to the new tab.
+without a task, switch the window to the new tab. `worktree` checks out a new branch from the
+default branch in a folder beside the repo, opens Claude there, and renames the branch after the
+task (e.g. `feat/rate-limiting`); use it for work that shouldn't touch the user's checkout.
 
 ## Talk to a pane
 

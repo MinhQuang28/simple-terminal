@@ -140,7 +140,7 @@ pub fn show(ctx: &egui::Context, dialog: &mut Dialog) -> (bool, Option<DialogRes
             close = result.is_some() || cancel;
         }
         Dialog::NewWorktree { repo, branch } => {
-            let about = Some("Creates a branch and checks it out in a sibling folder.");
+            let about = Some("Creates a branch, checks it out in a sibling folder and opens Claude there.");
             let (submitted, cancel) =
                 name_form(ui, "New worktree", about, "e.g. feature/login", "Create", branch);
             result = submitted.map(|branch| DialogResult::CreateWorktree { repo: *repo, branch });

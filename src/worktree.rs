@@ -1,9 +1,8 @@
 use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Lists gitignored paths (relative to the repo root) to copy into new worktrees, one per line.
-const INCLUDE_FILE: &str = ".worktreeinclude";
+use crate::worktree_include::copy_includes;
 
 /// Linked worktrees keep a `.git` file pointing into the main repository's `worktrees` directory
 /// (submodules have such a file too, pointing into `modules`).
@@ -12,17 +11,57 @@ pub fn is_worktree(path: &Path) -> bool {
         .is_ok_and(|content| content.starts_with("gitdir:") && content.contains("/worktrees/"))
 }
 
-/// Checks `branch` out at `path` (creating it when it doesn't exist) and copies the source repo's
-/// include files over. Returns messages for includes that couldn't be copied.
+/// Checks `branch` out at `path`; a new branch starts from the default branch (see
+/// [`default_branch`]) rather than whatever `source` has checked out, without tracking it.
+/// Copies the include files over and returns messages for those that couldn't be copied.
 pub fn add(source: &Path, path: &Path, branch: &str) -> Result<Vec<String>, String> {
     let path = path.to_string_lossy();
-    let args: Vec<&str> = if branch_exists(source, branch) {
-        vec!["worktree", "add", &path, branch]
+    let base = default_branch(source);
+    let mut args: Vec<&str> = vec!["worktree", "add"];
+    if branch_exists(source, branch) {
+        args.extend([path.as_ref(), branch]);
     } else {
-        vec!["worktree", "add", "-b", branch, &path]
-    };
+        args.extend(["--no-track", "-b", branch, path.as_ref()]);
+        args.extend(base.as_deref());
+    }
     run(source, &args)?;
     Ok(copy_includes(source, Path::new(path.as_ref())))
+}
+
+/// The branch new work starts from and merges into: `origin/HEAD` (e.g. `origin/main`), else a
+/// local `main` or `master`.
+pub fn default_branch(path: &Path) -> Option<String> {
+    git(path, &["rev-parse", "--abbrev-ref", "origin/HEAD"])
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty() && s != "origin/HEAD")
+        .or_else(|| ["main", "master"].into_iter().find(|b| branch_exists(path, b)).map(String::from))
+}
+
+/// The branch checked out at `path`, or `None` on a detached HEAD.
+pub fn current_branch(path: &Path) -> Option<String> {
+    git(path, &["symbolic-ref", "--quiet", "--short", "HEAD"]).map(|s| s.trim().to_string())
+}
+
+/// Renames `from` to `to`, which must not exist yet.
+pub fn rename_branch(path: &Path, from: &str, to: &str) -> Result<(), String> {
+    run(path, &["branch", "-m", from, to])
+}
+
+/// Whether `name` is a valid new branch name that isn't taken.
+pub fn branch_name_free(path: &Path, name: &str) -> bool {
+    let valid = Command::new("git")
+        .args(["check-ref-format", "--branch", name])
+        .output()
+        .is_ok_and(|o| o.status.success());
+    valid && !branch_exists(path, name)
+}
+
+/// The main checkout of the linked worktree at `path`, read from its `.git` file
+/// (`gitdir: <main>/.git/worktrees/<name>`) without running git.
+pub fn main_path(path: &Path) -> Option<PathBuf> {
+    let content = fs::read_to_string(path.join(".git")).ok()?;
+    let gitdir = content.strip_prefix("gitdir:")?.trim();
+    gitdir.rsplit_once("/.git/worktrees/").map(|(main, _)| PathBuf::from(main))
 }
 
 /// The main repository a linked worktree belongs to.
@@ -31,13 +70,10 @@ pub fn main_repo(path: &Path) -> Option<PathBuf> {
     Path::new(out.trim_end()).parent().map(Path::to_path_buf)
 }
 
-/// Whether `HEAD` has commits and all of them are already in the default branch (`origin/HEAD`,
-/// else `main` or `master`). A branch still sitting on the default tip doesn't count.
+/// Whether `HEAD` has commits and all of them are already in the default branch. A branch still
+/// sitting on the default tip doesn't count.
 pub fn is_merged(path: &Path) -> bool {
-    let default = git(path, &["rev-parse", "--abbrev-ref", "origin/HEAD"])
-        .map(|s| s.trim().to_string())
-        .or_else(|| ["main", "master"].into_iter().find(|b| branch_exists(path, b)).map(String::from));
-    let Some(default) = default else { return false };
+    let Some(default) = default_branch(path) else { return false };
     let tip = |rev: &str| git(path, &["rev-parse", rev]).map(|s| s.trim().to_string());
     if tip("HEAD").is_none_or(|head| Some(head) == tip(&default)) {
         return false;
@@ -65,47 +101,6 @@ pub fn remove(main: &Path, path: &Path, delete_branch: bool) -> Result<(), Strin
     }
 }
 
-/// Copies the paths listed in the source repo's include file into `dst`, skipping ones already
-/// there. Returns a message per path that couldn't be copied.
-pub fn copy_includes(src: &Path, dst: &Path) -> Vec<String> {
-    let Ok(list) = fs::read_to_string(src.join(INCLUDE_FILE)) else { return Vec::new() };
-    let mut errors = Vec::new();
-    for line in list.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
-        let relative = Path::new(line);
-        if !is_safe_relative(relative) {
-            errors.push(format!("{line}: must be a relative path inside the repo"));
-            continue;
-        }
-        let (from, to) = (src.join(relative), dst.join(relative));
-        if !from.exists() || to.exists() {
-            continue;
-        }
-        if let Err(err) = copy_path(&from, &to) {
-            errors.push(format!("{line}: {err}"));
-        }
-    }
-    errors
-}
-
-fn is_safe_relative(path: &Path) -> bool {
-    !path.as_os_str().is_empty() && path.components().all(|c| matches!(c, Component::Normal(_)))
-}
-
-pub fn copy_path(from: &Path, to: &Path) -> std::io::Result<()> {
-    if from.is_dir() {
-        fs::create_dir_all(to)?;
-        for entry in fs::read_dir(from)? {
-            let entry = entry?;
-            copy_path(&entry.path(), &to.join(entry.file_name()))?;
-        }
-        return Ok(());
-    }
-    if let Some(parent) = to.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::copy(from, to).map(|_| ())
-}
-
 fn git(path: &Path, args: &[&str]) -> Option<String> {
     let out = Command::new("git").arg("-C").arg(path).args(args).output().ok()?;
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
@@ -127,37 +122,6 @@ mod tests {
     }
 
     #[test]
-    fn copies_listed_files_and_folders_without_overwriting() {
-        let root = temp_dir();
-        let (src, dst) = (root.join("src"), root.join("dst"));
-        fs::create_dir_all(src.join("config/local")).unwrap();
-        fs::create_dir_all(&dst).unwrap();
-        fs::write(src.join(".env"), "A=1").unwrap();
-        fs::write(src.join("config/local/dev.json"), "{}").unwrap();
-        fs::write(src.join("keep.txt"), "src").unwrap();
-        fs::write(dst.join("keep.txt"), "dst").unwrap();
-        fs::write(src.join(INCLUDE_FILE), "# secrets\n.env\nconfig/local\nkeep.txt\nmissing\n\n").unwrap();
-
-        assert!(copy_includes(&src, &dst).is_empty());
-        assert_eq!(fs::read_to_string(dst.join(".env")).unwrap(), "A=1");
-        assert_eq!(fs::read_to_string(dst.join("config/local/dev.json")).unwrap(), "{}");
-        assert_eq!(fs::read_to_string(dst.join("keep.txt")).unwrap(), "dst");
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn rejects_paths_escaping_the_repo() {
-        let root = temp_dir();
-        let (src, dst) = (root.join("src"), root.join("dst"));
-        fs::create_dir_all(&src).unwrap();
-        fs::write(src.join(INCLUDE_FILE), "../outside\n/etc/passwd\n").unwrap();
-        let errors = copy_includes(&src, &dst);
-        assert_eq!(errors.len(), 2, "{errors:?}");
-        assert!(!dst.exists());
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
     fn a_plain_directory_is_not_a_worktree() {
         let root = temp_dir();
         assert!(!is_worktree(&root));
@@ -165,6 +129,7 @@ mod tests {
         assert!(!is_worktree(&root), "submodules are not worktrees");
         fs::write(root.join(".git"), "gitdir: /main/.git/worktrees/feat").unwrap();
         assert!(is_worktree(&root));
+        assert_eq!(main_path(&root), Some(PathBuf::from("/main")));
         fs::remove_dir_all(root).unwrap();
     }
 }

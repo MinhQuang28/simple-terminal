@@ -76,6 +76,8 @@ mod trash;
 mod ui;
 mod window_activity;
 mod worktree;
+mod worktree_branch_name;
+mod worktree_include;
 
 use eframe::egui;
 

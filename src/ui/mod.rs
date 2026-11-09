@@ -31,6 +31,7 @@ mod search_panel;
 pub mod settings;
 pub mod sidebar;
 mod sidebar_rows;
+mod sidebar_tree_rows;
 pub(crate) mod spinner;
 mod tab_bar;
 pub mod toast;
@@ -218,6 +219,8 @@ pub enum Action {
     /// Selects the tab `offset` places from the active one, wrapping around.
     SelectAdjacentTab(i32),
     OpenNewWorktree(Uuid),
+    /// Makes a worktree on a temporary branch and opens Claude there; the branch is named later.
+    NewWorktreeAgent(Uuid),
     /// Asks before deleting a linked worktree and dropping it from its project.
     OpenRemoveWorktree(Uuid),
     /// Edits the command new worktrees of the repo run first.

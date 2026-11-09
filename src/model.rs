@@ -222,6 +222,12 @@ pub struct Repo {
     /// File tab shown again in a second editor beside the active one (⌘\\).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub split_tab: Option<Uuid>,
+    /// Temporary branch of a worktree made in one step, renamed after Claude's first prompt there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temp_branch: Option<String>,
+    /// The repo this is a linked worktree of; its tabs then show inside that repo in the sidebar.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree_of: Option<Uuid>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -312,6 +318,8 @@ impl Repo {
             code_view: false,
             parked_tab: None,
             split_tab: None,
+            temp_branch: None,
+            worktree_of: None,
         }
     }
 
@@ -395,6 +403,18 @@ impl Tab {
 }
 
 impl AppState {
+    /// Points each linked worktree at its main checkout when that is a repo of the same project,
+    /// for worktrees added before Repodeck tracked this or opened from Finder.
+    pub fn link_worktrees(&mut self) {
+        for project in &mut self.projects {
+            let mains: Vec<(Uuid, PathBuf)> = project.repos.iter().map(|r| (r.id, r.path.clone())).collect();
+            for repo in project.repos.iter_mut().filter(|r| r.worktree_of.is_none()) {
+                let Some(main) = crate::worktree::main_path(&repo.path) else { continue };
+                repo.worktree_of = mains.iter().find(|(_, path)| *path == main).map(|(id, _)| *id);
+            }
+        }
+    }
+
     pub fn repo(&self, id: Uuid) -> Option<&Repo> {
         self.projects.iter().flat_map(|p| &p.repos).find(|r| r.id == id)
     }

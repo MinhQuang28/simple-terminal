@@ -34,6 +34,7 @@ pub const DEFAULTS: &[(&str, &[&str])] = &[
     ("palette.toggle", &["cmd+shift+k"]),
     ("tab.move_left", &["cmd+alt+shift+left"]),
     ("tab.move_right", &["cmd+alt+shift+right"]),
+    ("tab.new_agent_worktree", &["cmd+alt+shift+t"]),
     ("pane.swap_left", &["ctrl+cmd+shift+left"]),
     ("pane.swap_right", &["ctrl+cmd+shift+right"]),
     ("pane.swap_up", &["ctrl+cmd+shift+up"]),

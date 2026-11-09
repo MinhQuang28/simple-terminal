@@ -46,7 +46,8 @@ pub fn items(state: &AppState, pool: &SessionPool) -> Vec<Item> {
         push("New terminal", "tab.new", Action::NewTab { repo: repo.id, kind: PaneKind::Shell });
         push("New Claude session", "tab.new_agent", Action::NewTab { repo: repo.id, kind: PaneKind::Agent });
         push("Reveal repository in Finder", "", Action::RevealRepo(repo.id));
-        push("New git worktree…", "", Action::OpenNewWorktree(repo.id));
+        push("New Claude session in worktree", "tab.new_agent_worktree", Action::NewWorktreeAgent(repo.id));
+        push("New git worktree on a branch…", "", Action::OpenNewWorktree(repo.id));
         push("Worktree setup command…", "", Action::OpenRepoSetup(repo.id));
         if worktree::is_worktree(&repo.path) {
             push("Remove this worktree…", "", Action::OpenRemoveWorktree(repo.id));

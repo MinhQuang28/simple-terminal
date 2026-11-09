@@ -332,6 +332,7 @@ impl RepodeckApp {
             }
             Action::OpenDiff { repo, path } => self.open_diff(repo, path),
             Action::SendToAgent { repo, text } => self.send_to_agent(repo, text),
+            Action::NewWorktreeAgent(repo) => self.create_worktree(repo, None, None),
             Action::OpenNewWorktree(repo) => {
                 self.dialog = Some(Dialog::NewWorktree { repo, branch: String::new() });
                 return;

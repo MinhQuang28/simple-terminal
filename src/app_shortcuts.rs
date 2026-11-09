@@ -74,6 +74,9 @@ impl RepodeckApp {
         if pressed("tab.next") {
             actions.push(Action::SelectAdjacentTab(1));
         }
+        if pressed("tab.new_agent_worktree") {
+            actions.extend(repo.map(Action::NewWorktreeAgent));
+        }
         if pressed("tab.new_agent") {
             actions.extend(repo.map(|repo| Action::NewTab { repo, kind: PaneKind::Agent }));
         }

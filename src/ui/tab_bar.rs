@@ -79,7 +79,7 @@ pub fn show(
         }
         ui.add_space(6.0);
         ui.menu_button(RichText::new("+").size(19.0), |ui| {
-            ui.set_min_width(180.0);
+            ui.set_min_width(260.0);
             if ui
                 .add(Button::new("New terminal").shortcut_text(crate::keymap_hint::hint("tab.new")))
                 .clicked()
@@ -94,6 +94,11 @@ pub fn show(
                 .clicked()
             {
                 actions.push(Action::NewTab { repo: repo.id, kind: PaneKind::Agent });
+            }
+            let worktree = Button::new("New Claude session in worktree")
+                .shortcut_text(crate::keymap_hint::hint("tab.new_agent_worktree"));
+            if ui.add(worktree).clicked() {
+                actions.push(Action::NewWorktreeAgent(repo.id));
             }
         });
         right_aligned(ui, |ui| {

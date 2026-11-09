@@ -354,6 +354,11 @@ impl TerminalSession {
         self.note_user_input();
     }
 
+    /// The first line of the prompt the agent's current turn answers.
+    pub fn agent_prompt(&self) -> Option<&str> {
+        self.agent.as_ref()?.prompt()
+    }
+
     pub fn agent_session_id(&self) -> Option<&str> {
         self.agent.as_ref()?.session_id()
     }

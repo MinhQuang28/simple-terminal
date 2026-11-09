@@ -21,6 +21,7 @@ pub fn apply(app: &mut RepodeckApp, command: &str) -> String {
     let fields: Vec<&str> = command.split('\t').collect();
     let result = match fields.as_slice() {
         ["claude", path, task] => start_agent(app, path, task),
+        ["worktree", path, task] => start_worktree(app, path, task),
         ["split", pane, dir, kind, run] => split(app, pane, dir, kind, run),
         ["send", pane, mode, text] => send(app, pane, *mode == "enter", text),
         ["read", pane, lines] => read(app, pane, lines),
@@ -50,6 +51,19 @@ fn start_agent(app: &mut RepodeckApp, path: &str, task: &str) -> Result<String, 
     Ok(pane.to_string())
 }
 
+/// A worktree of the repo at `path` on a branch named after `task`, with Claude working on it
+/// there; it is made in the background, so the reply only says it started.
+fn start_worktree(app: &mut RepodeckApp, path: &str, task: &str) -> Result<String, String> {
+    let path = PathBuf::from(path);
+    if !path.is_dir() {
+        return Err(format!("not a folder: {}", path.display()));
+    }
+    let repo = app.repo_containing(&path).unwrap_or_else(|| app.add_repo_to(None, &path));
+    let name = app.state.repo(repo).map(|r| r.name.clone()).unwrap_or_default();
+    app.create_worktree(repo, None, (!task.is_empty()).then(|| task.to_string()));
+    Ok(format!("creating a worktree of {name}; its tab appears when it's ready"))
+}
+
 /// Splits `pane` to the right or down with a shell (running `run`, if any) or an agent (given
 /// `run` as its first prompt); replies with the new pane's id.
 fn split(app: &mut RepodeckApp, pane: &str, dir: &str, kind: &str, run: &str) -> Result<String, String> {
@@ -71,7 +85,7 @@ fn split(app: &mut RepodeckApp, pane: &str, dir: &str, kind: &str, run: &str) ->
 
 /// Starts `pane`'s program now rather than when the pane is first drawn, which for a tab in the
 /// background (or a hidden window) could be much later.
-fn start(app: &mut RepodeckApp, pane: Uuid) -> Result<(), String> {
+pub(crate) fn start(app: &mut RepodeckApp, pane: Uuid) -> Result<(), String> {
     let found = app.state.projects.iter().flat_map(|p| &p.repos).find_map(|r| {
         let p = r.tabs.iter().flat_map(|t| &t.panes).find(|p| p.id == pane)?;
         Some((p.clone(), p.cwd.clone().unwrap_or_else(|| r.path.clone())))
