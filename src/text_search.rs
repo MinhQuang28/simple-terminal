@@ -54,11 +54,11 @@ pub struct Results {
 }
 
 /// Every match of `regex` under `root`, files in path order; stops early once `cancelled`.
-pub fn search(root: &Path, regex: &Regex, show_ignored: bool, cancelled: &dyn Fn() -> bool) -> Results {
+/// Gitignored files are always skipped, as in VS Code: build output such as `target/` would
+/// make every search take seconds.
+pub fn search(root: &Path, regex: &Regex, cancelled: &dyn Fn() -> bool) -> Results {
     let mut paths: Vec<PathBuf> = WalkBuilder::new(root)
         .hidden(false)
-        .git_ignore(!show_ignored)
-        .git_exclude(!show_ignored)
         .filter_entry(|e| e.file_name() != ".git")
         .build()
         .filter_map(Result::ok)
@@ -183,11 +183,8 @@ mod tests {
         fs::write(root.join("build.txt"), "needle\n").unwrap();
         fs::write(root.join("bin.dat"), b"needle\0").unwrap();
         let regex = query("needle").compile().unwrap();
-        let found = |ignored| {
-            search(&root, &regex, ignored, &|| false).files.into_iter().map(|f| f.path).collect::<Vec<_>>()
-        };
-        assert_eq!(found(false), [root.join("src/a.rs")]);
-        assert_eq!(found(true), [root.join("build.txt"), root.join("src/a.rs")]);
+        let found: Vec<_> = search(&root, &regex, &|| false).files.into_iter().map(|f| f.path).collect();
+        assert_eq!(found, [root.join("src/a.rs")]);
         fs::remove_dir_all(root).unwrap();
     }
 }

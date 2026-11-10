@@ -34,8 +34,26 @@ task (e.g. `feat/rate-limiting`); use it for work that shouldn't touch the user'
 A split's command runs once; it doesn't run again when the app restarts. The user can ⌘-click a
 pane id you print to see that pane.
 
-Text is sent as one line (newlines and tabs become spaces). Poll `read` or `list` to follow a
-worker; an agent pane's status in `list` turns to Done or Your turn when its turn ends.
+Text is sent as one line (newlines and tabs become spaces).
+
+## Wait for a worker
+
+    repodeck wait --pane <id>                # blocks until that agent's turn is over
+    repodeck wait --pane <id> --timeout 600  # give up after 10 minutes (default 30)
+
+`wait` prints how the turn ended: `Done`, `Your turn` (it asked something), `Approve?` (it is
+stopped on a permission prompt the user must answer) or `Error`. It exits 1 on a timeout or when
+the pane is gone. Then `read` the pane for the result. An agent you start with `split --claude`,
+`claude --task` or `worktree --task` is listed under you in the Agents view, and its finished
+turns are yours to read: they aren't sent to the user's inbox while you are running.
+
+## See the window
+
+    repodeck shot                            # saves a PNG of the window; prints its path
+    repodeck shot /tmp/after.png
+
+The picture is of the next frame the window draws, so it needs the window visible (not
+minimized or fully covered); otherwise the command fails after 15 seconds.
 
 ## Other
 

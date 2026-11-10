@@ -93,6 +93,8 @@ pub struct AgentEvents {
     ended: bool,
     /// Which agent wrote here, when a wrapper said so (an agent started in a terminal tab).
     kind: Option<Agent>,
+    /// A wrapper announced an agent that hasn't returned to the shell prompt yet.
+    announced: bool,
 }
 
 /// The line a wrapper writes before starting an agent in a terminal tab, naming it.
@@ -114,6 +116,7 @@ impl AgentEvents {
             prompt: None,
             ended: false,
             kind: None,
+            announced: false,
         })
     }
 
@@ -160,8 +163,9 @@ impl AgentEvents {
     /// got to report so (a crash, a kill). Before any hook arrived the prompt is the one the agent
     /// was started from.
     pub fn note_shell_prompt(&mut self) {
-        if self.session_id.is_some() {
+        if self.session_id.is_some() || self.announced {
             self.ended = true;
+            self.announced = false;
         }
     }
 
@@ -191,8 +195,12 @@ impl AgentEvents {
         self.status_line.poll();
         for line in self.log.poll_lines() {
             let Ok(event) = serde_json::from_str::<Value>(&line) else { continue };
+            // The wrapper writes this before the agent draws anything, so the pane is laid out
+            // for it from its first frame rather than jumping when its first hook arrives.
             if let Some(agent) = event[STARTED_KEY].as_str().and_then(Agent::of) {
                 self.kind = Some(agent);
+                self.ended = false;
+                self.announced = true;
             }
             if let Some(id) = event["session_id"].as_str() {
                 self.session_id = Some(id.to_string());
@@ -330,6 +338,12 @@ mod tests {
         agent.note_shell_prompt();
         assert!(!agent.ended(), "the prompt the agent is started from");
         agent.session_id = Some("s".into());
+        agent.note_shell_prompt();
+        assert!(agent.ended());
+
+        // One a wrapper announced ends at the next prompt even if it never ran a hook.
+        let mut agent = AgentEvents::create_dormant(Uuid::new_v4()).unwrap();
+        (agent.ended, agent.announced) = (false, true);
         agent.note_shell_prompt();
         assert!(agent.ended());
     }

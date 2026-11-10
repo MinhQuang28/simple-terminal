@@ -48,6 +48,29 @@ impl RepodeckApp {
         }
     }
 
+    /// Records that `child`'s agent was started by the one in `parent`, when both panes exist.
+    pub(crate) fn set_pane_parent(&mut self, child: Uuid, parent: Option<Uuid>) {
+        let Some(parent) = parent.filter(|p| *p != child && self.pane_exists(*p)) else { return };
+        let panes = self.state.projects.iter_mut().flat_map(|p| &mut p.repos).flat_map(|r| &mut r.tabs);
+        if let Some(p) = panes.flat_map(|t| &mut t.panes).find(|p| p.id == child) {
+            p.parent = Some(parent);
+            self.dirty = true;
+        }
+    }
+
+    fn pane_exists(&self, pane: Uuid) -> bool {
+        let tabs = self.state.projects.iter().flat_map(|p| &p.repos).flat_map(|r| &r.tabs);
+        tabs.flat_map(|t| &t.panes).any(|p| p.id == pane)
+    }
+
+    /// The pane `pane`'s agent reports to: the one that started it, while an agent still runs
+    /// there to read the result.
+    pub(crate) fn reports_to(&self, pane: Uuid) -> Option<Uuid> {
+        let tabs = self.state.projects.iter().flat_map(|p| &p.repos).flat_map(|r| &r.tabs);
+        let parent = tabs.flat_map(|t| &t.panes).find(|p| p.id == pane)?.parent?;
+        self.pool.get(parent).is_some_and(|s| s.is_agent()).then_some(parent)
+    }
+
     /// Puts a new pane beside `target`, in whatever tab holds it, without moving the user's
     /// selection or focus; returns it.
     pub(crate) fn split_pane(&mut self, target: Uuid, dir: SplitDir, kind: PaneKind) -> Option<Uuid> {
@@ -59,7 +82,7 @@ impl RepodeckApp {
             .flat_map(|p| &mut p.repos)
             .flat_map(|r| &mut r.tabs)
             .find(|t| t.panes.iter().any(|p| p.id == target))?;
-        let pane = Pane { id: Uuid::new_v4(), kind, cwd, session: None, command: None };
+        let pane = Pane { id: Uuid::new_v4(), kind, cwd, session: None, command: None, parent: None };
         let id = pane.id;
         let mut layout = tab.layout();
         if !layout.split(target, dir, id) {

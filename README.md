@@ -29,13 +29,13 @@ CLI (`claude`), never calls an LLM API itself, and runs as one Rust process.
 - **Rebindable keys** — put overrides in `keys.json` in the data folder, read at startup, e.g.
   `{"tab.new": "ctrl+t", "tab.reopen": null}`. Command names and defaults are in `src/keymap.rs`; menus and
   the palette show the keys you bound.
-- **Code view** (⌃2; ⌃1 back to the terminals) — each repo's files and diffs open in their own
+- **Code view** (⌘2; ⌘1 back to the terminals) — each repo's files and diffs open in their own
   VS Code-style view, an explorer beside file tabs and a breadcrumb, never mixed in with the
   terminal and agent tabs, with [vscode-icons](https://github.com/vscode-icons/vscode-icons) file
   and folder icons. Each view remembers its own active tab. There a VS Code-style sidebar
   takes the project sidebar's place — Files, Search (⇧⌘F, with match case, whole word and regex),
   Changes and Library — and ⌘B toggles it. The terminals keep the project sidebar alone.
-- **Built-in editor** — syntax highlighting, find (⌘F), go to line (⌘L),
+- **Built-in editor** — syntax highlighting in VS Code's Dark+ colours (Light+ on light themes), find (⌘F), go to line (⌘L),
   optional word wrap — and a rendered **Markdown preview**. Gitignored files are hidden; the ⊘
   button in the top bar lists them too, muted.
 - **Paste images** straight into a pane; they are saved to a temp file whose path is typed for you.
@@ -111,10 +111,14 @@ repodeck claude . --task "fix the failing test"
 repodeck worktree . --task "add rate limiting"   # same, in a new worktree and branch
 repodeck send --pane <id> "yes"    # type into a pane and press Return
 repodeck read --pane <id> --lines 80       # what a pane shows, scrollback included
+repodeck wait --pane <id>          # block until that agent's turn is over; prints how it ended
+repodeck shot [file.png]           # save a picture of the window; prints its path
 repodeck --skill                   # the guide for agents driving Repodeck
 ```
 
-`open` and `claude` print the new pane's id.
+`open` and `claude` print the new pane's id. An agent started by another agent this way is
+listed under it in the Agents view, and its finished turns go to that agent rather than to your
+inbox.
 
 Programs can also raise notifications with the OSC 9 / OSC 777 escape sequences.
 
@@ -199,7 +203,7 @@ UI pass took. Run the same workload against each build, with the window visible.
 | ⌥⌘T      | Reopen closed tab            | ⇧⌘W      | Close tab                  |
 | ⌃⌘N      | Next pane needing attention  | ⌘B       | Toggle Code sidebar        |
 | ⌘,       | Settings                     | ⌘K       | Clear terminal             |
-| ⌃1       | Terminals view               | ⌃2       | Code view                  |
+| ⌘1       | Terminals view               | ⌘2       | Code view                  |
 
 In the Code view the editor takes VS Code's keys (rebindable as `editor.*` in `keys.json`):
 

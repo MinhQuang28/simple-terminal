@@ -144,7 +144,8 @@ fn search_icon(ui: &mut Ui) -> Response {
     response
 }
 
-pub fn status_bar(ui: &mut Ui, state: &AppState, status: Option<&GitStatus>) {
+/// `model` is the one answering in the active Claude pane, if any.
+pub fn status_bar(ui: &mut Ui, state: &AppState, status: Option<&GitStatus>, model: Option<&str>) {
     ui.horizontal_centered(|ui| {
         ui.add_space(4.0);
         let Some(status) = status else { return };
@@ -160,6 +161,10 @@ pub fn status_bar(ui: &mut Ui, state: &AppState, status: Option<&GitStatus>) {
         if status.changed > 0 {
             let color = state.settings.theme.modified();
             ui.label(RichText::new(format!("● {} changed", status.changed)).color(color).size(12.0));
+        }
+        if let Some(model) = model {
+            ui.add_space(3.0);
+            ui.label(RichText::new(format!("✦ {model}")).color(muted(ui)).size(12.0));
         }
         right_aligned(ui, |ui| {
             ui.add_space(8.0);

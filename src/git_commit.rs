@@ -20,9 +20,16 @@ pub fn commit_all(repo: &Path, message: &str) -> Result<String, String> {
     }
 }
 
-/// Runs git in `repo`; its stdout, or what it printed on failure.
+/// Runs git in `repo`; its stdout, or what it printed on failure. It never waits on a terminal
+/// for credentials, which the app has no way to answer.
 pub(crate) fn git(repo: &Path, args: &[&str]) -> Result<String, String> {
-    let out = Command::new("git").arg("-C").arg(repo).args(args).output().map_err(|e| e.to_string())?;
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(args)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output()
+        .map_err(|e| e.to_string())?;
     let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
     if out.status.success() {
         return Ok(stdout);

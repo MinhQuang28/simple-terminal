@@ -3,6 +3,7 @@ pub mod agent_status;
 mod agents_list;
 mod branch_menu;
 mod changes_panel;
+mod chevron;
 pub mod chrome;
 pub(crate) mod claude_icon;
 pub mod code_sidebar;
@@ -38,6 +39,7 @@ pub mod toast;
 mod usage_panel;
 pub(crate) mod widgets;
 pub mod workspace;
+pub mod worktree_dialogs;
 
 use std::path::PathBuf;
 
@@ -64,6 +66,11 @@ pub enum Action {
     CommitAll {
         repo: Uuid,
         message: String,
+    },
+    /// Pushes, pulls or publishes the repo's current branch.
+    GitSync {
+        repo: Uuid,
+        sync: crate::git_sync::Sync,
     },
     /// Swaps the active pane with the one beside it.
     SwapNeighbor(Nav),
@@ -223,6 +230,8 @@ pub enum Action {
     NewWorktreeAgent(Uuid),
     /// Asks before deleting a linked worktree and dropping it from its project.
     OpenRemoveWorktree(Uuid),
+    /// Lists the repo's checkouts to open one.
+    OpenWorktreeList(Uuid),
     /// Edits the command new worktrees of the repo run first.
     OpenRepoSetup(Uuid),
     /// Shows the pane a notice came from and marks it read.

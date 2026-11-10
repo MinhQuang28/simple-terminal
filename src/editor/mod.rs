@@ -6,6 +6,7 @@ mod highlight;
 mod line_ops;
 mod markdown;
 mod multi_cursor;
+mod syntax_colors;
 mod view;
 
 pub use buffer::Buffers;

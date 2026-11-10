@@ -35,6 +35,12 @@ impl RepodeckApp {
         visible: &HashSet<Uuid>,
     ) {
         for PaneReport { source, repo_name, tab_title, report } in reports {
+            // A finished sub-agent is its parent's to read; it reaches the user only when stuck.
+            if matches!(report, Report::Status { status: AgentStatus::Done, .. })
+                && self.reports_to(source.pane).is_some()
+            {
+                continue;
+            }
             let watching = window_focused && visible.contains(&source.pane);
             log::debug!("report for pane {} (watching={watching})", source.pane);
             let (status, label, detail) = match report {

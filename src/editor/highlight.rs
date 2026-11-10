@@ -1,8 +1,9 @@
-//! Syntax colouring for the built-in editor, in the terminal theme's palette so code looks the
-//! same in the editor as in the shell.
+//! Syntax colouring for the built-in editor, with VS Code's Dark+ / Light+ token colours.
 
-use std::sync::LazyLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{LazyLock, Once};
 
+use super::syntax_colors::RULES;
 use eframe::egui::cache::{ComputerMut, FrameCache};
 use eframe::egui::text::{ByteIndex, LayoutJob, LayoutSection};
 use eframe::egui::{Color32, Context, FontId, Stroke, TextFormat};
@@ -50,85 +51,22 @@ const ALIASES: &[(&str, &str)] = &[
     ("mdx", "md"),
 ];
 
-/// Which palette entry each kind of token takes; later rows win for more specific scopes.
-const SCOPES: &[(&str, Slot)] = &[
-    ("comment, punctuation.definition.comment", Slot::Comment),
-    ("keyword, storage, keyword.operator", Slot::Keyword),
-    ("keyword.operator", Slot::Plain),
-    ("string, punctuation.definition.string", Slot::String),
-    ("constant.numeric, constant.language, constant.character, constant.other", Slot::Constant),
-    ("entity.name.function, support.function, variable.function, meta.function-call", Slot::Function),
-    (
-        "entity.name.type, entity.name.class, entity.name.struct, entity.name.enum, entity.name.trait, \
-         entity.name.namespace, support.type, support.class, entity.other.inherited-class, \
-         storage.type.primitive, entity.name.interface",
-        Slot::Type,
-    ),
-    ("variable.language, variable.parameter, entity.name.tag, markup.heading", Slot::Tag),
-    ("entity.other.attribute-name, meta.attribute, support.constant, markup.bold", Slot::Attribute),
-    ("markup.raw, markup.inline.raw, markup.underline.link", Slot::String),
-    ("invalid, invalid.illegal, message.error", Slot::Error),
-];
-
-#[derive(Clone, Copy)]
-enum Slot {
-    Plain,
-    Comment,
-    Keyword,
-    String,
-    Constant,
-    Function,
-    Type,
-    Tag,
-    Attribute,
-    Error,
-}
-
-impl Slot {
-    fn color(self, theme: &Theme) -> Hex {
-        match self {
-            Self::Plain => theme.foreground,
-            Self::Comment => blend(theme.foreground, theme.background, 0.5),
-            Self::Keyword => theme.ansi[5],
-            Self::String => theme.ansi[2],
-            Self::Constant => theme.ansi[6],
-            Self::Function => theme.ansi[4],
-            Self::Type => theme.ansi[3],
-            Self::Tag => theme.ansi[1],
-            Self::Attribute => theme.ansi[11],
-            Self::Error => theme.ansi[9],
-        }
-    }
-
-    fn font_style(self) -> Option<FontStyle> {
-        match self {
-            Self::Comment => Some(FontStyle::ITALIC),
-            Self::Tag => Some(FontStyle::BOLD),
-            _ => None,
-        }
-    }
-}
-
-fn blend(a: Hex, b: Hex, t: f32) -> Hex {
-    let mix = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
-    Hex([mix(a.0[0], b.0[0]), mix(a.0[1], b.0[1]), mix(a.0[2], b.0[2])])
-}
-
 fn syntect_color(hex: Hex) -> Color {
     let [r, g, b] = hex.0;
     Color { r, g, b, a: 255 }
 }
 
-/// A syntect theme that paints tokens with the terminal palette.
+/// A syntect theme with VS Code's Dark+ (or Light+) token colours.
 fn syntect_theme(theme: &Theme) -> SyntectTheme {
-    let scopes = SCOPES
+    let light = theme.is_light();
+    let scopes = RULES
         .iter()
-        .map(|(selector, slot)| ThemeItem {
+        .map(|(selector, paint)| ThemeItem {
             scope: selector.parse::<ScopeSelectors>().expect("valid scope selector"),
             style: StyleModifier {
-                foreground: Some(syntect_color(slot.color(theme))),
+                foreground: Some(syntect_color(paint.color(light, theme.foreground))),
                 background: None,
-                font_style: slot.font_style(),
+                font_style: None,
             },
         })
         .collect();
@@ -183,14 +121,31 @@ impl ComputerMut<(&Theme, &FontId, &str, &str), LayoutJob> for Highlighter {
     }
 }
 
-/// Loads the grammars on a background thread so the first file opens without a pause.
-pub fn warm_up() {
-    std::thread::spawn(|| LazyLock::force(&SYNTAXES));
+/// Set once the grammars are built, which takes most of a second.
+static READY: AtomicBool = AtomicBool::new(false);
+
+/// Builds the grammars on a background thread, then repaints so files shown plain meanwhile
+/// (one restored at startup, say) take their colours.
+pub fn warm_up(ctx: &Context) {
+    static STARTED: Once = Once::new();
+    let ctx = ctx.clone();
+    STARTED.call_once(|| {
+        std::thread::spawn(move || {
+            LazyLock::force(&SYNTAXES);
+            READY.store(true, Ordering::Release);
+            ctx.request_repaint();
+        });
+    });
 }
 
 /// The coloured layout of `code` in `language` (a file extension or syntax name), memoised per
-/// frame so an unchanged file is laid out once.
+/// frame so an unchanged file is laid out once. Until the grammars are ready the text is plain,
+/// rather than the frame waiting on them.
 pub fn layout_job(ctx: &Context, theme: &Theme, font: &FontId, language: &str, code: &str) -> LayoutJob {
+    if !READY.load(Ordering::Acquire) {
+        warm_up(ctx);
+        return LayoutJob::simple(code.into(), font.clone(), theme.foreground.color(), f32::INFINITY);
+    }
     type Cache = FrameCache<LayoutJob, Highlighter>;
     ctx.memory_mut(|memory| memory.caches.cache::<Cache>().get((theme, font, language, code)).clone())
 }
@@ -198,6 +153,7 @@ pub fn layout_job(ctx: &Context, theme: &Theme, font: &FontId, language: &str, c
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::editor::syntax_colors::{COMMENT, CONTROL, FUNCTION, KEYWORD, Paint, STRING, TAG};
 
     fn colors(language: &str, code: &str) -> Vec<Color32> {
         let theme = Theme::default();
@@ -209,12 +165,15 @@ mod tests {
     }
 
     #[test]
-    fn rust_keywords_strings_and_comments_take_their_palette_entries() {
+    fn rust_tokens_take_dark_plus_colours() {
         let theme = Theme::default();
-        let colors = colors("rs", "fn main() { let s = \"hi\"; } // done\n");
-        assert!(colors.contains(&theme.ansi[5].color()), "keyword");
-        assert!(colors.contains(&theme.ansi[2].color()), "string");
-        assert!(colors.contains(&theme.ansi[4].color()), "function");
+        let colors = colors("rs", "fn main() { if true { let s = \"hi\"; } } // done\n");
+        let dark = |paint: Paint| paint.color(false, theme.foreground).color();
+        assert!(colors.contains(&dark(KEYWORD)), "keyword");
+        assert!(colors.contains(&dark(CONTROL)), "control flow");
+        assert!(colors.contains(&dark(STRING)), "string");
+        assert!(colors.contains(&dark(FUNCTION)), "function");
+        assert!(colors.contains(&dark(COMMENT)), "comment");
         assert!(colors.len() > 3, "{colors:?}");
     }
 
@@ -234,8 +193,9 @@ mod tests {
                 let at = ByteIndex(job.text.find(needle).unwrap());
                 job.sections.iter().find(|s| s.byte_range.contains(&at)).unwrap().format.color
             };
-            assert_eq!(color_of("div className"), theme.ansi[1].color(), "{language} opening tag");
-            assert_eq!(color_of("div>;"), theme.ansi[1].color(), "{language} closing tag");
+            let tag = TAG.color(theme.is_light(), theme.foreground).color();
+            assert_eq!(color_of("div className"), tag, "{language} opening tag");
+            assert_eq!(color_of("div>;"), tag, "{language} closing tag");
             assert_eq!(color_of("hi<"), theme.foreground.color(), "{language} text child");
         }
     }

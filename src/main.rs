@@ -43,6 +43,7 @@ mod git_branch;
 mod git_commit;
 mod git_ignore;
 mod git_status;
+mod git_sync;
 mod git_watcher;
 mod inbox;
 mod keymap;

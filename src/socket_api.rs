@@ -18,6 +18,9 @@ pub const SOCKET_VAR: &str = "REPODECK_SOCKET";
 /// Environment variable holding the id of the pane a command runs in.
 pub const PANE_VAR: &str = "REPODECK_PANE";
 
+/// How long the CLI waits for the app's reply.
+const REPLY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
 pub fn socket_path() -> Option<PathBuf> {
     Some(store::data_dir()?.join("repodeck.sock"))
 }
@@ -43,8 +46,11 @@ pub fn listen(jobs: Sender<Job>, ctx: egui::Context) {
             // Only the line ending goes: trailing tabs separate empty fields of the newer commands.
             let command = line.trim_end_matches(['\r', '\n']).to_string();
             let job: Job = Box::new(move |app| {
-                let reply = apply(app, &command);
                 let mut stream = stream;
+                if let Some(path) = command.strip_prefix("shot\t") {
+                    return shot(app, PathBuf::from(path), stream);
+                }
+                let reply = apply(app, &command);
                 let _ = writeln!(stream, "{reply}");
             });
             if jobs.send(job).is_err() {
@@ -56,6 +62,19 @@ pub fn listen(jobs: Sender<Job>, ctx: egui::Context) {
     if let Err(err) = spawned {
         log::error!("Failed to start the socket API: {err}");
     }
+}
+
+/// Saves a picture of the window as its next frame draws it, then replies with the file's path.
+/// A hidden or covered window draws no frame, so the caller gives up after [`REPLY_TIMEOUT`].
+fn shot(app: &RepodeckApp, path: PathBuf, mut stream: UnixStream) {
+    let callback = egui::ScreenshotCallback::new(move |image| {
+        let _ = match crate::clipboard_image::write_png(&image, &path) {
+            Ok(()) => writeln!(stream, "{}", path.display()),
+            Err(err) => writeln!(stream, "error: {err:#}"),
+        };
+    });
+    app.ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(callback));
+    app.ctx.request_repaint();
 }
 
 /// Runs a command line of the form `verb args…`; returns the reply text.
@@ -125,7 +144,8 @@ pub fn send(command: &str) -> Result<String, String> {
     let path = path.ok_or("no data directory")?;
     let mut stream = UnixStream::connect(&path).map_err(|_| "Repodeck is not running".to_string())?;
     writeln!(stream, "{command}").map_err(|e| e.to_string())?;
+    let _ = stream.set_read_timeout(Some(REPLY_TIMEOUT));
     let mut reply = String::new();
-    BufReader::new(stream).read_to_string(&mut reply).map_err(|e| e.to_string())?;
+    BufReader::new(stream).read_to_string(&mut reply).map_err(|_| "Repodeck did not answer in time")?;
     Ok(reply.trim_end().to_string())
 }

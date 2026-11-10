@@ -16,6 +16,10 @@ pub struct GitStatus {
     pub oid: String,
     pub ahead: u32,
     pub behind: u32,
+    /// Whether the branch tracks a remote one; `ahead` and `behind` are counted against it.
+    pub upstream: bool,
+    /// The remote a branch without an upstream could be published to: `origin`, or the first.
+    pub publish_to: Option<String>,
     pub changed: u32,
     pub files: Vec<ChangedFile>,
     /// A linked worktree whose commits are all in the default branch, so it can be removed.
@@ -39,7 +43,17 @@ pub fn read_status(path: &Path) -> Option<GitStatus> {
     if !output.status.success() {
         return None;
     }
-    Some(parse_porcelain(&String::from_utf8_lossy(&output.stdout)))
+    let mut status = parse_porcelain(&String::from_utf8_lossy(&output.stdout));
+    if !status.upstream && status.branch != "(detached)" {
+        status.publish_to = publish_remote(path);
+    }
+    Some(status)
+}
+
+fn publish_remote(path: &Path) -> Option<String> {
+    let remotes = crate::git_commit::git(path, &["remote"]).ok()?;
+    let mut names = remotes.lines();
+    names.clone().find(|name| *name == "origin").or_else(|| names.next()).map(str::to_owned)
 }
 
 fn parse_porcelain(out: &str) -> GitStatus {
@@ -49,6 +63,8 @@ fn parse_porcelain(out: &str) -> GitStatus {
             status.oid = oid.to_string();
         } else if let Some(head) = line.strip_prefix("# branch.head ") {
             status.branch = head.to_string();
+        } else if line.starts_with("# branch.upstream ") {
+            status.upstream = true;
         } else if let Some(ab) = line.strip_prefix("# branch.ab ") {
             let mut parts = ab.split_whitespace();
             status.ahead = parts.next().and_then(|a| a.trim_start_matches('+').parse().ok()).unwrap_or(0);
@@ -89,6 +105,7 @@ mod tests {
             (s.branch.as_str(), s.oid.as_str(), s.ahead, s.behind, s.changed),
             ("main", "abc", 2, 1, 2)
         );
+        assert!(s.upstream);
         let files: Vec<_> = s.files.iter().map(|f| (f.status, f.path.as_str())).collect();
         assert_eq!(files, [('M', "src/x.rs"), ('U', "new.txt")]);
     }

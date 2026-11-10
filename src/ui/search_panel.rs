@@ -5,11 +5,12 @@ use std::path::Path;
 
 use eframe::egui::text::{LayoutJob, TextFormat};
 use eframe::egui::{
-    Align, Color32, CornerRadius, FontId, Id, Key, Label, Layout, RichText, ScrollArea, Sense, TextEdit, Ui,
-    vec2,
+    Align, Color32, CornerRadius, FontId, Frame, Id, Key, Label, Layout, Margin, RichText, ScrollArea, Sense,
+    Stroke, StrokeKind, TextEdit, Ui, UiBuilder, vec2,
 };
 
 use super::Action;
+use super::chevron;
 use super::file_icon;
 use super::widgets::{accent, muted, row_sized};
 use crate::model::Repo;
@@ -17,6 +18,10 @@ use crate::text_search::{Hit, Results};
 use crate::text_search_runner::TextSearch;
 
 const ROW_HEIGHT: f32 = 22.0;
+const BOX_HEIGHT: f32 = 30.0;
+/// Space kept clear to the right of the query box.
+const BOX_MARGIN: f32 = 10.0;
+const TOGGLE_SIZE: f32 = 22.0;
 
 /// One line of the results list, so only the rows on screen are laid out.
 enum Row {
@@ -24,15 +29,9 @@ enum Row {
     Hit(usize, usize),
 }
 
-pub fn show(
-    ui: &mut Ui,
-    search: &mut TextSearch,
-    repo: &Repo,
-    show_ignored: bool,
-    actions: &mut Vec<Action>,
-) {
+pub fn show(ui: &mut Ui, search: &mut TextSearch, repo: &Repo, actions: &mut Vec<Action>) {
     query_row(ui, search);
-    search.update(&repo.path, show_ignored);
+    search.update(&repo.path);
     ui.add_space(6.0);
     let status = match (&search.error, &search.results) {
         (Some(err), _) => Some(RichText::new(err).color(Color32::LIGHT_RED)),
@@ -94,45 +93,68 @@ pub fn show(
     );
 }
 
-/// The query box and its option toggles. Enter searches again, e.g. after files changed.
+/// The query box, as wide as the panel with its option toggles inside on the right, as in VS
+/// Code. Enter searches again, e.g. after files changed.
 fn query_row(ui: &mut Ui, search: &mut TextSearch) {
     let id = Id::unique("text-search-query");
     if std::mem::take(&mut search.focus) {
         ui.memory_mut(|m| m.request_focus(id));
     }
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 2.0;
-        let toggles_width = 3.0 * 24.0 + 6.0;
-        let edit = TextEdit::singleline(&mut search.query.text)
-            .id(id)
-            .hint_text("Search")
-            .desired_width((ui.available_width() - toggles_width).max(60.0))
-            .margin(vec2(8.0, 5.0));
-        let response = ui.add(edit);
-        if response.changed() {
-            search.edited();
-        }
-        if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-            search.refresh();
-            ui.memory_mut(|m| m.request_focus(id));
-        }
-        ui.add_space(4.0);
-        let query = &mut search.query;
-        toggle(ui, "Aa", "Match case", &mut query.match_case);
-        toggle(ui, "ab", "Match whole word", &mut query.whole_word);
-        toggle(ui, ".*", "Use regular expression", &mut query.regex);
-    });
+    let width = (ui.available_width() - BOX_MARGIN).max(120.0);
+    let (rect, _) = ui.allocate_exact_size(vec2(width, BOX_HEIGHT), Sense::hover());
+    let rect = rect.translate(vec2(BOX_MARGIN / 2.0, 0.0));
+    let focused = ui.memory(|m| m.has_focus(id));
+    let stroke = if focused {
+        Stroke::new(1.0, accent(ui))
+    } else {
+        Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color)
+    };
+    let fill = ui.visuals().widgets.inactive.bg_fill;
+    ui.painter().rect(rect, CornerRadius::same(6), fill, stroke, StrokeKind::Inside);
+
+    let toggles = rect.with_min_x(rect.right() - 3.0 * TOGGLE_SIZE - 8.0).shrink2(vec2(4.0, 0.0));
+    let field = rect.with_max_x(toggles.left());
+    let mut field_ui =
+        ui.new_child(UiBuilder::new().max_rect(field).layout(Layout::left_to_right(Align::Center)));
+    let edit = TextEdit::singleline(&mut search.query.text)
+        .id(id)
+        .hint_text("Search")
+        .font(FontId::proportional(13.5))
+        .frame(Frame::NONE.inner_margin(Margin::symmetric(10, 0)))
+        .desired_width(field.width());
+    let response = field_ui.add(edit);
+    if response.changed() {
+        search.edited();
+    }
+    if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+        search.refresh();
+        ui.memory_mut(|m| m.request_focus(id));
+    }
+    let mut toggles_ui =
+        ui.new_child(UiBuilder::new().max_rect(toggles).layout(Layout::left_to_right(Align::Center)));
+    toggles_ui.spacing_mut().item_spacing.x = 2.0;
+    let query = &mut search.query;
+    toggle(&mut toggles_ui, "Aa", "Match case", &mut query.match_case);
+    toggle(&mut toggles_ui, "ab", "Match whole word", &mut query.whole_word);
+    toggle(&mut toggles_ui, ".*", "Use regular expression", &mut query.regex);
 }
 
 fn toggle(ui: &mut Ui, label: &str, hint: &str, on: &mut bool) {
     let color = if *on { ui.visuals().strong_text_color() } else { muted(ui) };
-    let (rect, response) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
+    let (rect, response) = ui.allocate_exact_size(vec2(TOGGLE_SIZE, TOGGLE_SIZE), Sense::click());
+    let radius = CornerRadius::same(4);
     if *on {
-        ui.painter().rect_filled(rect, CornerRadius::same(5), accent(ui).gamma_multiply(0.3));
+        ui.painter().rect(
+            rect,
+            radius,
+            accent(ui).gamma_multiply(0.25),
+            Stroke::new(1.0, accent(ui)),
+            StrokeKind::Inside,
+        );
     } else if response.hovered() {
-        ui.painter().rect_filled(rect, CornerRadius::same(5), ui.visuals().widgets.hovered.weak_bg_fill);
+        ui.painter().rect_filled(rect, radius, ui.visuals().widgets.hovered.weak_bg_fill);
     }
-    let galley = ui.painter().layout_no_wrap(label.into(), FontId::monospace(11.5), color);
+    let galley = ui.painter().layout_no_wrap(label.into(), FontId::proportional(12.5), color);
     ui.painter().galley(rect.center() - galley.size() / 2.0, galley, color);
     if response.on_hover_text(hint).clicked() {
         *on = !*on;
@@ -158,7 +180,7 @@ fn file_row(ui: &mut Ui, repo: &Repo, path: &Path, hits: usize, folded: bool) ->
     let folder = path.parent().and_then(|p| p.strip_prefix(&repo.path).ok()).map(|p| p.display().to_string());
     let (response, ()) = row_sized(ui, false, 0.0, ROW_HEIGHT, |ui| {
         ui.spacing_mut().item_spacing.x = 5.0;
-        ui.label(RichText::new(if folded { "›" } else { "⌄" }).color(muted(ui)).monospace());
+        chevron::show(ui, !folded);
         file_icon::show(ui, 15.0, &name, false, false);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let count = RichText::new(hits.to_string()).size(10.5).color(muted(ui));

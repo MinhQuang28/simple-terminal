@@ -78,6 +78,8 @@ pub struct StatusLine {
     /// Further windows, such as per-model weekly limits, in the order reported.
     pub others: Vec<Window>,
     pub context_percent: Option<f64>,
+    /// The model answering, as Claude Code names it, e.g. "Opus 4.1".
+    pub model: Option<String>,
     /// Unix seconds.
     pub reported_at: u64,
 }
@@ -102,6 +104,7 @@ impl StatusLine {
             seven_day: limit(&json["rate_limits"]["seven_day"]),
             others,
             context_percent: json["context_window"]["used_percentage"].as_f64(),
+            model: json["model"]["display_name"].as_str().map(str::to_owned),
             reported_at,
         }
     }
@@ -216,13 +219,14 @@ mod tests {
     fn parses_limits_and_context() {
         let json: Value = serde_json::from_str(
             r#"{"rate_limits":{"five_hour":{"used_percentage":15,"resets_at":200},"seven_day":{"used_percentage":2.5,"resets_at":900}},
-                "context_window":{"used_percentage":4}}"#,
+                "context_window":{"used_percentage":4},"model":{"id":"claude-x","display_name":"Opus"}}"#,
         )
         .unwrap();
         let status = StatusLine::parse(&json, 100);
         assert_eq!(status.five_hour, Some(Limit { used_percent: 15.0, resets_at: 200 }));
         assert_eq!(status.seven_day.map(|l| l.used_percent), Some(2.5));
         assert_eq!(status.context_percent, Some(4.0));
+        assert_eq!(status.model.as_deref(), Some("Opus"));
         assert!(status.has_limits());
         assert!(!StatusLine::parse(&json!({}), 100).has_limits());
     }

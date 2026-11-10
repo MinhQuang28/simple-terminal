@@ -6,6 +6,7 @@ use uuid::Uuid;
 use super::Action;
 use super::agent_status;
 use super::agents_list;
+use super::chevron;
 use super::chrome::window_drag_area;
 use super::design::{TEXT_CAPTION, hairline};
 use super::repo_drag::{self, RepoSpan};
@@ -191,8 +192,7 @@ fn project_row(ui: &mut Ui, project: &Project, pool: &SessionPool, actions: &mut
                 let name =
                     RichText::new(project.name.to_uppercase()).strong().size(TEXT_CAPTION).color(color);
                 ui.add(Label::new(name).truncate().selectable(false));
-                let chevron = if project.collapsed { "›" } else { "⌄" };
-                ui.label(RichText::new(chevron).color(muted(ui)).size(12.0));
+                chevron::show(ui, !project.collapsed);
             });
         });
     });

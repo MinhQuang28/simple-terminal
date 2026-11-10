@@ -1,8 +1,9 @@
-use eframe::egui::{self, Checkbox, Ui};
+use eframe::egui::{self, Ui};
 use uuid::Uuid;
 
 use super::Action;
 use super::dialog_kit::{self as kit, Tone};
+use super::worktree_dialogs::{OpenWorktree, RemoveWorktree};
 
 pub enum Dialog {
     NewProject {
@@ -26,12 +27,8 @@ pub enum Dialog {
         repo: Uuid,
         branch: String,
     },
-    RemoveWorktree {
-        repo: Uuid,
-        name: String,
-        branch: String,
-        delete_branch: bool,
-    },
+    RemoveWorktree(RemoveWorktree),
+    OpenWorktree(OpenWorktree),
     RepoSetup {
         repo: Uuid,
         command: String,
@@ -57,16 +54,45 @@ pub enum Dialog {
 pub enum DialogResult {
     CreateProject(String),
     RenameProject(Uuid, String),
-    SaveAndClose { repo: Uuid, tab: Uuid },
-    DiscardAndClose { repo: Uuid, tab: Uuid },
-    RenameTab { repo: Uuid, tab: Uuid, name: String },
-    CreateWorktree { repo: Uuid, branch: String },
-    RemoveWorktree { repo: Uuid, delete_branch: bool },
-    SetRepoSetup { repo: Uuid, command: String },
+    SaveAndClose {
+        repo: Uuid,
+        tab: Uuid,
+    },
+    DiscardAndClose {
+        repo: Uuid,
+        tab: Uuid,
+    },
+    RenameTab {
+        repo: Uuid,
+        tab: Uuid,
+        name: String,
+    },
+    CreateWorktree {
+        repo: Uuid,
+        branch: String,
+    },
+    RemoveWorktree {
+        repo: Uuid,
+        delete_branch: bool,
+        force: bool,
+    },
+    /// Shows the checkout at `path`, adding it beside `repo` if it isn't in the sidebar yet.
+    OpenWorktree {
+        repo: Uuid,
+        path: std::path::PathBuf,
+    },
+    SetRepoSetup {
+        repo: Uuid,
+        command: String,
+    },
     Run(Action),
     SaveAllAndQuit,
     QuitWithoutSaving,
-    SavePrompt { index: Option<usize>, name: String, text: String },
+    SavePrompt {
+        index: Option<usize>,
+        name: String,
+        text: String,
+    },
 }
 
 /// Shows the open dialog. Returns `(close, result)`.
@@ -146,20 +172,8 @@ pub fn show(ctx: &egui::Context, dialog: &mut Dialog) -> (bool, Option<DialogRes
             result = submitted.map(|branch| DialogResult::CreateWorktree { repo: *repo, branch });
             close = result.is_some() || cancel;
         }
-        Dialog::RemoveWorktree { repo, name, branch, delete_branch } => {
-            kit::title(ui, "Remove worktree");
-            kit::description(
-                ui,
-                &format!("Deletes the folder {name} and closes its tabs. Uncommitted changes are lost."),
-            );
-            let label = if branch.is_empty() { "its branch".to_string() } else { format!("branch {branch}") };
-            ui.add(Checkbox::new(delete_branch, format!("Also delete {label} (only if merged)")));
-            let footer = kit::footer(ui, &[("Remove", Tone::Destructive)], true);
-            result = footer
-                .action
-                .map(|_| DialogResult::RemoveWorktree { repo: *repo, delete_branch: *delete_branch });
-            close = result.is_some() || footer.cancel;
-        }
+        Dialog::RemoveWorktree(dialog) => (close, result) = dialog.show(ui),
+        Dialog::OpenWorktree(dialog) => (close, result) = dialog.show(ui),
         Dialog::RepoSetup { repo, command } => {
             kit::title(ui, "Worktree setup");
             kit::description(ui, "Runs in the first terminal of each new worktree, before the shell prompt.");

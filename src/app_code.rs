@@ -13,9 +13,8 @@ impl RepodeckApp {
         let Some(repo) = self.state.repo(repo_id) else { return };
         let root = repo.path.clone();
         let current = self.active_file();
-        let show_ignored = self.state.show_ignored_files;
         self.spawn_job("definitions", move || {
-            let found = definitions::find(&root, &word, show_ignored, current.as_deref());
+            let found = definitions::find(&root, &word, current.as_deref());
             Box::new(move |app: &mut RepodeckApp| match (found.len(), peek) {
                 (0, _) => crate::ui::toast::post(&app.ctx, format!("No definition of {word} found")),
                 (1, false) => {

@@ -19,7 +19,7 @@ const DEBOUNCE: Duration = Duration::from_millis(150);
 pub struct TextSearch {
     pub query: Query,
     /// Root and query of the newest search started, so an unchanged one isn't run again.
-    started: Option<(PathBuf, Query, bool)>,
+    started: Option<(PathBuf, Query)>,
     pub results: Option<Arc<Results>>,
     pub error: Option<String>,
     pub running: bool,
@@ -52,9 +52,9 @@ impl TextSearch {
         }
     }
 
-    /// Takes in finished results, and starts a search when the query, root or ignore setting
-    /// changed since the last one. An empty query clears the results.
-    pub fn update(&mut self, root: &Path, show_ignored: bool) {
+    /// Takes in finished results, and starts a search when the query or root changed since the
+    /// last one. An empty query clears the results.
+    pub fn update(&mut self, root: &Path) {
         while let Ok((generation, results)) = self.rx.try_recv() {
             if generation == self.generation.load(Ordering::Relaxed) {
                 self.results = Some(Arc::new(results));
@@ -66,7 +66,7 @@ impl TextSearch {
             return;
         }
         self.edited_at = None;
-        let wanted = (root.to_path_buf(), self.query.clone(), show_ignored);
+        let wanted = (root.to_path_buf(), self.query.clone());
         if self.started.as_ref() == Some(&wanted) {
             return;
         }
@@ -89,7 +89,7 @@ impl TextSearch {
             (root.to_path_buf(), self.tx.clone(), self.ctx.clone(), self.generation.clone());
         let spawned = thread::Builder::new().name("text-search".into()).spawn(move || {
             let cancelled = || current.load(Ordering::Relaxed) != generation;
-            let results = search(&root, &regex, show_ignored, &cancelled);
+            let results = search(&root, &regex, &cancelled);
             if !cancelled() && tx.send((generation, results)).is_ok() {
                 ctx.request_repaint();
             }

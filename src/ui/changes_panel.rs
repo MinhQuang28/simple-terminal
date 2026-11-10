@@ -3,16 +3,23 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use eframe::egui::{Color32, Label, RichText, ScrollArea, Ui};
+use eframe::egui::{
+    Align, Color32, CornerRadius, FontId, Id, Label, Layout, RichText, ScrollArea, Sense, Ui, vec2,
+};
 
 use super::Action;
+use super::chevron;
 use super::commit_box;
 use super::file_icon;
 use super::library_panel;
-use super::widgets::{muted, right_aligned, row};
+use super::widgets::{muted, right_aligned, row_sized};
 use crate::git_status::{ChangedFile, GitStatus};
 use crate::library_cache::LibraryCache;
 use crate::model::{AppState, Repo, SidePanel};
+
+const ROW_HEIGHT: f32 = 24.0;
+/// Files sit under the section header's title, past its chevron.
+const FILE_INDENT: f32 = 12.0;
 
 /// The changes list with its commit box, or the library.
 pub(super) fn body(
@@ -29,14 +36,19 @@ pub(super) fn body(
     ScrollArea::vertical().id_salt(("side-panel", panel)).auto_shrink(false).show(ui, |ui| match panel {
         SidePanel::Library => library_panel::show(ui, repo, &state.settings, library, actions),
         _ => match status {
-            Some(status) if !status.files.is_empty() => {
-                commit_box::show(ui, repo, status.files.len(), actions);
-                for file in &status.files {
-                    change_row(ui, repo, file, open_file.as_deref(), actions);
+            Some(status) => {
+                commit_box::show(ui, repo, &status, actions);
+                if status.files.is_empty() {
+                    ui.add_space(6.0);
+                    ui.vertical_centered(|ui| {
+                        let text = format!("No changes on {}", status.branch);
+                        ui.label(RichText::new(text).size(12.5).color(muted(ui)));
+                    });
+                } else if section_header(ui, repo, "Changes", status.files.len()) {
+                    for file in &status.files {
+                        change_row(ui, repo, file, open_file.as_deref(), actions);
+                    }
                 }
-            }
-            Some(_) => {
-                ui.label(RichText::new("Working tree clean").color(muted(ui)));
             }
             None => {
                 ui.label(RichText::new("Not a git repository").color(muted(ui)));
@@ -45,6 +57,33 @@ pub(super) fn body(
     });
 }
 
+/// `⌄ Changes  27`; clicking folds the list. Returns whether it is open.
+fn section_header(ui: &mut Ui, repo: &Repo, title: &str, count: usize) -> bool {
+    let id = Id::unique(("changes-folded", repo.id, title));
+    let folded = ui.data(|d| d.get_temp(id).unwrap_or(false));
+    let (response, ()) = row_sized(ui, false, 0.0, ROW_HEIGHT, |ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        chevron::show(ui, !folded);
+        ui.label(RichText::new(title).size(12.5).strong());
+        right_aligned(ui, |ui| count_badge(ui, count));
+    });
+    if response.clicked() {
+        ui.data_mut(|d| d.insert_temp(id, !folded));
+    }
+    !folded
+}
+
+/// A rounded count, like the number beside VS Code's Changes.
+fn count_badge(ui: &mut Ui, count: usize) {
+    let text =
+        ui.painter().layout_no_wrap(count.to_string(), FontId::proportional(10.5), ui.visuals().text_color());
+    let size = vec2((text.size().x + 10.0).max(18.0), 16.0);
+    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+    ui.painter().rect_filled(rect, CornerRadius::same(8), ui.visuals().widgets.hovered.bg_fill);
+    ui.painter().galley(rect.center() - text.size() / 2.0, text, ui.visuals().text_color());
+}
+
+/// `[icon] name  folder   M`, the status letter coloured as in VS Code.
 fn change_row(
     ui: &mut Ui,
     repo: &Repo,
@@ -57,14 +96,26 @@ fn change_row(
         Some((parent, name)) => (name, parent),
         None => (file.path.as_str(), ""),
     };
-    let (response, ()) = row(ui, open_file == Some(path.as_path()), 0.0, |ui| {
-        file_icon::show(ui, 15.0, name, false, false);
-        ui.add(Label::new(RichText::new(name).size(13.0)).truncate().selectable(false));
-        ui.add(Label::new(RichText::new(parent).size(11.5).color(muted(ui))).truncate().selectable(false));
+    let selected = open_file == Some(path.as_path());
+    let (response, ()) = row_sized(ui, selected, FILE_INDENT, ROW_HEIGHT, |ui| {
         right_aligned(ui, |ui| {
-            ui.label(RichText::new(file.status.to_string()).monospace().color(status_color(file.status)));
+            let letter = RichText::new(file.status.to_string()).size(12.0).strong();
+            ui.label(letter.color(status_color(file.status)));
+            ui.add_space(2.0);
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                file_icon::show(ui, 15.0, name, false, false);
+                let mut label = RichText::new(name).size(13.0);
+                if file.status == 'D' {
+                    label = label.strikethrough().color(muted(ui));
+                }
+                ui.add(Label::new(label).truncate().selectable(false));
+                let folder = RichText::new(parent).size(11.5).color(muted(ui));
+                ui.add(Label::new(folder).truncate().selectable(false));
+            });
         });
     });
+    let response = response.on_hover_text(&file.path);
     if response.clicked() {
         actions.push(Action::OpenDiff { repo: repo.id, path: path.clone() });
     }
@@ -78,12 +129,14 @@ fn change_row(
     });
 }
 
+/// VS Code's git decoration colours.
 fn status_color(status: char) -> Color32 {
     match status {
-        'A' | 'U' => Color32::from_rgb(0x8f, 0xc9, 0x7a),
-        'D' => Color32::from_rgb(0xe0, 0x6c, 0x75),
-        'R' | 'C' => Color32::from_rgb(0x61, 0xaf, 0xef),
-        '!' => Color32::from_rgb(0xd1, 0x9a, 0x66),
-        _ => Color32::from_rgb(0xe5, 0xc0, 0x7b),
+        'U' => Color32::from_rgb(0x73, 0xc9, 0x91),
+        'A' => Color32::from_rgb(0x81, 0xb8, 0x8b),
+        'D' => Color32::from_rgb(0xc7, 0x4e, 0x39),
+        'R' | 'C' => Color32::from_rgb(0x73, 0xc9, 0x91),
+        '!' => Color32::from_rgb(0xe4, 0x67, 0x6b),
+        _ => Color32::from_rgb(0xe2, 0xc0, 0x8d),
     }
 }

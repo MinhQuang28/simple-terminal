@@ -50,9 +50,9 @@ pub fn pattern(word: &str) -> Option<Regex> {
 }
 
 /// Every declaration of `word` under `root`, those in `current` first.
-pub fn find(root: &Path, word: &str, show_ignored: bool, current: Option<&Path>) -> Vec<Definition> {
+pub fn find(root: &Path, word: &str, current: Option<&Path>) -> Vec<Definition> {
     let Some(regex) = pattern(word) else { return Vec::new() };
-    let results = text_search::search(root, &regex, show_ignored, &|| false);
+    let results = text_search::search(root, &regex, &|| false);
     let mut found: Vec<Definition> = results
         .files
         .into_iter()
@@ -106,7 +106,7 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         fs::write(root.join("a.rs"), "fn helper() {}\n").unwrap();
         fs::write(root.join("b.rs"), "use x;\n\npub fn helper() -> u8 {\n    1\n}\n").unwrap();
-        let found = find(&root, "helper", false, Some(&root.join("b.rs")));
+        let found = find(&root, "helper", Some(&root.join("b.rs")));
         let at: Vec<_> =
             found.iter().map(|d| (d.path.file_name().unwrap().to_owned(), d.line, d.col)).collect();
         assert_eq!(at, [("b.rs".into(), 3, 8), ("a.rs".into(), 1, 4)]);

@@ -90,10 +90,53 @@ fn branch_exists(path: &Path, branch: &str) -> bool {
     git(path, &["rev-parse", "--verify", "--quiet", &format!("refs/heads/{branch}")]).is_some()
 }
 
+/// One checkout of a repository, as `git worktree list` reports it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Checkout {
+    pub path: PathBuf,
+    /// `None` on a detached HEAD.
+    pub branch: Option<String>,
+    /// The repository's own folder rather than a linked worktree.
+    pub main: bool,
+}
+
+/// Every checkout of the repository `path` belongs to, the main one first. Bare repositories
+/// and worktrees whose folder is gone are left out.
+pub fn list(path: &Path) -> Vec<Checkout> {
+    let out = git(path, &["worktree", "list", "--porcelain"]).unwrap_or_default();
+    let mut checkouts = Vec::new();
+    for (index, block) in out.split("\n\n").enumerate() {
+        let field = |name: &str| block.lines().find_map(|l| l.strip_prefix(name));
+        let Some(dir) = field("worktree ") else { continue };
+        if block.lines().any(|l| l == "bare" || l.starts_with("prunable")) {
+            continue;
+        }
+        let branch = field("branch ").map(|b| b.trim_start_matches("refs/heads/").to_string());
+        checkouts.push(Checkout { path: PathBuf::from(dir), branch, main: index == 0 });
+    }
+    checkouts
+}
+
+/// Commits of a detached `HEAD` at `path` that no branch, remote or tag holds, so removing the
+/// worktree would leave them unreachable. Zero when a branch is checked out: it keeps them.
+pub fn stray_commits(path: &Path) -> u32 {
+    if current_branch(path).is_some() {
+        return 0;
+    }
+    git(path, &["rev-list", "--count", "HEAD", "--not", "--branches", "--remotes", "--tags"])
+        .and_then(|count| count.trim().parse().ok())
+        .unwrap_or(0)
+}
+
 /// Deletes the worktree at `path` from `main`, then its branch when asked and fully merged.
-pub fn remove(main: &Path, path: &Path, delete_branch: bool) -> Result<(), String> {
+/// Without `force` git refuses a worktree with modified or untracked files.
+pub fn remove(main: &Path, path: &Path, delete_branch: bool, force: bool) -> Result<(), String> {
     let branch = git(path, &["rev-parse", "--abbrev-ref", "HEAD"]).map(|b| b.trim().to_string());
-    run(main, &["worktree", "remove", "--force", &path.to_string_lossy()])?;
+    let path = path.to_string_lossy();
+    let mut args = vec!["worktree", "remove"];
+    args.extend(force.then_some("--force"));
+    args.push(&path);
+    run(main, &args)?;
     match branch.filter(|b| delete_branch && b != "HEAD") {
         Some(branch) => run(main, &["branch", "-d", &branch])
             .map_err(|err| format!("worktree removed, but branch {branch} was kept: {err}")),
@@ -119,6 +162,45 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("repodeck-wt-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn lists_checkouts_and_refuses_to_remove_a_dirty_one_unforced() {
+        let root = temp_dir().canonicalize().unwrap();
+        let (main, linked, loose) = (root.join("main"), root.join("linked"), root.join("loose"));
+        fs::create_dir_all(&main).unwrap();
+        let ok = |dir: &Path, args: &[&str]| run(dir, args).unwrap();
+        ok(&main, &["init", "-q", "-b", "main"]);
+        ok(&main, &["config", "user.email", "test@example.com"]);
+        ok(&main, &["config", "user.name", "Test"]);
+        ok(&main, &["config", "commit.gpgsign", "false"]);
+        ok(&main, &["commit", "-q", "--allow-empty", "-m", "first"]);
+        ok(&main, &["worktree", "add", "-q", "-b", "feat", linked.to_str().unwrap()]);
+        ok(&main, &["worktree", "add", "-q", "--detach", loose.to_str().unwrap()]);
+
+        let found = list(&linked);
+        let shape: Vec<_> = found.iter().map(|c| (c.path.as_path(), c.branch.as_deref(), c.main)).collect();
+        assert_eq!(
+            shape,
+            [
+                (main.as_path(), Some("main"), true),
+                (linked.as_path(), Some("feat"), false),
+                (loose.as_path(), None, false)
+            ]
+        );
+
+        assert_eq!(stray_commits(&loose), 0);
+        ok(&loose, &["commit", "-q", "--allow-empty", "-m", "nowhere"]);
+        assert_eq!(stray_commits(&loose), 1);
+        ok(&linked, &["commit", "-q", "--allow-empty", "-m", "kept by feat"]);
+        assert_eq!(stray_commits(&linked), 0);
+
+        fs::write(linked.join("new.txt"), "x").unwrap();
+        assert!(remove(&main, &linked, false, false).is_err(), "git keeps a dirty worktree");
+        assert!(linked.exists());
+        remove(&main, &linked, false, true).unwrap();
+        assert!(!linked.exists());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

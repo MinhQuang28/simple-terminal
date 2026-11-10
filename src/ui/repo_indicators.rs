@@ -1,8 +1,8 @@
-use eframe::egui::epaint::PathShape;
-use eframe::egui::{Color32, RichText, Sense, Stroke, Ui, pos2, vec2};
+use eframe::egui::{Color32, RichText, Sense, Ui, vec2};
 
 use super::Action;
 use super::agent_status;
+use super::chevron;
 use super::sidebar::{tab_busy, tab_status};
 use super::spinner::spinner;
 use super::widgets::{accent, ago, muted, tag};
@@ -61,16 +61,9 @@ pub fn busy_mark(ui: &mut Ui) {
 
 /// `›`/`⌄` that shows or hides the repo's terminal rows.
 pub fn tabs_chevron(ui: &mut Ui, repo: &Repo, actions: &mut Vec<Action>) {
-    // Painted rather than a "⌄"/"›" glyph, which sits on the baseline below the name's middle.
-    let (rect, response) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::click());
+    let (rect, response) = ui.allocate_exact_size(vec2(chevron::SIZE, chevron::SIZE), Sense::click());
     let color = if response.hovered() { ui.visuals().text_color() } else { muted(ui) };
-    let (c, r) = (rect.center(), 3.0);
-    let points = if repo.tabs_collapsed {
-        vec![pos2(c.x - r / 2.0, c.y - r), pos2(c.x + r / 2.0, c.y), pos2(c.x - r / 2.0, c.y + r)]
-    } else {
-        vec![pos2(c.x - r, c.y - r / 2.0), pos2(c.x, c.y + r / 2.0), pos2(c.x + r, c.y - r / 2.0)]
-    };
-    ui.painter().add(PathShape::line(points, Stroke::new(1.3, color)));
+    chevron::paint(ui, rect, !repo.tabs_collapsed, color);
     if response.clicked() {
         actions.push(Action::ToggleRepoTabs(repo.id));
     }

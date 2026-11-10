@@ -5,6 +5,7 @@ use std::path::Path;
 use eframe::egui::{Label, RichText, Ui};
 
 use super::Action;
+use super::chevron;
 use super::file_icon;
 use super::widgets::{muted, row_sized};
 use crate::file_tree::{Entry, FileTree};
@@ -30,12 +31,11 @@ pub fn directory(
         let selected = open_file == Some(entry.path.as_path());
         let (response, ()) = row_sized(ui, selected, depth as f32 * INDENT, ROW_HEIGHT, |ui| {
             ui.spacing_mut().item_spacing.x = 5.0;
-            let chevron = match (entry.is_dir, expanded) {
-                (true, true) => "⌄",
-                (true, false) => "›",
-                (false, _) => " ",
-            };
-            ui.label(RichText::new(chevron).color(muted(ui)).monospace());
+            if entry.is_dir {
+                chevron::show(ui, expanded);
+            } else {
+                ui.add_space(chevron::SIZE);
+            }
             file_icon::show(ui, ICON_SIZE, &entry.name, entry.is_dir, expanded);
             let mut name = RichText::new(&entry.name).size(13.0);
             if entry.ignored {

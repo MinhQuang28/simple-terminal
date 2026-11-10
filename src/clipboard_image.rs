@@ -26,7 +26,7 @@ pub fn save_png(image: &ColorImage) -> Result<PathBuf> {
     Ok(path)
 }
 
-fn write_png(image: &ColorImage, path: &std::path::Path) -> Result<()> {
+pub(crate) fn write_png(image: &ColorImage, path: &std::path::Path) -> Result<()> {
     let [width, height] = image.size;
     let mut encoder = png::Encoder::new(BufWriter::new(File::create(path)?), width as u32, height as u32);
     encoder.set_color(png::ColorType::Rgba);

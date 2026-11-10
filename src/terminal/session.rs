@@ -193,29 +193,33 @@ impl TerminalSession {
         if let Some(socket) = socket_api::socket_path() {
             env.insert(socket_api::SOCKET_VAR.into(), socket.to_string_lossy().into_owned());
         }
+        // Hooks, status line and renderer for an agent started in the pane: by an agent tab, or
+        // typed into a terminal tab, whose shell passes the hooks to `claude` (see
+        // `shell_integration`).
         if let Some(agent) = &agent {
             env.insert(agent_events::EVENTS_VAR.into(), agent.path().to_string_lossy().into_owned());
             if let Ok(exe) = std::env::current_exe() {
                 env.insert(EXE_VAR.into(), exe.to_string_lossy().into_owned());
             }
-        }
-        // Agent panes set up their agent; a terminal tab's only gets the events file above.
-        if let Some(agent) = agent.as_ref().filter(|_| matches!(launch, Launch::Agent(_))) {
             env.insert(
                 agent_events::HOOKS_VAR.into(),
                 agent_events::hooks_settings(cwd, agent_hide_api_keys),
             );
-            if agent_hide_api_keys {
-                for var in agent_events::API_KEY_VARS {
-                    env.remove(*var);
-                }
-            }
             env.insert(
                 claude_status_line::STATUS_VAR.into(),
                 agent.status_line_path().to_string_lossy().into_owned(),
             );
             if let Some((key, value)) = agent_renderer.env() {
                 env.insert(key.into(), value.into());
+            }
+        }
+        // A terminal tab keeps the user's API keys for other tools; the hooks settings blank
+        // them for Claude alone.
+        if agent.is_some() && matches!(launch, Launch::Agent(_)) {
+            if agent_hide_api_keys {
+                for var in agent_events::API_KEY_VARS {
+                    env.remove(*var);
+                }
             }
             if let Launch::Agent(command) = launch
                 && agent_launch::uses(command, agent_launch::Agent::OpenCode)

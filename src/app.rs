@@ -123,7 +123,7 @@ impl RepodeckApp {
         let (job_tx, jobs) = mpsc::channel();
         socket_api::listen(job_tx.clone(), ctx.clone());
         crate::bench::start();
-        crate::editor::warm_up();
+        crate::editor::warm_up(&ctx);
         #[cfg(target_os = "macos")]
         crate::app_menu::install("Repodeck", job_tx.clone(), ctx.clone());
         let pending_focus = state
@@ -233,11 +233,12 @@ impl RepodeckApp {
                 }
             }
             Some(DialogResult::CreateWorktree { repo, branch }) => {
-                self.create_worktree(repo, Some(&branch), None)
+                self.create_worktree(repo, Some(&branch), None, None)
             }
-            Some(DialogResult::RemoveWorktree { repo, delete_branch }) => {
-                self.remove_worktree(repo, delete_branch)
+            Some(DialogResult::RemoveWorktree { repo, delete_branch, force }) => {
+                self.remove_worktree(repo, delete_branch, force)
             }
+            Some(DialogResult::OpenWorktree { repo, path }) => self.open_worktree(repo, &path),
             Some(DialogResult::Run(action)) => {
                 self.confirmed = true;
                 self.apply(action, ctx);

@@ -293,6 +293,9 @@ pub struct Pane {
     /// start, again whenever the pane is restored or restarted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    /// The pane whose agent started this one (through the `repodeck` CLI), which it reports to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<Uuid>,
 }
 
 impl Project {
@@ -335,7 +338,14 @@ impl Repo {
 
 impl Tab {
     pub fn new(kind: PaneKind) -> Self {
-        let pane = Pane { id: Uuid::new_v4(), kind: kind.clone(), cwd: None, session: None, command: None };
+        let pane = Pane {
+            id: Uuid::new_v4(),
+            kind: kind.clone(),
+            cwd: None,
+            session: None,
+            command: None,
+            parent: None,
+        };
         let title = match kind {
             PaneKind::Shell => "Terminal",
             PaneKind::Agent => "Claude",

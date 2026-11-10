@@ -177,6 +177,9 @@ fn repo_menu(ui: &mut Ui, row: &RepoRow, actions: &mut Vec<Action>) {
     if ui.button("New worktree on a branch…").clicked() {
         actions.push(Action::OpenNewWorktree(repo.id));
     }
+    if ui.button("Open worktree…").clicked() {
+        actions.push(Action::OpenWorktreeList(repo.id));
+    }
     if ui.button("Worktree setup…").clicked() {
         actions.push(Action::OpenRepoSetup(repo.id));
     }

@@ -84,6 +84,26 @@ impl RepodeckApp {
                 });
                 return;
             }
+            Action::GitSync { repo, sync } => {
+                let Some(path) = self.state.repo(repo).map(|r| r.path.clone()) else { return };
+                self.spawn_job("git-sync", move || {
+                    let result = sync.run(&path);
+                    Box::new(move |app: &mut RepodeckApp| {
+                        crate::ui::commit_box::sync_finished(&app.ctx, repo);
+                        app.git.wake();
+                        match result {
+                            Ok(()) => crate::ui::toast::post(&app.ctx, sync.done().to_string()),
+                            Err(err) => {
+                                let why = err.lines().last().unwrap_or_default().to_string();
+                                let title = format!("Couldn't {}", sync.verb());
+                                crate::ui::toast::post(&app.ctx, format!("{title}: {why}"));
+                                app.report_error(&title, err);
+                            }
+                        }
+                    })
+                });
+                return;
+            }
             Action::Peek(pane) => {
                 self.peek = Some(pane);
                 return;
@@ -332,16 +352,17 @@ impl RepodeckApp {
             }
             Action::OpenDiff { repo, path } => self.open_diff(repo, path),
             Action::SendToAgent { repo, text } => self.send_to_agent(repo, text),
-            Action::NewWorktreeAgent(repo) => self.create_worktree(repo, None, None),
+            Action::NewWorktreeAgent(repo) => self.create_worktree(repo, None, None, None),
             Action::OpenNewWorktree(repo) => {
                 self.dialog = Some(Dialog::NewWorktree { repo, branch: String::new() });
                 return;
             }
             Action::OpenRemoveWorktree(repo) => {
-                let Some(r) = self.state.repo(repo) else { return };
-                let branch = self.git.status(&r.path).map(|s| s.branch.clone()).unwrap_or_default();
-                let name = r.name.clone();
-                self.dialog = Some(Dialog::RemoveWorktree { repo, name, branch, delete_branch: false });
+                self.open_remove_worktree(repo);
+                return;
+            }
+            Action::OpenWorktreeList(repo) => {
+                self.open_worktree_list(repo);
                 return;
             }
             Action::OpenRepoSetup(repo) => {

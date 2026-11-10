@@ -140,7 +140,8 @@ impl RepodeckApp {
             *size = (*size + font_delta).clamp(8.0, 32.0);
             self.dirty = true;
         }
-        let cmd = Modifiers::COMMAND;
+        // ⌘1 and ⌘2 pick the view, so the tabs take Control.
+        let ctrl = Modifiers::CTRL;
         let digits = [
             Key::Num1,
             Key::Num2,
@@ -153,7 +154,7 @@ impl RepodeckApp {
             Key::Num9,
         ];
         for (i, key) in digits.into_iter().enumerate() {
-            if ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(cmd, key)))
+            if ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(ctrl, key)))
                 && let Some(repo) = repo.and_then(|id| self.state.repo(id))
                 && let Some(tab) = repo.view_tabs().nth(i)
             {

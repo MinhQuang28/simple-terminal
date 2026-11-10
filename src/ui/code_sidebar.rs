@@ -37,6 +37,9 @@ pub fn show(ui: &mut Ui, state: &AppState, repo: &Repo, sources: Sources<'_>, ac
     let panel = state.code_panel;
     // VS Code's activity bar down the left edge, the chosen view beside it.
     let area = ui.available_rect_before_wrap();
+    // The bar and the view are child UIs, which don't grow this one: claim the width here, or the
+    // panel snaps back to its minimum size and can't be resized.
+    ui.expand_to_include_rect(area);
     let bar = Rect::from_min_size(area.min, vec2(activity_bar::WIDTH, area.height()));
     let content = area.with_min_x(bar.right() + 8.0);
     let mut bar_ui = ui.new_child(UiBuilder::new().max_rect(bar).layout(Layout::top_down(Align::Min)));
@@ -60,7 +63,7 @@ pub fn show(ui: &mut Ui, state: &AppState, repo: &Repo, sources: Sources<'_>, ac
     ui.add_space(8.0);
     match panel {
         SidePanel::Files => explorer(ui, state, repo, tree, actions),
-        SidePanel::Search => search_panel::show(ui, search, repo, state.show_ignored_files, actions),
+        SidePanel::Search => search_panel::show(ui, search, repo, actions),
         SidePanel::Changes | SidePanel::Library => body(ui, state, repo, panel, status, library, actions),
     }
 }
