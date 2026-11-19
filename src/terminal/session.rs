@@ -30,6 +30,7 @@ use super::snapshot::Frame;
 use crate::agent_events::{self, AgentEvents, AgentStatus};
 use crate::claude_status_line::{self, StatusLine};
 use crate::model::{AgentRenderer, CursorShape};
+use crate::prompt_text;
 use crate::shell_env;
 use crate::shell_events::ShellEvents;
 use crate::shell_integration;
@@ -97,10 +98,9 @@ pub struct TerminalSession {
     presence: Arc<AtomicU8>,
     size: (u16, u16),
     title: Option<String>,
-    /// The agent's own title summary when the current turn's prompt was submitted; while the
-    /// live title still says this, it is stale and the prompt names the tab instead.
-    stale_summary: Option<String>,
-    /// Title made from the prompt of the last finished turn whose live title went stale.
+    /// The title the agent's transcript carries, for when it doesn't title the terminal.
+    transcript_title: Option<String>,
+    /// Title made from the latest finished turn's prompt that named a task.
     prompt_title: Option<String>,
     pub exited: bool,
     /// How the child process ended, once it has.
@@ -270,7 +270,7 @@ impl TerminalSession {
                 _ => None,
             },
             status_change: None,
-            stale_summary: None,
+            transcript_title: None,
             prompt_title: None,
             done_seen_at: None,
             shell: shell_events,
@@ -378,14 +378,26 @@ impl TerminalSession {
         self.title.as_deref()
     }
 
-    /// The title to show: the program's, unless an agent left it stale across a turn, in which
-    /// case the prompt that turn answered.
+    /// The title to show: the program's when it names a task, else the transcript's, else the
+    /// prompt of a finished turn.
     pub fn title(&self) -> Option<&str> {
         let live = self.title.as_deref();
-        match &self.prompt_title {
-            Some(prompt) if live.and_then(task_summary) == self.stale_summary => Some(prompt),
-            _ => live,
+        if live.and_then(task_summary).is_some() {
+            return live;
         }
+        self.transcript_title.as_deref().or(self.prompt_title.as_deref()).or(live)
+    }
+
+    /// The conversation of an agent that finished a turn without titling the terminal, whose
+    /// transcript may carry a title instead.
+    pub fn untitled_conversation(&self) -> Option<&str> {
+        let agent = self.agent.as_ref().filter(|a| a.status() == AgentStatus::Done)?;
+        let untitled = self.title.as_deref().and_then(task_summary).is_none();
+        agent.session_id().filter(|_| untitled)
+    }
+
+    pub fn set_transcript_title(&mut self, title: Option<String>) {
+        self.transcript_title = title;
     }
 
     /// The agent status if it changed since the last call, with the text that came with it.
@@ -487,15 +499,11 @@ impl TerminalSession {
         if let Some(agent) = &mut self.agent
             && let Some(status) = agent.poll()
         {
-            let live_summary = self.title.as_deref().and_then(task_summary);
-            match status {
-                AgentStatus::Working => self.stale_summary = live_summary,
-                // The agent didn't retitle the terminal during the turn, so the prompt names it.
-                AgentStatus::Done if live_summary == self.stale_summary => {
-                    self.prompt_title = agent.prompt().map(tab_title::from_prompt);
-                }
-                AgentStatus::Done => self.prompt_title = None,
-                _ => {}
+            // A follow-up such as "ok do it" names nothing, so it only titles a tab without one.
+            let min_words = if self.prompt_title.is_some() { 3 } else { 2 };
+            let prompt = agent.prompt().filter(|p| prompt_text::names_a_task(p, min_words));
+            if let Some(prompt) = prompt.filter(|_| status == AgentStatus::Done) {
+                self.prompt_title = Some(tab_title::from_prompt(prompt));
             }
             self.status_change = Some((status, agent.message().unwrap_or_default().to_owned()));
         }

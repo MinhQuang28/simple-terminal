@@ -113,12 +113,24 @@ repodeck send --pane <id> "yes"    # type into a pane and press Return
 repodeck read --pane <id> --lines 80       # what a pane shows, scrollback included
 repodeck wait --pane <id>          # block until that agent's turn is over; prints how it ended
 repodeck shot [file.png]           # save a picture of the window; prints its path
-repodeck --skill                   # the guide for agents driving Repodeck
+repodeck projects | tabs | status  # what is open, as tab-separated lines or --json
+repodeck worktree list|new|open|done|remove   # manage a repo's worktrees
+repodeck tab select|rename|move|close <tab id>
+repodeck do pane.zoom              # any app command by name; `repodeck commands` lists them
+repodeck interrupt|approve --pane <id>        # stop an agent, answer one you started
+repodeck sessions | resume         # list and reopen past Claude conversations
+repodeck code open src/main.rs:42  # open a file (or `code diff`) in the Code view
+repodeck inbox [read|clear]        # read the inbox
+repodeck --skill                   # the guide for agents driving Repodeck, every option included
 ```
 
 `open` and `claude` print the new pane's id. An agent started by another agent this way is
 listed under it in the Agents view, and its finished turns go to that agent rather than to your
 inbox.
+
+On first launch Repodeck adds a small `repodeck` skill to `~/.claude/skills` (when Claude Code
+is set up) that points Claude at `repodeck --skill`, so agents in a pane know they can drive the
+app. It is refreshed with new versions; delete the folder and it stays gone.
 
 Programs can also raise notifications with the OSC 9 / OSC 777 escape sequences.
 

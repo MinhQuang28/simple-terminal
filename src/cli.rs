@@ -5,13 +5,19 @@
 use std::io::Write;
 use std::time::{Duration, Instant};
 
+use crate::cli_commands::{self, Request};
 use crate::{agent_launch, codex_launch, socket_api};
 
 pub const USAGE: &str = "usage: repodeck notify <text> | open [folder] | claude [folder] [--task <text>] | \
-worktree [folder] [--task <text>] | \
-focus [pane] | list | split [--down] [--claude] [--pane <id>] [-- <command or task>] | \
+worktree [folder] [--task <text>] | worktree list|new|open|remove|done … | \
+focus [pane] | list [--json] | projects | tabs [--repo <folder>] | status [--pane <id>] | \
+split [--down] [--claude] [--pane <id>] [-- <command or task>] | \
 send [--pane <id>] [--no-enter] <text> | read [--pane <id>] [--lines <n>] | \
-wait --pane <id> [--timeout <seconds>] | shot [file.png] | --skill";
+wait --pane <id> [--timeout <seconds>] | interrupt|approve --pane <id> | \
+tab select|close|rename|move … | pane close <id> | do <command> | commands | \
+sessions [folder] | resume [folder] [--session <id>] | code open|diff … | \
+repo add <folder> | project new <name> | inbox [read|clear] | shot [file.png] | --skill \
+(see `repodeck --skill` for every option)";
 
 /// How to drive Repodeck from inside a pane, written for agents.
 const GUIDE: &str = include_str!("cli-guide.md");
@@ -23,6 +29,21 @@ pub fn run() -> bool {
     let Some(verb) = (!args.is_empty()).then(|| args.remove(0)) else { return false };
     if verb == agent_launch::CODEX_VERB {
         codex_launch::run(args.into_iter());
+    }
+    match cli_commands::build(&verb, &mut args) {
+        Some(Ok(Request::Send(command))) => {
+            reply(&command);
+            return true;
+        }
+        Some(Ok(Request::Print(text))) => {
+            println!("{text}");
+            return true;
+        }
+        Some(Err(usage)) => {
+            eprintln!("{usage}");
+            std::process::exit(2);
+        }
+        None => {}
     }
     let command = match verb.as_str() {
         // Inside a Repodeck pane the socket files it against this pane even when stdout is
@@ -52,6 +73,7 @@ pub fn run() -> bool {
             format!("worktree\t{}\t{}\t{}", path.display(), clean(&task), this_pane())
         }
         "focus" => format!("focus {}", if args.is_empty() { this_pane() } else { clean(&args.join(" ")) }),
+        "list" if take_flag(&mut args, "--json") => "list\tjson".to_string(),
         "list" => "list".to_string(),
         "split" => {
             let run = args.iter().position(|a| a == "--").map(|i| args.split_off(i)[1..].join(" "));
@@ -98,7 +120,7 @@ pub fn run() -> bool {
 }
 
 fn reply(command: &str) {
-    match socket_api::send(command) {
+    match send_patiently(command) {
         Ok(reply) if reply.starts_with("error:") => {
             eprintln!("{reply}");
             std::process::exit(1);
@@ -112,6 +134,20 @@ fn reply(command: &str) {
             eprintln!("repodeck: {err}");
             std::process::exit(1);
         }
+    }
+}
+
+/// Sends `command`, asking again for a few seconds while the app is still reading what it needs
+/// (Claude's history is scanned in the background the first time a repo's sessions are asked for).
+fn send_patiently(command: &str) -> Result<String, String> {
+    let started = Instant::now();
+    loop {
+        let reply = socket_api::send(command)?;
+        let scanning = reply.starts_with("error:") && reply.ends_with("try again");
+        if !scanning || started.elapsed() > Duration::from_secs(5) {
+            return Ok(reply);
+        }
+        std::thread::sleep(Duration::from_millis(300));
     }
 }
 
@@ -152,24 +188,24 @@ fn turn_outcome(reply: &str) -> Option<&str> {
 }
 
 /// The pane this command runs in.
-fn this_pane() -> String {
+pub(crate) fn this_pane() -> String {
     std::env::var(socket_api::PANE_VAR).unwrap_or_default()
 }
 
 /// Control characters (newlines, tabs) become spaces: the socket protocol is one line, its
 /// fields split on tabs.
-fn clean(text: &str) -> String {
+pub(crate) fn clean(text: &str) -> String {
     text.chars().map(|c| if c.is_control() { ' ' } else { c }).collect()
 }
 
 /// Removes `--flag` from `args`; whether it was there.
-fn take_flag(args: &mut Vec<String>, flag: &str) -> bool {
+pub(crate) fn take_flag(args: &mut Vec<String>, flag: &str) -> bool {
     let at = args.iter().position(|a| a == flag);
     at.map(|i| args.remove(i)).is_some()
 }
 
 /// Removes `--name value` from `args` and returns the value.
-fn take_value(args: &mut Vec<String>, name: &str) -> Option<String> {
+pub(crate) fn take_value(args: &mut Vec<String>, name: &str) -> Option<String> {
     let at = args.iter().position(|a| a == name)?;
     args.remove(at);
     (at < args.len()).then(|| args.remove(at))

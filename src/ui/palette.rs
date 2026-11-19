@@ -4,7 +4,7 @@ use eframe::egui::{
 };
 
 use super::Action;
-use super::design::{self, RADIUS_ROW, ROW_HEIGHT, TEXT_BODY, TEXT_CAPTION, kbd};
+use super::design::{self, RADIUS_ROW, ROW_HEIGHT, TEXT_BODY, TEXT_CAPTION, TEXT_TITLE, kbd};
 use super::palette_items::{Item, Kind, items};
 use super::widgets::muted;
 use std::sync::Arc;
@@ -162,7 +162,7 @@ impl Palette {
                 .desired_width(f32::INFINITY)
                 .frame(Frame::NONE)
                 .margin(vec2(0.0, 0.0))
-                .font(FontId::proportional(15.0)),
+                .font(FontId::proportional(TEXT_TITLE)),
         );
         // Only until it has focus: asking every frame resets egui's key filter and cancels any
         // IME composition, so a composing input method (e.g. Vietnamese) lost its text each frame.

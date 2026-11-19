@@ -10,19 +10,30 @@ use crate::app::RepodeckApp;
 use crate::editor::{BarKind, EditorBar};
 use crate::finder_service::FolderRequest;
 use crate::library;
-use crate::model::{PaneKind, Project, Repo, SidePanel, Tab};
+use crate::model::{PaneKind, Repo, SidePanel, Tab};
 use crate::trash;
 use crate::ui::Action;
+use crate::ui::add_project_dialog::AddProject;
 use crate::ui::dialogs::Dialog;
 use crate::ui::palette::Palette;
 
 impl RepodeckApp {
     pub(crate) fn apply(&mut self, action: Action, ctx: &egui::Context) {
         match action {
-            Action::OpenNewProject => self.dialog = Some(Dialog::NewProject { name: String::new() }),
+            Action::OpenNewProject => {
+                // New repositories and clones are offered a place beside the repo in view.
+                let selected = self.state.selected_repo.and_then(|id| self.state.repo(id));
+                let parent = selected.and_then(|r| r.path.parent()).map(Path::to_path_buf);
+                self.dialog = Some(Dialog::AddProject(AddProject::new(parent)));
+            }
             Action::OpenRenameProject(id) => {
                 if let Some(p) = self.state.projects.iter().find(|p| p.id == id) {
                     self.dialog = Some(Dialog::RenameProject { id, name: p.name.clone() });
+                }
+            }
+            Action::OpenRenameRepo(id) => {
+                if let Some(repo) = self.state.repo(id) {
+                    self.dialog = Some(Dialog::RenameRepo { id, name: repo.name.clone() });
                 }
             }
             Action::OpenSettings => self.settings_open = !self.settings_open,
@@ -43,7 +54,6 @@ impl RepodeckApp {
                     p.collapsed = !p.collapsed;
                 }
             }
-            Action::SetSidebarView(view) => self.state.sidebar_view = view,
             Action::SwitchBranch { repo, branch, create } => {
                 let Some(path) = self.state.repo(repo).map(|r| r.path.clone()) else { return };
                 // Git sees those files clean, but saving them later would write this branch's
@@ -325,6 +335,7 @@ impl RepodeckApp {
                 repo.show_code(true);
                 (self.state.code_panel, self.state.show_code_panel) = (panel, true);
             }
+            Action::SetAgentsSort(sort) => self.state.agents_sort = sort,
             Action::ToggleIgnoredFiles => self.state.show_ignored_files = !self.state.show_ignored_files,
             Action::Split { dir, kind } => {
                 self.split(dir, kind);
@@ -352,7 +363,7 @@ impl RepodeckApp {
             }
             Action::OpenDiff { repo, path } => self.open_diff(repo, path),
             Action::SendToAgent { repo, text } => self.send_to_agent(repo, text),
-            Action::NewWorktreeAgent(repo) => self.create_worktree(repo, None, None, None),
+            Action::NewWorktreeAgent(repo) => self.create_worktree(repo, None, None, None, PaneKind::Agent),
             Action::OpenNewWorktree(repo) => {
                 self.dialog = Some(Dialog::NewWorktree { repo, branch: String::new() });
                 return;
@@ -461,13 +472,6 @@ impl RepodeckApp {
         }
         self.dirty = true;
         ctx.request_repaint();
-    }
-
-    pub(crate) fn create_project(&mut self, name: String) {
-        let project = Project::new(name);
-        let id = project.id;
-        self.state.projects.push(project);
-        self.add_repos(id);
     }
 
     fn add_repos(&mut self, project_id: Uuid) {

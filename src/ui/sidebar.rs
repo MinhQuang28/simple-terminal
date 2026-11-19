@@ -8,16 +8,16 @@ use super::agent_status;
 use super::agents_list;
 use super::chevron;
 use super::chrome::window_drag_area;
-use super::design::{TEXT_CAPTION, hairline};
+use super::design::{TEXT_BODY, TEXT_CAPTION, TEXT_SECONDARY, hairline};
 use super::repo_drag::{self, RepoSpan};
 use super::repo_indicators::busy_mark;
 use super::sidebar_rows::repo_block;
-use super::widgets::{glyph_button, icon_button, menu_icon, muted, right_aligned, row_sized};
+use super::widgets::{glyph_button, icon_button, menu_icon, muted, right_aligned, row_hovered, row_sized};
 use crate::agent_events::AgentStatus;
 use crate::agent_launch::Agent;
 use crate::file_drag::FileDrag;
 use crate::git_watcher::GitWatcher;
-use crate::model::{AppState, PaneKind, Project, Repo, SidebarView, Tab, now_secs};
+use crate::model::{AgentsSort, AppState, PaneKind, Project, Repo, Tab, now_secs};
 use crate::pr_status::PrWatcher;
 use crate::programs::{self, Program};
 use crate::session_pool::SessionPool;
@@ -26,6 +26,8 @@ use crate::tab_title;
 pub(super) const TRAFFIC_LIGHTS_HEIGHT: f32 = 34.0;
 /// Space on each side of the hairline that separates projects.
 const PROJECT_GAP: f32 = 10.0;
+/// Least room the agents strip keeps, and leaves the project tree above it.
+const AGENTS_MIN_HEIGHT: f32 = 96.0;
 
 pub fn show(
     ui: &mut Ui,
@@ -36,18 +38,14 @@ pub fn show(
     drag: &FileDrag,
     actions: &mut Vec<Action>,
 ) {
+    ui.visuals_mut().override_text_color = Some(state.settings.theme.sidebar_text());
     // Room for the macOS traffic lights, which float over the hidden titlebar.
     let strip = ui.max_rect().with_max_y(ui.max_rect().top() + TRAFFIC_LIGHTS_HEIGHT);
     window_drag_area(ui, strip);
     ui.add_space(TRAFFIC_LIGHTS_HEIGHT);
-    let view = state.sidebar_view;
     ui.horizontal(|ui| {
         ui.add_space(6.0);
-        ui.spacing_mut().item_spacing.x = 12.0;
-        view_switch(ui, "Projects", view, SidebarView::Projects, actions);
-        let agents = agents_list::count(state, pool);
-        let label = if agents > 0 { format!("Agents {agents}") } else { "Agents".into() };
-        view_switch(ui, &label, view, SidebarView::Agents, actions);
+        section_title(ui, "Projects");
         right_aligned(ui, |ui| {
             // Match the inner shrink of the rows below so the buttons line up.
             ui.add_space(6.0);
@@ -69,12 +67,8 @@ pub fn show(
         });
     });
 
-    if view == SidebarView::Agents {
-        ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
-            ui.spacing_mut().item_spacing.y = 0.0;
-            agents_list::show(ui, state, pool, actions);
-        });
-        return;
+    if agents_list::count(state, pool) > 0 {
+        agents_section(ui, state, pool, actions);
     }
 
     let mut spans: Vec<(Uuid, Rect)> = Vec::new();
@@ -104,7 +98,7 @@ pub fn show(
                 }
                 if project.repos.is_empty() {
                     let (response, ()) = row_sized(ui, false, 12.0, 28.0, |ui| {
-                        ui.label(RichText::new("Add repositories…").color(muted(ui)).size(13.0));
+                        ui.label(RichText::new("Add repositories…").color(muted(ui)).size(TEXT_BODY));
                     });
                     if response.clicked() {
                         actions.push(Action::AddRepos(project.id));
@@ -147,21 +141,59 @@ fn drop_target(ui: &Ui, drag: &FileDrag, spans: &[(Uuid, Rect)], actions: &mut V
     }
 }
 
-/// "Projects" / "Agents" header switch; the current view reads as a heading, the other muted.
-fn view_switch(ui: &mut Ui, text: &str, current: SidebarView, view: SidebarView, actions: &mut Vec<Action>) {
-    let color = if current == view { ui.visuals().text_color() } else { muted(ui) };
-    let label =
-        Label::new(RichText::new(text).color(color).size(12.5)).selectable(false).sense(Sense::click());
-    if ui.add(label).clicked() && current != view {
-        actions.push(Action::SetSidebarView(view));
+/// Every agent across projects, in a strip under the project tree that the user drags taller
+/// or shorter; absent while no agent runs.
+fn agents_section(ui: &mut Ui, state: &AppState, pool: &SessionPool, actions: &mut Vec<Action>) {
+    let tallest = (ui.available_height() - AGENTS_MIN_HEIGHT).max(AGENTS_MIN_HEIGHT);
+    Panel::bottom("sidebar-agents")
+        .resizable(true)
+        .show_separator_line(false)
+        .default_size(220.0)
+        .size_range(AGENTS_MIN_HEIGHT..=tallest)
+        .frame(Frame::new())
+        .show(ui, |ui| {
+            let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
+            ui.painter().hline(rect.x_range(), rect.center().y, Stroke::new(1.0, hairline(ui)));
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                ui.add_space(6.0);
+                section_title(ui, "Agents");
+                right_aligned(ui, |ui| {
+                    ui.add_space(6.0);
+                    menu_icon(ui, "≡", true, |ui| agents_sort_menu(ui, state.agents_sort, actions))
+                        .on_hover_text("Sort agents");
+                });
+            });
+            ui.add_space(4.0);
+            ScrollArea::vertical().id_salt("sidebar-agents-list").auto_shrink(false).show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                agents_list::show(ui, state, pool, actions);
+            });
+        });
+}
+
+fn agents_sort_menu(ui: &mut Ui, current: AgentsSort, actions: &mut Vec<Action>) {
+    ui.label(RichText::new("Sort agents").color(muted(ui)).size(TEXT_CAPTION));
+    for (sort, label) in [(AgentsSort::Priority, "Priority"), (AgentsSort::ByRepo, "Grouped by repo")] {
+        let mark = if sort == current { "✓" } else { "" };
+        if ui.add(Button::new(label).shortcut_text(mark)).clicked() {
+            actions.push(Action::SetAgentsSort(sort));
+        }
     }
+}
+
+/// Heading of a sidebar section.
+fn section_title(ui: &mut Ui, text: &str) {
+    let title = RichText::new(text).color(ui.visuals().text_color()).size(TEXT_SECONDARY);
+    ui.add(Label::new(title).selectable(false));
 }
 
 fn project_row(ui: &mut Ui, project: &Project, pool: &SessionPool, actions: &mut Vec<Action>) {
     let (response, ()) = row_sized(ui, false, 0.0, 26.0, |ui| {
+        let hovered = row_hovered(ui);
         right_aligned(ui, |ui| {
-            ui.spacing_mut().item_spacing.x = 10.0;
-            menu_icon(ui, "⋯", |ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            menu_icon(ui, "⋯", hovered, |ui| {
                 if ui.button("Add repositories…").clicked() {
                     actions.push(Action::AddRepos(project.id));
                 }
@@ -188,7 +220,7 @@ fn project_row(ui: &mut Ui, project: &Project, pool: &SessionPool, actions: &mut
             // A caption rather than a row, so it doesn't read as another repo.
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                 ui.add_space(6.0);
-                let color = ui.visuals().text_color().gamma_multiply(0.55);
+                let color = muted(ui);
                 let name =
                     RichText::new(project.name.to_uppercase()).strong().size(TEXT_CAPTION).color(color);
                 ui.add(Label::new(name).truncate().selectable(false));

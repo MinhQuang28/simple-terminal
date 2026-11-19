@@ -1,8 +1,9 @@
 use eframe::egui::{Align2, CornerRadius, FontId, Response, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
 
-use super::controls::{card, section_label, toggle};
-use crate::model::Settings;
+use super::controls::{card, section_label, segmented};
+use crate::model::{RepoLayout, Settings};
 use crate::theme::{Hex, Theme, presets};
+use crate::ui::design::TEXT_SECONDARY;
 
 const CARD_SIZE: [f32; 2] = [164.0, 92.0];
 const CUSTOM_NAME: &str = "Custom";
@@ -58,13 +59,10 @@ pub fn show(ui: &mut Ui, settings: &mut Settings) {
 
     section_label(ui, "Sidebar");
     card(ui, |card| {
-        card.row(
-            "Show branches",
-            "A row under each repo naming its branch. It's always in the header.",
-            |ui| {
-                toggle(ui, &mut settings.sidebar_branches);
-            },
-        );
+        card.row("Repository rows", "Branch under the name in one row, or on a row of its own.", |ui| {
+            let options = [(RepoLayout::Compact, "Compact"), (RepoLayout::Stacked, "Two rows")];
+            segmented(ui, &mut settings.repo_layout, &options);
+        });
     });
 
     section_label(ui, "Reset");
@@ -113,7 +111,7 @@ fn theme_card(ui: &mut Ui, theme: &Theme, selected: bool) -> Response {
         pos2(left, rect.bottom() - 10.0),
         Align2::LEFT_BOTTOM,
         &theme.name,
-        FontId::proportional(12.0),
+        FontId::proportional(TEXT_SECONDARY),
         theme.foreground.color(),
     );
 

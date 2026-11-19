@@ -1,4 +1,6 @@
 use eframe::egui::{self, Color32};
+
+use crate::contrast::{self, TEXT_MIN};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub use crate::theme_presets::presets;
@@ -38,6 +40,14 @@ impl<'de> Deserialize<'de> for Hex {
     }
 }
 
+/// Where the applied theme's success color is kept; egui's visuals have no slot for one.
+const SUCCESS: &str = "repodeck-success-color";
+
+/// The applied theme's [`Theme::success`].
+pub fn success(ctx: &egui::Context) -> Color32 {
+    ctx.data(|d| d.get_temp(egui::Id::unique(SUCCESS))).unwrap_or(Color32::from_rgb(0x4f, 0xb8, 0x6e))
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Theme {
     pub name: String,
@@ -65,9 +75,42 @@ impl Theme {
         self.ansi[4].color()
     }
 
-    /// Color for uncommitted-change counts.
+    /// Color for uncommitted-change counts and warnings.
     pub fn modified(&self) -> Color32 {
-        self.ansi[3].color()
+        self.readable(self.ansi[3])
+    }
+
+    /// Color for failures and anything about to be lost.
+    pub fn danger(&self) -> Color32 {
+        self.readable(self.ansi[1])
+    }
+
+    /// Color for healthy states: checks passing, permission granted, quota left.
+    pub fn success(&self) -> Color32 {
+        self.readable(self.ansi[2])
+    }
+
+    /// Secondary text: the foreground faded toward the background, but never past readable.
+    /// Themes whose own foreground is low in contrast keep three quarters of what they have.
+    pub fn muted(&self) -> Color32 {
+        let (bg, fg) = (self.background.color(), self.foreground.color());
+        let min = TEXT_MIN.min(contrast::ratio(fg, bg) * 0.75);
+        contrast::readable(fg.lerp_to_gamma(bg, 0.4), bg, fg, min)
+    }
+
+    /// A palette color as text on the chrome, nudged toward the foreground where the theme's own
+    /// is too faint on its background (a pastel green on a white theme).
+    fn readable(&self, color: Hex) -> Color32 {
+        let (bg, fg) = (self.background.color(), self.foreground.color());
+        contrast::readable(color.color(), bg, fg, TEXT_MIN.min(contrast::ratio(fg, bg)))
+    }
+
+    /// Text of the sidebar: the foreground pushed most of the way to white (black on a light
+    /// theme), so a list of names stands out from a soft terminal foreground instead of
+    /// matching it.
+    pub fn sidebar_text(&self) -> Color32 {
+        let target = if self.is_light() { Color32::BLACK } else { Color32::WHITE };
+        self.foreground.color().lerp_to_gamma(target, 0.6)
     }
 
     /// Chrome behind the rounded content card: a shade darker than the terminal background.
@@ -103,6 +146,9 @@ impl Theme {
         visuals.extreme_bg_color = self.background.color();
         visuals.faint_bg_color = shift(bg, 0.05);
         visuals.override_text_color = Some(fg);
+        visuals.weak_text_color = Some(self.muted());
+        visuals.error_fg_color = self.danger();
+        visuals.warn_fg_color = self.modified();
         visuals.hyperlink_color = self.accent();
         visuals.selection.bg_fill = self.selection.color();
         // Focused fields get a thin accent outline rather than a bright full-strength one.
@@ -125,6 +171,7 @@ impl Theme {
             widget.corner_radius = egui::CornerRadius::same(6);
         }
         ctx.set_visuals(visuals);
+        ctx.data_mut(|d| d.insert_temp(egui::Id::unique(SUCCESS), self.success()));
         ctx.all_styles_mut(|style| {
             style.spacing.button_padding = egui::vec2(10.0, 4.0);
             style.spacing.menu_margin = egui::Margin::same(6);
@@ -142,6 +189,18 @@ mod tests {
         assert_eq!(json, "\"#1a2b3c\"");
         assert_eq!(serde_json::from_str::<Hex>(&json).unwrap(), Hex::rgb(0x1a2b3c));
         assert!(serde_json::from_str::<Hex>("\"1a2b3c\"").is_err());
+    }
+
+    #[test]
+    fn every_preset_keeps_its_secondary_and_status_text_readable() {
+        for theme in presets() {
+            let (bg, fg) = (theme.background.color(), theme.foreground.color());
+            let own = contrast::ratio(fg, bg);
+            assert!(contrast::ratio(theme.muted(), bg) >= TEXT_MIN.min(own * 0.75) - 0.01, "{}", theme.name);
+            for color in [theme.danger(), theme.success(), theme.modified()] {
+                assert!(contrast::ratio(color, bg) >= TEXT_MIN.min(own) - 0.01, "{}", theme.name);
+            }
+        }
     }
 
     #[test]

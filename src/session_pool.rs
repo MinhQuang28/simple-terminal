@@ -135,11 +135,6 @@ impl SessionPool {
             .max_by_key(|s| s.reported_at)
     }
 
-    /// Number of agents stopped and waiting on the user.
-    pub fn attention_count(&self) -> usize {
-        self.sessions.values().filter(|s| s.agent_status().is_some_and(AgentStatus::needs_attention)).count()
-    }
-
     /// Kills the session so the next display spawns a fresh one.
     pub fn restart(&mut self, pane: Uuid) {
         self.sessions.remove(&pane);

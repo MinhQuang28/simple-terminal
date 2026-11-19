@@ -41,6 +41,16 @@ pub enum CursorShape {
     Underline,
 }
 
+/// How the sidebar lays a repo out.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RepoLayout {
+    /// One row: the name with its branch small under it.
+    #[default]
+    Compact,
+    /// The name on a row of its own, the branch and its activity on a row below.
+    Stacked,
+}
+
 /// A command offered in the new-tab menu: a dev server, another agent.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -97,8 +107,7 @@ pub struct Settings {
     pub external_editor: String,
     /// Wrap long lines in the built-in editor instead of scrolling sideways.
     pub editor_word_wrap: bool,
-    /// Give each repo in the sidebar a row naming its checked-out branch.
-    pub sidebar_branches: bool,
+    pub repo_layout: RepoLayout,
     /// Reusable prompts shown in the Library panel.
     pub prompts: Vec<Prompt>,
 }
@@ -130,7 +139,7 @@ impl Default for Settings {
             notification_sound: true,
             external_editor: String::new(),
             editor_word_wrap: false,
-            sidebar_branches: false,
+            repo_layout: RepoLayout::default(),
             prompts: Vec::new(),
         }
     }
@@ -147,12 +156,14 @@ pub enum SidePanel {
     Library,
 }
 
-/// What the sidebar lists: the project tree, or every agent across projects by urgency.
+/// How the sidebar's Agents strip orders its rows.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SidebarView {
+pub enum AgentsSort {
+    /// Sections by status: waiting on the user, working, idle.
     #[default]
-    Projects,
-    Agents,
+    Priority,
+    /// A section per repo.
+    ByRepo,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -167,10 +178,10 @@ pub struct AppState {
     pub show_code_panel: bool,
     /// List gitignored files in the Files panel too, muted.
     pub show_ignored_files: bool,
+    pub agents_sort: AgentsSort,
     /// Tabs closed most recently last, with the repo each came from, for "Reopen closed tab".
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub closed_tabs: Vec<(Uuid, Tab)>,
-    pub sidebar_view: SidebarView,
 }
 
 impl Default for AppState {
@@ -182,8 +193,8 @@ impl Default for AppState {
             code_panel: SidePanel::default(),
             show_code_panel: true,
             show_ignored_files: false,
+            agents_sort: AgentsSort::default(),
             closed_tabs: Vec::new(),
-            sidebar_view: SidebarView::default(),
         }
     }
 }
@@ -207,7 +218,7 @@ pub struct Repo {
     pub tabs: Vec<Tab>,
     #[serde(default)]
     pub active_tab: Option<Uuid>,
-    /// Hides the repo's terminal rows in the sidebar.
+    /// Hides the repo's worktree rows in the sidebar.
     #[serde(default)]
     pub tabs_collapsed: bool,
     /// Shell command run in the first terminal of each new worktree, e.g. `npm install`.

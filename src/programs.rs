@@ -15,6 +15,8 @@ const TABLE_JSON: &str = include_str!("../assets/icons/programs.json");
 
 /// How one program shows.
 pub struct Program {
+    /// The name people know it by; nothing lists it yet, the tests tell programs apart by it.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub name: String,
     /// The SVG, ready to draw: a tinted glyph is white, for the tile's `color` to tint.
     pub icon: Option<&'static [u8]>,

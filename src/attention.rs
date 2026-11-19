@@ -31,18 +31,3 @@ pub fn notify(title: &str, body: &str, sound: bool) {
         }
     });
 }
-
-/// Shows `count` on the Dock icon, or clears the badge for zero.
-#[cfg(target_os = "macos")]
-pub fn set_badge(count: usize) {
-    use objc2::MainThreadMarker;
-    use objc2_app_kit::NSApplication;
-    use objc2_foundation::NSString;
-
-    let Some(mtm) = MainThreadMarker::new() else { return };
-    let label = (count > 0).then(|| NSString::from_str(&count.to_string()));
-    NSApplication::sharedApplication(mtm).dockTile().setBadgeLabel(label.as_deref());
-}
-
-#[cfg(not(target_os = "macos"))]
-pub fn set_badge(_count: usize) {}

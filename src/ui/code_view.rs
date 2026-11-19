@@ -6,6 +6,7 @@ use eframe::egui::{Align, Button, Layout, RichText, Stroke, Ui, UiBuilder};
 
 use super::Action;
 use super::code_tabs;
+use super::design::{TEXT_BODY, TEXT_SECONDARY, TEXT_TITLE};
 use super::file_icon;
 use super::widgets::muted;
 use super::workspace::{self, Workspace, editor_id};
@@ -57,10 +58,10 @@ fn split_header(ui: &mut Ui, tab: &Tab, actions: &mut Vec<Action>) {
         ui.set_height(HEADER);
         ui.add_space(10.0);
         file_icon::show(ui, 14.0, &name, false, false);
-        ui.label(RichText::new(&name).size(12.5).color(muted(ui)));
+        ui.label(RichText::new(&name).size(TEXT_SECONDARY).color(muted(ui)));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.add_space(6.0);
-            let close = ui.add(Button::new(RichText::new("×").size(14.0).color(muted(ui))).frame(false));
+            let close = ui.add(Button::new(RichText::new("×").size(TEXT_BODY).color(muted(ui))).frame(false));
             if close.on_hover_text(crate::keymap_hint::with_hint("Close split", "editor.split")).clicked() {
                 actions.push(Action::ToggleSplitEditor);
             }
@@ -71,7 +72,7 @@ fn split_header(ui: &mut Ui, tab: &Tab, actions: &mut Vec<Action>) {
 fn empty(ui: &mut Ui) {
     ui.vertical_centered(|ui| {
         ui.add_space(ui.available_height() / 3.0);
-        ui.label(RichText::new("No file open").size(15.0).color(muted(ui)));
+        ui.label(RichText::new("No file open").size(TEXT_TITLE).color(muted(ui)));
         ui.add_space(6.0);
         let quick_open = crate::keymap_hint::hint("palette.files");
         let terminals = crate::keymap_hint::hint("view.terminals");
@@ -83,7 +84,7 @@ fn empty(ui: &mut Ui) {
             hints.push(format!("{terminals} for the terminals"));
         }
         for hint in hints {
-            ui.label(RichText::new(hint).size(12.5).color(muted(ui).gamma_multiply(0.8)));
+            ui.label(RichText::new(hint).size(TEXT_SECONDARY).color(muted(ui)));
         }
     });
 }

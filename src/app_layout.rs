@@ -86,7 +86,9 @@ impl RepodeckApp {
             .exact_size(28.0)
             .show_separator_line(false)
             .frame(Frame::new().fill(window_bg).inner_margin(Margin::symmetric(6, 0)))
-            .show(ui, |ui| chrome::status_bar(ui, &self.state, status.as_deref(), model.as_deref()));
+            .show(ui, |ui| {
+                chrome::status_bar(ui, &self.state, status.as_deref(), model.as_deref(), &self.pool, actions)
+            });
 
         CentralPanel::default().frame(Frame::new().fill(window_bg)).show(ui, |ui| {
             card.show(ui, |ui| {

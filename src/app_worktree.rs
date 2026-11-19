@@ -5,7 +5,7 @@ use crate::claude_history;
 use crate::model::PaneKind;
 use crate::ui::dialogs::Dialog;
 use crate::ui::worktree_dialogs::{OpenWorktree, RemoveWorktree};
-use crate::worktree;
+use crate::worktree::{self, BranchFate};
 use crate::{shell_env, socket_commands, worktree_branch_name};
 
 impl RepodeckApp {
@@ -15,13 +15,14 @@ impl RepodeckApp {
     /// one. The repo's Claude Code history is copied over so its conversations can be resumed
     /// there. Without a branch it makes a temporary one, renamed after Claude's first prompt.
     /// With a `task` (from the CLI) Claude starts on it in the background, leaving the view as is,
-    /// and reports to the `parent` pane that asked for it.
+    /// and reports to the `parent` pane that asked for it. Without one, it opens a `kind` tab.
     pub(crate) fn create_worktree(
         &mut self,
         repo_id: Uuid,
         branch: Option<&str>,
         task: Option<String>,
         parent: Option<Uuid>,
+        kind: PaneKind,
     ) {
         let Some(repo) = self.state.repo(repo_id) else { return };
         let (source, setup) = (repo.path.clone(), repo.setup_command.clone());
@@ -79,7 +80,7 @@ impl RepodeckApp {
                             }
                         }
                         None => {
-                            app.new_tab(id, PaneKind::Agent, None);
+                            app.new_tab(id, kind, None);
                         }
                     }
                     app.dirty = true;
@@ -170,7 +171,7 @@ impl RepodeckApp {
 
     /// Deletes the worktree (and optionally its merged branch) in the background; on success
     /// drops it from its project and closes its tabs.
-    pub(crate) fn remove_worktree(&mut self, repo_id: Uuid, delete_branch: bool, force: bool) {
+    pub(crate) fn remove_worktree(&mut self, repo_id: Uuid, branch_fate: BranchFate, force: bool) {
         let Some(repo) = self.state.repo(repo_id) else { return };
         let (path, name) = (repo.path.clone(), repo.name.clone());
         let Some(main) = worktree::main_repo(&path) else {
@@ -178,7 +179,7 @@ impl RepodeckApp {
             return;
         };
         self.spawn_job("worktree-remove", move || {
-            let result = worktree::remove(&main, &path, delete_branch, force);
+            let result = worktree::remove(&main, &path, branch_fate, force);
             Box::new(move |app: &mut RepodeckApp| {
                 if let Err(err) = &result {
                     app.report_error(&format!("Removing worktree {name}"), err.clone());

@@ -22,6 +22,19 @@ impl Drop for Transcript {
     }
 }
 
+fn title(path: &Path) -> Option<String> {
+    read_title(path).map(|title| title.text)
+}
+
+#[test]
+fn only_given_titles_count_as_named() {
+    let pasted = r#"{"type":"last-prompt","lastPrompt":"<pasted_content id=\"7\">\nlog\n</pasted_content>\nwhy does it fail"}"#;
+    let prompted = Transcript::new(&[pasted]);
+    assert_eq!(read_title(&prompted.0), Some(Title { text: "why does it fail".into(), named: false }));
+    let generated = Transcript::new(&[pasted, r#"{"type":"ai-title","aiTitle":"Debug Build"}"#]);
+    assert_eq!(read_title(&generated.0), Some(Title { text: "Debug Build".into(), named: true }));
+}
+
 #[test]
 fn prefers_generated_title_over_last_prompt() {
     let file = Transcript::new(&[
@@ -30,15 +43,15 @@ fn prefers_generated_title_over_last_prompt() {
         r#"{"type":"ai-title","aiTitle":"Build Test App"}"#,
         r#"{"type":"last-prompt","lastPrompt":"now add tests"}"#,
     ]);
-    assert_eq!(read_title(&file.0).as_deref(), Some("Build Test App"));
+    assert_eq!(title(&file.0).as_deref(), Some("Build Test App"));
 }
 
 #[test]
 fn falls_back_to_first_line_of_latest_prompt() {
     let file = Transcript::new(&[r#"{"type":"last-prompt","lastPrompt":"fix login\nwith details"}"#]);
-    assert_eq!(read_title(&file.0).as_deref(), Some("fix login"));
+    assert_eq!(title(&file.0).as_deref(), Some("fix login"));
     let empty = Transcript::new(&[r#"{"type":"mode","mode":"normal"}"#]);
-    assert_eq!(read_title(&empty.0), None);
+    assert_eq!(title(&empty.0), None);
 }
 
 #[test]
@@ -72,8 +85,8 @@ fn accepts_only_uuid_like_ids() {
 fn rereads_a_title_only_when_the_transcript_changes() {
     let file = Transcript::new(&[r#"{"type":"ai-title","aiTitle":"First"}"#]);
     let titles = Mutex::default();
-    assert_eq!(cached_title(&titles, file.0.clone(), (1, 1)).as_deref(), Some("First"));
+    assert_eq!(cached_title(&titles, file.0.clone(), (1, 1)).map(|t| t.text).as_deref(), Some("First"));
     std::fs::write(&file.0, "{\"type\":\"ai-title\",\"aiTitle\":\"Second\"}\n").unwrap();
-    assert_eq!(cached_title(&titles, file.0.clone(), (1, 1)).as_deref(), Some("First"));
-    assert_eq!(cached_title(&titles, file.0.clone(), (2, 1)).as_deref(), Some("Second"));
+    assert_eq!(cached_title(&titles, file.0.clone(), (1, 1)).map(|t| t.text).as_deref(), Some("First"));
+    assert_eq!(cached_title(&titles, file.0.clone(), (2, 1)).map(|t| t.text).as_deref(), Some("Second"));
 }

@@ -3,7 +3,7 @@ use std::path::Path;
 use eframe::egui::{Label, RichText, Ui};
 
 use super::Action;
-use super::design::{self, TEXT_CAPTION};
+use super::design::{self, TEXT_BODY, TEXT_CAPTION};
 use super::spinner::loading_spinner;
 use super::widgets::{glyph_button, muted, right_aligned, row, tag};
 use crate::library::{McpServer, Skill};
@@ -30,8 +30,12 @@ pub fn show(
     for (index, prompt) in settings.prompts.iter().enumerate() {
         let (response, ()) = row(ui, false, 0.0, |ui| {
             let first = prompt.text.lines().next().unwrap_or_default();
-            ui.add(Label::new(RichText::new(&prompt.name).size(13.0)).truncate().selectable(false));
-            ui.add(Label::new(RichText::new(first).size(11.5).color(muted(ui))).truncate().selectable(false));
+            ui.add(Label::new(RichText::new(&prompt.name).size(TEXT_BODY)).truncate().selectable(false));
+            ui.add(
+                Label::new(RichText::new(first).size(TEXT_CAPTION).color(muted(ui)))
+                    .truncate()
+                    .selectable(false),
+            );
         });
         if response.clicked() {
             actions.push(Action::InsertPrompt(prompt.text.clone()));
@@ -100,7 +104,9 @@ fn skill_row(ui: &mut Ui, repo: &Repo, skill: &Skill, actions: &mut Vec<Action>)
             actions.push(Action::SetSkillEnabled { file: skill.file.clone(), enabled });
         }
         let color = if skill.enabled { ui.visuals().text_color() } else { muted(ui) };
-        ui.add(Label::new(RichText::new(&skill.name).size(13.0).color(color)).truncate().selectable(false));
+        ui.add(
+            Label::new(RichText::new(&skill.name).size(TEXT_BODY).color(color)).truncate().selectable(false),
+        );
         if skill.project {
             tag(ui, "repo", muted(ui));
         }
@@ -117,9 +123,9 @@ fn skill_row(ui: &mut Ui, repo: &Repo, skill: &Skill, actions: &mut Vec<Action>)
 
 fn server_row(ui: &mut Ui, repo: &Repo, server: &McpServer, actions: &mut Vec<Action>) {
     let (response, ()) = row(ui, false, 0.0, |ui| {
-        ui.add(Label::new(RichText::new(&server.name).size(13.0)).truncate().selectable(false));
+        ui.add(Label::new(RichText::new(&server.name).size(TEXT_BODY)).truncate().selectable(false));
         ui.add(
-            Label::new(RichText::new(&server.target).size(11.5).color(muted(ui)))
+            Label::new(RichText::new(&server.target).size(TEXT_CAPTION).color(muted(ui)))
                 .truncate()
                 .selectable(false),
         );

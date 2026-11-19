@@ -43,7 +43,7 @@ pub fn show(ui: &mut Ui, repo: &Repo, history: &ClaudeHistory, actions: &mut Vec
                     ui,
                     |ui| {
                         for session in sessions.iter() {
-                            if session_row(ui, session, now).clicked() {
+                            if session_row(ui, session, open_in(repo, &session.id), now).clicked() {
                                 actions.push(Action::ResumeSession {
                                     repo: repo.id,
                                     session: session.id.clone(),
@@ -59,10 +59,32 @@ pub fn show(ui: &mut Ui, repo: &Repo, history: &ClaudeHistory, actions: &mut Vec
     });
 }
 
-/// Claude mark in a ring, the title, when it was last active, and dots for how long it ran.
-fn session_row(ui: &mut Ui, session: &Session, now: u64) -> Response {
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_HEIGHT), Sense::click());
-    if response.hovered() {
+/// Where a conversation is already showing, so picking it isn't a click that seems to do nothing.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Open {
+    No,
+    /// In a tab of the repo that isn't the one on screen.
+    Tab,
+    /// In the tab on screen.
+    Here,
+}
+
+fn open_in(repo: &Repo, session: &str) -> Open {
+    let holds = |tab: &&crate::model::Tab| tab.panes.iter().any(|p| p.session.as_deref() == Some(session));
+    match repo.tabs.iter().find(holds) {
+        Some(tab) if repo.active_tab == Some(tab.id) => Open::Here,
+        Some(_) => Open::Tab,
+        None => Open::No,
+    }
+}
+
+/// Claude mark in a ring, the title, when it was last active (or where it is open), and dots for
+/// how long it ran.
+fn session_row(ui: &mut Ui, session: &Session, open: Open, now: u64) -> Response {
+    // Already on screen: nothing to switch to, so the row is plain text rather than a dead button.
+    let sense = if open == Open::Here { Sense::hover() } else { Sense::click() };
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_HEIGHT), sense);
+    if open != Open::Here && response.hovered() {
         ui.painter().rect_filled(
             rect,
             CornerRadius::same(RADIUS_ROW),
@@ -78,12 +100,16 @@ fn session_row(ui: &mut Ui, session: &Session, now: u64) -> Response {
         ui.new_child(UiBuilder::new().max_rect(text_rect).layout(Layout::right_to_left(Align::Center)));
     child.spacing_mut().item_spacing.x = 10.0;
     activity_dots(&mut child, session.size);
-    let when = match ago(session.modified, now).as_str() {
-        "" => String::new(),
-        "now" => "just now".into(),
-        when => format!("{when} ago"),
+    let when = match (open, ago(session.modified, now).as_str()) {
+        (Open::Here, _) => "open here".into(),
+        (Open::Tab, _) => "go to tab".into(),
+        (Open::No, "") => String::new(),
+        (Open::No, "now") => "just now".into(),
+        (Open::No, when) => format!("{when} ago"),
     };
-    child.add(Label::new(RichText::new(when).size(TEXT_SECONDARY).color(muted(&child))).selectable(false));
+    // Only the jump to another tab reads as a link; the others are status.
+    let color = if open == Open::Tab { child.visuals().hyperlink_color } else { muted(&child) };
+    child.add(Label::new(RichText::new(when).size(TEXT_SECONDARY).color(color)).selectable(false));
     // The title takes what's left, from the left edge, truncated with an ellipsis.
     child.with_layout(Layout::left_to_right(Align::Center), |ui| {
         ui.add(Label::new(RichText::new(&session.title).size(TEXT_BODY)).truncate().selectable(false));

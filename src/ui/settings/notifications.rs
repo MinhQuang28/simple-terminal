@@ -4,8 +4,9 @@ use super::controls::{card, section_label, toggle};
 use crate::attention;
 use crate::model::Settings;
 use crate::notification_permission::{self, NotificationPermission, Permission};
+use crate::ui::design;
 use crate::ui::dialog_kit::{Tone, button};
-use crate::ui::widgets::{GOOD, muted};
+use crate::ui::widgets::muted;
 
 pub fn show(ui: &mut Ui, settings: &mut Settings, permission: &NotificationPermission) {
     section_label(ui, "System notifications");
@@ -43,7 +44,7 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, permission: &NotificationPermi
                     if button(ui, "System Settings…", Tone::Secondary).clicked() {
                         notification_permission::open_system_settings();
                     }
-                    ui.label(RichText::new("● Allowed").color(GOOD));
+                    ui.label(RichText::new("● Allowed").color(design::success(ui)));
                 }
                 Some(Permission::Denied) => {
                     if button(ui, "Open System Settings…", Tone::Primary).clicked() {
@@ -62,7 +63,7 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, permission: &NotificationPermi
         if let Some(status) = status.filter(|s| s.permission == Permission::Allowed) {
             card.row("Sound allowed by macOS", "The sound switch for Repodeck in System Settings.", |ui| {
                 let (text, color) = if status.sound_allowed {
-                    ("● On", GOOD)
+                    ("● On", design::success(ui))
                 } else {
                     ("● Off", ui.visuals().error_fg_color)
                 };

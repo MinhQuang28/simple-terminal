@@ -74,7 +74,10 @@ pub fn env(shell_program: &str, events: &Path) -> Vec<(String, String)> {
         return env;
     }
     let Some(dir) = zsh_dir() else { return env };
-    let user_zdotdir = std::env::var_os("ZDOTDIR")
+    // Started from a pane of another Repodeck, `ZDOTDIR` may still name that one's wrapper
+    // files, which would then load themselves without end; it says where the user's own are.
+    let user_zdotdir = std::env::var_os("REPODECK_USER_ZDOTDIR")
+        .or_else(|| std::env::var_os("ZDOTDIR"))
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(PathBuf::from))
         .unwrap_or_default();

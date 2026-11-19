@@ -6,7 +6,9 @@ mod agent_events;
 mod agent_launch;
 mod app;
 mod app_actions;
+mod app_add_project;
 mod app_code;
+mod app_commands;
 mod app_files;
 mod app_layout;
 #[cfg(target_os = "macos")]
@@ -22,11 +24,14 @@ mod app_worktree;
 mod attention;
 mod bench;
 mod claude_history;
+mod claude_skill;
 mod claude_status_line;
 mod cli;
+mod cli_commands;
 mod clipboard_image;
 mod code_format;
 mod codex_launch;
+mod contrast;
 mod definitions;
 mod diff;
 mod editor;
@@ -58,13 +63,18 @@ mod pane_layout;
 mod pr_status;
 mod program_icon_files;
 mod programs;
+mod prompt_text;
 mod repo_view;
 mod session_pool;
 mod shell_env;
 mod shell_events;
 mod shell_integration;
+mod socket_agents;
 mod socket_api;
 mod socket_commands;
+mod socket_control;
+mod socket_queries;
+mod socket_worktree;
 mod store;
 mod symbol_fallback_fonts;
 mod tab_title;
@@ -107,6 +117,7 @@ fn main() -> eframe::Result {
     }
     drop_parent_agent_env();
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    claude_skill::install();
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()

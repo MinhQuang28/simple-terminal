@@ -11,6 +11,7 @@ use eframe::egui::{
 
 use super::Action;
 use super::chevron;
+use super::design::{TEXT_BODY, TEXT_CAPTION, TEXT_MICRO, TEXT_SECONDARY};
 use super::file_icon;
 use super::widgets::{accent, muted, row_sized};
 use crate::model::Repo;
@@ -40,7 +41,7 @@ pub fn show(ui: &mut Ui, search: &mut TextSearch, repo: &Repo, actions: &mut Vec
         (None, Some(results)) => Some(RichText::new(summary(results)).color(muted(ui))),
     };
     if let Some(status) = status {
-        ui.add(Label::new(status.size(11.5)).wrap());
+        ui.add(Label::new(status.size(TEXT_CAPTION)).wrap());
         ui.add_space(4.0);
     }
     let Some(results) = search.results.clone().filter(|_| search.error.is_none()) else { return };
@@ -119,7 +120,7 @@ fn query_row(ui: &mut Ui, search: &mut TextSearch) {
     let edit = TextEdit::singleline(&mut search.query.text)
         .id(id)
         .hint_text("Search")
-        .font(FontId::proportional(13.5))
+        .font(FontId::proportional(TEXT_BODY))
         .frame(Frame::NONE.inner_margin(Margin::symmetric(10, 0)))
         .desired_width(field.width());
     let response = field_ui.add(edit);
@@ -154,7 +155,7 @@ fn toggle(ui: &mut Ui, label: &str, hint: &str, on: &mut bool) {
     } else if response.hovered() {
         ui.painter().rect_filled(rect, radius, ui.visuals().widgets.hovered.weak_bg_fill);
     }
-    let galley = ui.painter().layout_no_wrap(label.into(), FontId::proportional(12.5), color);
+    let galley = ui.painter().layout_no_wrap(label.into(), FontId::proportional(TEXT_SECONDARY), color);
     ui.painter().galley(rect.center() - galley.size() / 2.0, galley, color);
     if response.on_hover_text(hint).clicked() {
         *on = !*on;
@@ -183,12 +184,12 @@ fn file_row(ui: &mut Ui, repo: &Repo, path: &Path, hits: usize, folded: bool) ->
         chevron::show(ui, !folded);
         file_icon::show(ui, 15.0, &name, false, false);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let count = RichText::new(hits.to_string()).size(10.5).color(muted(ui));
+            let count = RichText::new(hits.to_string()).size(TEXT_MICRO).color(muted(ui));
             ui.label(count);
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                ui.add(Label::new(RichText::new(&name).size(12.5)).truncate().selectable(false));
+                ui.add(Label::new(RichText::new(&name).size(TEXT_SECONDARY)).truncate().selectable(false));
                 if let Some(folder) = folder.filter(|f| !f.is_empty()) {
-                    let folder = RichText::new(folder).size(11.0).color(muted(ui));
+                    let folder = RichText::new(folder).size(TEXT_CAPTION).color(muted(ui));
                     ui.add(Label::new(folder).truncate().selectable(false));
                 }
             });
@@ -200,7 +201,7 @@ fn file_row(ui: &mut Ui, repo: &Repo, path: &Path, hits: usize, folded: bool) ->
 /// A matching line, its matches highlighted, indented under its file.
 fn hit_row(ui: &mut Ui, hit: &Hit) -> eframe::egui::Response {
     let (response, ()) = row_sized(ui, false, 22.0, ROW_HEIGHT, |ui| {
-        let font = FontId::proportional(12.5);
+        let font = FontId::proportional(TEXT_SECONDARY);
         let plain = TextFormat::simple(font.clone(), ui.visuals().text_color().gamma_multiply(0.8));
         let found = TextFormat {
             background: accent(ui).gamma_multiply(0.35),

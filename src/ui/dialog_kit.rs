@@ -6,7 +6,7 @@ use eframe::egui::{
     Sense, Stroke, StrokeKind, TextEdit, Ui, vec2,
 };
 
-use super::design::{self, TEXT_BODY, TEXT_SECONDARY, TEXT_TITLE};
+use super::design::{self, RADIUS_ROW, TEXT_BODY, TEXT_SECONDARY, TEXT_TITLE};
 use super::widgets::{accent, muted};
 
 const WIDTH: f32 = 400.0;
@@ -106,7 +106,7 @@ pub fn footer(ui: &mut Ui, actions: &[(&str, Tone)], enter_submits: bool) -> Foo
 pub fn button(ui: &mut Ui, label: &str, tone: Tone) -> Response {
     let visuals = ui.visuals().clone();
     let (fill, text, stroke) = match tone {
-        Tone::Primary => (accent(ui), on_color(accent(ui)), Stroke::NONE),
+        Tone::Primary => (accent(ui), design::on_color(accent(ui)), Stroke::NONE),
         Tone::Destructive => (DESTRUCTIVE, Color32::WHITE, Stroke::NONE),
         Tone::Secondary => (
             visuals.widgets.inactive.weak_bg_fill,
@@ -114,7 +114,7 @@ pub fn button(ui: &mut Ui, label: &str, tone: Tone) -> Response {
             Stroke::new(1.0, visuals.widgets.noninteractive.bg_stroke.color),
         ),
     };
-    let galley = ui.painter().layout_no_wrap(label.to_string(), FontId::proportional(13.0), text);
+    let galley = ui.painter().layout_no_wrap(label.to_string(), FontId::proportional(TEXT_BODY), text);
     let size = vec2(galley.size().x + 28.0, BUTTON_HEIGHT);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let fill = if response.is_pointer_button_down_on() {
@@ -124,25 +124,8 @@ pub fn button(ui: &mut Ui, label: &str, tone: Tone) -> Response {
     } else {
         fill
     };
-    ui.painter().rect(rect, CornerRadius::same(7), fill, stroke, StrokeKind::Inside);
+    ui.painter().rect(rect, CornerRadius::same(RADIUS_ROW), fill, stroke, StrokeKind::Inside);
+    design::focus_ring(ui, &response, RADIUS_ROW);
     ui.painter().galley(rect.center() - galley.size() / 2.0, galley, text);
     response.on_hover_cursor(eframe::egui::CursorIcon::PointingHand)
-}
-
-/// Black or white, whichever reads better on `fill`.
-fn on_color(fill: Color32) -> Color32 {
-    let [r, g, b, _] = fill.to_array().map(f32::from);
-    let luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
-    if luminance > 0.6 { Color32::from_rgb(0x15, 0x15, 0x15) } else { Color32::WHITE }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn text_on_light_accents_is_dark_and_on_dark_accents_is_white() {
-        assert_eq!(on_color(Color32::from_rgb(0xf5, 0xc5, 0x42)), Color32::from_rgb(0x15, 0x15, 0x15));
-        assert_eq!(on_color(Color32::from_rgb(0x2b, 0x5c, 0xd6)), Color32::WHITE);
-    }
 }

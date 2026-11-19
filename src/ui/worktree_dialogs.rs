@@ -2,15 +2,15 @@
 
 use std::path::{Path, PathBuf};
 
-use eframe::egui::{Checkbox, Color32, Key, Label, RichText, ScrollArea, Ui};
+use eframe::egui::{Checkbox, Key, Label, RichText, ScrollArea, Ui};
 use uuid::Uuid;
 
+use super::design::{self, TEXT_BODY, TEXT_CAPTION};
 use super::dialog_kit::{self as kit, Tone};
 use super::dialogs::DialogResult;
 use super::widgets::{accent, muted, right_aligned, row_sized};
 use crate::worktree::Checkout;
 
-const WARNING: Color32 = Color32::from_rgb(0xe4, 0x67, 0x6b);
 const ROW_HEIGHT: f32 = 42.0;
 
 pub struct RemoveWorktree {
@@ -36,11 +36,13 @@ impl RemoveWorktree {
             |n: usize, one: &str, many: &str| if n == 1 { one.to_string() } else { format!("{n} {many}") };
         if self.changes > 0 {
             let what = plural(self.changes, "1 uncommitted change", "uncommitted changes");
-            ui.label(RichText::new(format!("{what} will be lost.")).color(WARNING));
+            ui.label(RichText::new(format!("{what} will be lost.")).color(design::danger(ui)));
         }
         if self.stray_commits > 0 {
             let what = plural(self.stray_commits as usize, "1 commit is", "commits are");
-            ui.label(RichText::new(format!("{what} on no branch and will be lost.")).color(WARNING));
+            ui.label(
+                RichText::new(format!("{what} on no branch and will be lost.")).color(design::danger(ui)),
+            );
         }
         if !self.risky() {
             kit::description(ui, "Nothing uncommitted here: no work is lost.");
@@ -132,17 +134,17 @@ fn checkout_row(ui: &mut Ui, checkout: &Checkout, open: bool, selected: bool) ->
         right_aligned(ui, |ui| {
             ui.add_space(4.0);
             if open {
-                ui.label(RichText::new("open").size(11.0).color(accent(ui)));
+                ui.label(RichText::new("open").size(TEXT_CAPTION).color(accent(ui)));
             }
             if checkout.main {
-                ui.label(RichText::new("main checkout").size(11.0).color(muted(ui)));
+                ui.label(RichText::new("main checkout").size(TEXT_CAPTION).color(muted(ui)));
             }
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 1.0;
                 ui.add_space(5.0);
                 let branch = checkout.branch.as_deref().unwrap_or("detached");
-                ui.add(Label::new(RichText::new(branch).size(13.0)).truncate().selectable(false));
-                let folder = RichText::new(home_relative(&checkout.path)).size(11.5).color(muted(ui));
+                ui.add(Label::new(RichText::new(branch).size(TEXT_BODY)).truncate().selectable(false));
+                let folder = RichText::new(home_relative(&checkout.path)).size(TEXT_CAPTION).color(muted(ui));
                 ui.add(Label::new(folder).truncate().selectable(false));
             });
         });

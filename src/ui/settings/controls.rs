@@ -3,6 +3,7 @@ use eframe::egui::{
 };
 
 use super::fields::steady_hover;
+use crate::ui::design::{RADIUS_ROW, TEXT_BODY, TEXT_CAPTION, TEXT_SECONDARY};
 use crate::ui::widgets::muted;
 
 /// Space above and below each row's content.
@@ -17,7 +18,7 @@ const CARD_PADDING_X: i8 = 20;
 /// Uppercase caption above a card, e.g. "THEME".
 pub fn section_label(ui: &mut Ui, text: &str) {
     ui.add_space(22.0);
-    ui.label(RichText::new(text.to_uppercase()).size(11.5).strong().color(muted(ui)));
+    ui.label(RichText::new(text.to_uppercase()).size(TEXT_CAPTION).strong().color(muted(ui)));
     ui.add_space(8.0);
 }
 
@@ -40,11 +41,13 @@ impl Card<'_> {
                     vec2(text_width, CONTROL_BAND),
                     Layout::left_to_right(Align::Center),
                     |ui| {
-                        ui.label(RichText::new(title).size(14.0).color(ui.visuals().strong_text_color()));
+                        ui.label(
+                            RichText::new(title).size(TEXT_BODY).color(ui.visuals().strong_text_color()),
+                        );
                     },
                 );
                 if !description.is_empty() {
-                    ui.label(RichText::new(description).size(12.5).color(muted(ui)));
+                    ui.label(RichText::new(description).size(TEXT_SECONDARY).color(muted(ui)));
                 }
             });
             let control_width = ui.available_width();
@@ -100,7 +103,7 @@ pub fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T,
     let mut changed = false;
     Frame::new()
         .stroke(Stroke::new(1.0, border(ui)))
-        .corner_radius(CornerRadius::same(8))
+        .corner_radius(CornerRadius::same(RADIUS_ROW))
         .inner_margin(Margin::same(3))
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing.x = 2.0;

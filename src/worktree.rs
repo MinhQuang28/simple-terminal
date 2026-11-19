@@ -78,6 +78,13 @@ pub fn is_merged(path: &Path) -> bool {
     if tip("HEAD").is_none_or(|head| Some(head) == tip(&default)) {
         return false;
     }
+    is_contained(path)
+}
+
+/// Whether the default branch has every commit of `HEAD`, so removing the branch loses nothing:
+/// a merged branch, or one that never left the default tip. A squash-merged branch doesn't count.
+pub fn is_contained(path: &Path) -> bool {
+    let Some(default) = default_branch(path) else { return false };
     Command::new("git")
         .arg("-C")
         .arg(path)
@@ -128,20 +135,35 @@ pub fn stray_commits(path: &Path) -> u32 {
         .unwrap_or(0)
 }
 
-/// Deletes the worktree at `path` from `main`, then its branch when asked and fully merged.
+/// Deletes the worktree at `path` from `main`, then its branch as `branch_fate` says.
 /// Without `force` git refuses a worktree with modified or untracked files.
-pub fn remove(main: &Path, path: &Path, delete_branch: bool, force: bool) -> Result<(), String> {
+pub fn remove(main: &Path, path: &Path, branch_fate: BranchFate, force: bool) -> Result<(), String> {
     let branch = git(path, &["rev-parse", "--abbrev-ref", "HEAD"]).map(|b| b.trim().to_string());
     let path = path.to_string_lossy();
     let mut args = vec!["worktree", "remove"];
     args.extend(force.then_some("--force"));
     args.push(&path);
     run(main, &args)?;
-    match branch.filter(|b| delete_branch && b != "HEAD") {
-        Some(branch) => run(main, &["branch", "-d", &branch])
+    let flag = match branch_fate {
+        BranchFate::Keep => return Ok(()),
+        BranchFate::DeleteIfMerged => "-d",
+        BranchFate::Delete => "-D",
+    };
+    match branch.filter(|b| b != "HEAD") {
+        Some(branch) => run(main, &["branch", flag, &branch])
             .map_err(|err| format!("worktree removed, but branch {branch} was kept: {err}")),
         None => Ok(()),
     }
+}
+
+/// What becomes of the branch a removed worktree had checked out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BranchFate {
+    Keep,
+    /// `git branch -d`: git keeps a branch whose commits aren't merged.
+    DeleteIfMerged,
+    /// `git branch -D`: unmerged commits go with it.
+    Delete,
 }
 
 fn git(path: &Path, args: &[&str]) -> Option<String> {
@@ -196,9 +218,9 @@ mod tests {
         assert_eq!(stray_commits(&linked), 0);
 
         fs::write(linked.join("new.txt"), "x").unwrap();
-        assert!(remove(&main, &linked, false, false).is_err(), "git keeps a dirty worktree");
+        assert!(remove(&main, &linked, BranchFate::Keep, false).is_err(), "git keeps a dirty worktree");
         assert!(linked.exists());
-        remove(&main, &linked, false, true).unwrap();
+        remove(&main, &linked, BranchFate::Keep, true).unwrap();
         assert!(!linked.exists());
         fs::remove_dir_all(root).unwrap();
     }

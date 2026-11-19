@@ -5,6 +5,7 @@ use eframe::egui::{
 };
 
 use super::Action;
+use super::design::{self, RADIUS_ROW, TEXT_BODY};
 use super::widgets::accent;
 use crate::git_status::GitStatus;
 use crate::git_sync::Sync;
@@ -87,12 +88,13 @@ pub fn show(ui: &mut Ui, repo: &Repo, status: &GitStatus, actions: &mut Vec<Acti
 /// `enabled`.
 fn wide_button(ui: &mut Ui, label: &str, primary: bool, enabled: bool) -> Response {
     let fill = if primary { accent(ui) } else { ui.visuals().widgets.inactive.bg_fill };
-    let color = if primary { Color32::WHITE } else { ui.visuals().text_color() };
+    let color = if primary { design::on_color(fill) } else { ui.visuals().text_color() };
     let dim = if enabled { 1.0 } else { 0.45 };
     let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
     let lit = if enabled && response.hovered() { fill.lerp_to_gamma(Color32::WHITE, 0.08) } else { fill };
-    ui.painter().rect_filled(rect, CornerRadius::same(4), lit.gamma_multiply(dim));
-    let font = FontId::proportional(13.0);
+    ui.painter().rect_filled(rect, CornerRadius::same(RADIUS_ROW), lit.gamma_multiply(dim));
+    design::focus_ring(ui, &response, RADIUS_ROW);
+    let font = FontId::proportional(TEXT_BODY);
     ui.painter().text(rect.center(), Align2::CENTER_CENTER, label, font, color.gamma_multiply(dim));
     response
 }

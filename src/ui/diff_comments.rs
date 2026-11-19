@@ -8,6 +8,7 @@ use eframe::egui::{
 use uuid::Uuid;
 
 use super::Action;
+use super::design::{TEXT_BODY, TEXT_CAPTION, TEXT_SECONDARY};
 use super::dialog_kit::{self as kit, Tone};
 use super::widgets::{AGENT, accent, muted, right_aligned};
 
@@ -37,7 +38,13 @@ pub fn gutter(ui: &mut Ui, galley: &Arc<Galley>, file: &Path, comments: &mut Vec
     let mut editing: Option<usize> = ui.data(|d| d.get_temp(editing_id));
     if let Some(line) = hovered.filter(|l| *l < rows) {
         if editing != Some(line) && !comments.iter().any(|c| c.line == line) {
-            painter.text(center_of(line), Align2::CENTER_CENTER, "+", FontId::proportional(14.0), accent(ui));
+            painter.text(
+                center_of(line),
+                Align2::CENTER_CENTER,
+                "+",
+                FontId::proportional(TEXT_BODY),
+                accent(ui),
+            );
         }
         if response.clicked() {
             editing = Some(line);
@@ -56,7 +63,7 @@ pub fn gutter(ui: &mut Ui, galley: &Arc<Galley>, file: &Path, comments: &mut Vec
         if let Some(index) = existing.filter(|_| text.is_empty()) {
             text = comments[index].text.clone();
         }
-        ui.label(RichText::new(format!("Comment on line {}", line + 1)).color(muted(ui)).size(11.5));
+        ui.label(RichText::new(format!("Comment on line {}", line + 1)).color(muted(ui)).size(TEXT_CAPTION));
         let edit = ui.add(TextEdit::multiline(&mut text).desired_rows(3).desired_width(f32::INFINITY));
         // Not every frame: that resets egui's key filter and cancels IME composition each frame.
         if !edit.has_focus() {
@@ -106,7 +113,7 @@ pub fn list(
         ui.horizontal(|ui| {
             let count = comments.len();
             let label = if count == 1 { "1 comment".to_string() } else { format!("{count} comments") };
-            ui.label(RichText::new(label).strong().size(12.5));
+            ui.label(RichText::new(label).strong().size(TEXT_SECONDARY));
             right_aligned(ui, |ui| {
                 if ui.button("Send comments to Claude").clicked() {
                     actions.push(Action::SendToAgent { repo, text: prompt(relative, &lines, comments) });
@@ -130,9 +137,10 @@ pub fn list(
                     ui.spacing_mut().item_spacing.y = 0.0;
                     let head = format!("L{} · {excerpt}", comment.line + 1);
                     ui.add(
-                        Label::new(RichText::new(head).monospace().size(11.5).color(muted(ui))).truncate(),
+                        Label::new(RichText::new(head).monospace().size(TEXT_CAPTION).color(muted(ui)))
+                            .truncate(),
                     );
-                    ui.add(Label::new(RichText::new(&comment.text).size(12.5)).truncate());
+                    ui.add(Label::new(RichText::new(&comment.text).size(TEXT_SECONDARY)).truncate());
                 });
             });
         }

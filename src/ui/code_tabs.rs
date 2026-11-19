@@ -9,6 +9,7 @@ use eframe::egui::{
 };
 
 use super::Action;
+use super::design::TEXT_BODY;
 use super::file_icon;
 use super::widgets::{accent, muted};
 use crate::editor::Buffers;
@@ -76,7 +77,7 @@ fn tab_item(ui: &mut Ui, tab: &Tab, active: bool, dirty: bool) -> (Response, boo
     let icon = file_icons::for_file(&file_name);
     let name = if tab.diff.is_some() { format!("Δ {file_name}") } else { file_name };
     let text_color = if active { ui.visuals().strong_text_color() } else { muted(ui) };
-    let name_galley = ui.painter().layout_no_wrap(name, FontId::proportional(13.0), text_color);
+    let name_galley = ui.painter().layout_no_wrap(name, FontId::proportional(TEXT_BODY), text_color);
     let icon_width = ICON_SIZE + 6.0;
     let width = 12.0 + icon_width + name_galley.size().x + 10.0 + CLOSE_SIZE + 10.0;
     let (rect, response) = ui.allocate_exact_size(vec2(width, HEIGHT), Sense::click_and_drag());
@@ -106,7 +107,13 @@ fn tab_item(ui: &mut Ui, tab: &Tab, active: bool, dirty: bool) -> (Response, boo
         if over_close {
             painter.rect_filled(close_rect, 4.0, visuals.widgets.active.weak_bg_fill);
         }
-        painter.text(close_rect.center(), Align2::CENTER_CENTER, "×", FontId::proportional(14.0), muted(ui));
+        painter.text(
+            close_rect.center(),
+            Align2::CENTER_CENTER,
+            "×",
+            FontId::proportional(TEXT_BODY),
+            muted(ui),
+        );
     }
     let close = response.clicked() && over_close;
     let response = match path {

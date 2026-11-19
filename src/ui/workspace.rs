@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use super::Action;
 use super::code_view;
+use super::design::TEXT_TITLE;
 use super::diff_view;
 use super::pane_chrome::{exited_overlay, pane_menu};
 use super::tab_bar;
@@ -252,7 +253,7 @@ fn panes(ui: &mut Ui, ws: &mut Workspace<'_>, repo: &Repo, tab: &Tab) {
             } else {
                 crate::keymap_hint::with_hint("Close pane", "pane.close")
             };
-            let button = Button::new(RichText::new(label).size(15.0)).corner_radius(4.0);
+            let button = Button::new(RichText::new(label).size(TEXT_TITLE)).corner_radius(4.0);
             if ui.put(button_rect, button).on_hover_text(hint).clicked() {
                 actions.push(if zoomed.is_some() {
                     Action::ToggleZoom

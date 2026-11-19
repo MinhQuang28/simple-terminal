@@ -7,6 +7,7 @@ use eframe::egui::load::TexturePoll;
 use eframe::egui::{Color32, FontId, Image, Rect, Sense, Ui, pos2, vec2};
 
 use super::Action;
+use super::design::{TEXT_BADGE, on_color};
 use super::widgets::{accent, muted};
 use crate::model::SidePanel;
 
@@ -74,11 +75,12 @@ fn paint(ui: &Ui, rect: Rect, index: usize, name: &str, color: Color32) {
 /// A round count, as VS Code badges its Source Control icon; "99+" past two digits.
 fn badge(ui: &Ui, center: eframe::egui::Pos2, count: usize) {
     let text = if count > 99 { "99+".to_string() } else { count.to_string() };
-    let galley = ui.painter().layout_no_wrap(text, FontId::proportional(9.0), Color32::WHITE);
+    let ink = on_color(accent(ui));
+    let galley = ui.painter().layout_no_wrap(text, FontId::proportional(TEXT_BADGE), ink);
     let width = (galley.size().x + 6.0).max(14.0);
     let rect = Rect::from_center_size(center, vec2(width, 14.0));
     ui.painter().rect_filled(rect, 7.0, accent(ui));
-    ui.painter().galley(rect.center() - galley.size() / 2.0, galley, Color32::WHITE);
+    ui.painter().galley(rect.center() - galley.size() / 2.0, galley, ink);
 }
 
 #[cfg(test)]

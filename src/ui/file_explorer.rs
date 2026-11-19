@@ -6,6 +6,7 @@ use eframe::egui::{Label, RichText, Ui};
 
 use super::Action;
 use super::chevron;
+use super::design::TEXT_BODY;
 use super::file_icon;
 use super::widgets::{muted, row_sized};
 use crate::file_tree::{Entry, FileTree};
@@ -37,7 +38,7 @@ pub fn directory(
                 ui.add_space(chevron::SIZE);
             }
             file_icon::show(ui, ICON_SIZE, &entry.name, entry.is_dir, expanded);
-            let mut name = RichText::new(&entry.name).size(13.0);
+            let mut name = RichText::new(&entry.name).size(TEXT_BODY);
             if entry.ignored {
                 name = name.color(muted(ui));
             }

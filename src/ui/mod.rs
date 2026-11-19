@@ -1,4 +1,5 @@
 mod activity_bar;
+pub mod add_project_dialog;
 pub mod agent_status;
 mod agents_list;
 mod branch_menu;
@@ -31,8 +32,9 @@ mod repo_indicators;
 mod search_panel;
 pub mod settings;
 pub mod sidebar;
+mod sidebar_repo_menus;
 mod sidebar_rows;
-mod sidebar_tree_rows;
+mod sidebar_worktree_rows;
 pub(crate) mod spinner;
 mod tab_bar;
 pub mod toast;
@@ -45,7 +47,7 @@ use std::path::PathBuf;
 
 use uuid::Uuid;
 
-use crate::model::{PaneKind, SidePanel, SidebarView, SplitDir};
+use crate::model::{PaneKind, SidePanel, SplitDir};
 use crate::pane_layout::Nav;
 
 /// User intents emitted by the UI and applied by the app after the frame's layout.
@@ -53,6 +55,8 @@ use crate::pane_layout::Nav;
 pub enum Action {
     OpenNewProject,
     OpenRenameProject(Uuid),
+    OpenRenameRepo(Uuid),
+    SetAgentsSort(crate::model::AgentsSort),
     OpenSettings,
     RemoveProject(Uuid),
     ToggleProject(Uuid),
@@ -79,7 +83,6 @@ pub enum Action {
     ClosePeek,
     /// Switches to whatever repo and tab hold the pane.
     GoToPane(Uuid),
-    SetSidebarView(SidebarView),
     TogglePinTab {
         repo: Uuid,
         tab: Uuid,

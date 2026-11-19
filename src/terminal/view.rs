@@ -304,7 +304,13 @@ fn handle_selection(response: &Response, session: &mut TerminalSession, grid: Gr
     } else if response.triple_clicked() {
         term.selection = Some(Selection::new(SelectionType::Lines, point, side));
     } else if response.drag_started() {
-        term.selection = Some(Selection::new(SelectionType::Simple, point, side));
+        // A drag is only recognised a few points after the press, so start from where the button
+        // went down: starting from here would leave out the first character.
+        let origin = response.ctx.input(|i| i.pointer.press_origin()).unwrap_or(pos);
+        let (start, start_side) = grid_point(grid, origin, size, offset, above);
+        let mut selection = Selection::new(SelectionType::Simple, start, start_side);
+        selection.update(point, side);
+        term.selection = Some(selection);
     } else if response.dragged() {
         if let Some(selection) = term.selection.as_mut() {
             selection.update(point, side);

@@ -4,17 +4,17 @@ use eframe::egui::{
     Sense, Stroke, Ui, UiBuilder, vec2,
 };
 
+use super::design::{self, RADIUS_ROW, TEXT_BODY, TEXT_MICRO};
+
 pub const AGENT: Color32 = Color32::from_rgb(0xe0, 0x8a, 0x5f);
-/// Green for healthy states: permission granted, plenty of quota left.
-pub const GOOD: Color32 = Color32::from_rgb(0x4f, 0xb8, 0x6e);
 
 /// Hit size of the square icon buttons in the sidebar footer and tab bar.
 pub const ICON_BUTTON_SIZE: f32 = 28.0;
 const ICON_GLYPH_SIZE: f32 = 19.0;
 
-/// Secondary text color of the active theme.
+/// Secondary text color of the active theme, kept readable on its background.
 pub fn muted(ui: &Ui) -> Color32 {
-    ui.visuals().text_color().gamma_multiply(0.6)
+    ui.visuals().weak_text_color()
 }
 
 pub fn accent(ui: &Ui) -> Color32 {
@@ -27,8 +27,10 @@ pub fn icon_button_frame(ui: &mut Ui, active: bool) -> (Rect, Response, Color32)
     let (rect, response) = ui.allocate_exact_size(vec2(ICON_BUTTON_SIZE, ICON_BUTTON_SIZE), Sense::click());
     let lit = active || response.hovered();
     if lit {
-        ui.painter().rect_filled(rect, CornerRadius::same(7), ui.visuals().widgets.hovered.weak_bg_fill);
+        let fill = ui.visuals().widgets.hovered.weak_bg_fill;
+        ui.painter().rect_filled(rect, CornerRadius::same(RADIUS_ROW), fill);
     }
+    design::focus_ring(ui, &response, RADIUS_ROW);
     let color = if lit { ui.visuals().strong_text_color() } else { muted(ui) };
     (rect, response, color)
 }
@@ -49,21 +51,28 @@ pub fn icon_button(ui: &mut Ui, glyph: &str) -> Response {
 /// Muted caption text that gains a rounded background and brighter text on hover, so it reads
 /// as clickable; used for footer links such as "Mark all read".
 pub fn text_button(ui: &mut Ui, text: &str, size: f32) -> Response {
-    let galley = ui.painter().layout_no_wrap(text.to_string(), FontId::proportional(size), muted(ui));
+    tinted_text_button(ui, text, size, muted(ui), ui.visuals().strong_text_color())
+}
+
+/// [`text_button`] in a color of its own, `idle` at rest and `lit` under the pointer.
+pub fn tinted_text_button(ui: &mut Ui, text: &str, size: f32, idle: Color32, lit: Color32) -> Response {
+    let galley = ui.painter().layout_no_wrap(text.to_string(), FontId::proportional(size), idle);
     let (rect, response) = ui.allocate_exact_size(galley.size() + vec2(16.0, 8.0), Sense::click());
     let color = if response.hovered() {
-        ui.painter().rect_filled(rect, CornerRadius::same(6), ui.visuals().widgets.hovered.weak_bg_fill);
-        ui.visuals().strong_text_color()
+        let fill = ui.visuals().widgets.hovered.weak_bg_fill;
+        ui.painter().rect_filled(rect, CornerRadius::same(RADIUS_ROW), fill);
+        lit
     } else {
-        muted(ui)
+        idle
     };
+    design::focus_ring(ui, &response, RADIUS_ROW);
     ui.painter().galley(rect.center() - galley.size() / 2.0, galley, color);
     response.on_hover_cursor(CursorIcon::PointingHand)
 }
 
 /// Small rounded label, e.g. an agent state or "merged".
 pub fn tag(ui: &mut Ui, text: &str, color: Color32) -> Response {
-    let galley = ui.painter().layout_no_wrap(text.to_string(), FontId::proportional(10.5), color);
+    let galley = ui.painter().layout_no_wrap(text.to_string(), FontId::proportional(TEXT_MICRO), color);
     let (rect, response) = ui.allocate_exact_size(galley.size() + vec2(10.0, 4.0), Sense::click());
     let fill = if response.hovered() { 0.3 } else { 0.18 };
     ui.painter().rect_filled(rect, 6.0, color.gamma_multiply(fill));
@@ -71,21 +80,39 @@ pub fn tag(ui: &mut Ui, text: &str, color: Color32) -> Response {
     response
 }
 
-/// Side of the small glyph buttons in sidebar rows.
-pub const GLYPH_BUTTON_SIZE: f32 = 18.0;
+/// Side of the small glyph buttons in sidebar rows: the smallest target that is easy to hit.
+pub const GLYPH_BUTTON_SIZE: f32 = 24.0;
 
 /// A square button holding one glyph, such as the row "+" and "×"; it gains a filled background
 /// on hover and is flat otherwise.
 pub fn glyph_button(ui: &mut Ui, glyph: &str) -> Response {
-    glyph_button_in(ui, glyph, |ui, button| ui.add(button))
+    glyph_button_in(ui, glyph, muted(ui), |ui, button| ui.add(button))
 }
 
-/// [`glyph_button`] that opens a menu.
-pub fn menu_icon<R>(ui: &mut Ui, glyph: &str, add_contents: impl FnOnce(&mut Ui) -> R) -> Response {
-    glyph_button_in(ui, glyph, |ui, button| MenuButton::from_button(button).ui(ui, add_contents).0)
+/// [`glyph_button`] that opens a menu. Its glyph shows only while `shown` (the row is hovered or
+/// current) or its menu is open, so a list of rows isn't a column of buttons; the button keeps
+/// its place either way.
+pub fn menu_icon<R>(
+    ui: &mut Ui,
+    glyph: &str,
+    shown: bool,
+    add_contents: impl FnOnce(&mut Ui) -> R,
+) -> Response {
+    let open_id = ui.auto_id_with("menu-icon-open");
+    let open = ui.data(|d| d.get_temp::<bool>(open_id)).unwrap_or(false);
+    let color = if shown || open { muted(ui) } else { Color32::TRANSPARENT };
+    let (response, menu) =
+        glyph_button_in(ui, glyph, color, |ui, button| MenuButton::from_button(button).ui(ui, add_contents));
+    ui.data_mut(|d| d.insert_temp(open_id, menu.is_some()));
+    response
 }
 
-fn glyph_button_in<R>(ui: &mut Ui, glyph: &str, add: impl FnOnce(&mut Ui, Button<'_>) -> R) -> R {
+fn glyph_button_in<R>(
+    ui: &mut Ui,
+    glyph: &str,
+    color: Color32,
+    add: impl FnOnce(&mut Ui, Button<'_>) -> R,
+) -> R {
     ui.scope(|ui| {
         let hover_fill = ui.visuals().text_color().gamma_multiply(0.14);
         let widgets = &mut ui.visuals_mut().widgets;
@@ -95,8 +122,8 @@ fn glyph_button_in<R>(ui: &mut Ui, glyph: &str, add: impl FnOnce(&mut Ui, Button
         widgets.active.weak_bg_fill = hover_fill.gamma_multiply(1.6);
         widgets.active.bg_stroke = Stroke::NONE;
         widgets.active.expansion = 0.0;
-        let button = Button::new(RichText::new(glyph).color(muted(ui)).size(13.0))
-            .corner_radius(CornerRadius::same(5))
+        let button = Button::new(RichText::new(glyph).color(color).size(TEXT_BODY))
+            .corner_radius(CornerRadius::same(RADIUS_ROW))
             .min_size(vec2(GLYPH_BUTTON_SIZE, GLYPH_BUTTON_SIZE))
             .frame_when_inactive(false);
         add(ui, button)
@@ -113,6 +140,11 @@ pub fn row<R>(
     add_contents: impl FnOnce(&mut Ui) -> R,
 ) -> (Response, R) {
     row_sized(ui, selected, indent, 28.0, add_contents)
+}
+
+/// Whether the pointer is over the row being filled; ask first thing inside its contents.
+pub fn row_hovered(ui: &Ui) -> bool {
+    ui.rect_contains_pointer(ui.max_rect())
 }
 
 /// [`row`] with an explicit height.
@@ -132,8 +164,9 @@ pub fn row_sized<R>(
         None
     };
     if let Some(fill) = fill {
-        ui.painter().rect_filled(rect, CornerRadius::same(6), fill);
+        ui.painter().rect_filled(rect, CornerRadius::same(RADIUS_ROW), fill);
     }
+    design::focus_ring(ui, &response, RADIUS_ROW);
     let inner = rect.shrink2(vec2(6.0, 0.0));
     let inner = inner.with_min_x(inner.min.x + indent);
     let mut child =

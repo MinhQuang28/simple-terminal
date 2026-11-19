@@ -10,6 +10,7 @@ use super::Action;
 use super::activity_bar;
 use super::changes_panel::body;
 use super::chrome::window_drag_area;
+use super::design::TEXT_CAPTION;
 use super::file_explorer;
 use super::search_panel;
 use super::sidebar::TRAFFIC_LIGHTS_HEIGHT;
@@ -58,7 +59,7 @@ pub fn show(ui: &mut Ui, state: &AppState, repo: &Repo, sources: Sources<'_>, ac
     ui.add_space(6.0);
     ui.horizontal(|ui| {
         ui.add_space(6.0);
-        ui.label(RichText::new(title).size(11.0).strong().color(muted(ui)));
+        ui.label(RichText::new(title).size(TEXT_CAPTION).strong().color(muted(ui)));
     });
     ui.add_space(8.0);
     match panel {
@@ -71,7 +72,7 @@ pub fn show(ui: &mut Ui, state: &AppState, repo: &Repo, sources: Sources<'_>, ac
 fn explorer(ui: &mut Ui, state: &AppState, repo: &Repo, tree: &mut FileTree, actions: &mut Vec<Action>) {
     ui.horizontal(|ui| {
         ui.add_space(6.0);
-        ui.label(RichText::new(repo.name.to_uppercase()).size(11.0).strong());
+        ui.label(RichText::new(repo.name.to_uppercase()).size(TEXT_CAPTION).strong());
     });
     ui.add_space(2.0);
     let open_file = repo.active_tab.and_then(|id| repo.view_tabs().find(|t| t.id == id)?.file.clone());

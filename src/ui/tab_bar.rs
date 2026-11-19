@@ -1,8 +1,14 @@
-use eframe::egui::{Align2, Button, Color32, FontId, Rect, Response, RichText, Sense, Ui, pos2, vec2};
+use eframe::egui::scroll_area::ScrollBarVisibility;
+use eframe::egui::{
+    Align, Align2, Button, Color32, FontId, Layout, Rect, Response, RichText, ScrollArea, Sense, Ui, pos2,
+    vec2,
+};
+use uuid::Uuid;
 
 use super::Action;
 use super::agent_status;
 use super::claude_icon::ICON_SIZE;
+use super::design::{RADIUS_ROW, TEXT_BODY, focus_ring};
 use super::history_menu;
 use super::program_icon;
 use super::sidebar::{tab_busy, tab_menu, tab_program, tab_status, tab_title};
@@ -16,6 +22,10 @@ use crate::programs::Program;
 use crate::session_pool::SessionPool;
 
 pub const TAB_HEIGHT: f32 = 38.0;
+/// Room kept at the right of the tabs for the "+" and the history button.
+const CONTROLS_WIDTH: f32 = 90.0;
+/// How far around the "×" a click still closes the tab.
+const CLOSE_REACH: f32 = 4.0;
 const MAX_TITLE_CHARS: usize = 28;
 
 /// Per-tab state that changes how a tab is drawn.
@@ -45,31 +55,50 @@ pub fn show(
         ui.add_space(10.0);
         let mut centers = Vec::new();
         let mut dragging = None;
-        // Files and diffs have their own strip in the Code view.
-        for (index, tab) in repo.view_tabs().enumerate() {
-            let fallback = branch.unwrap_or(&repo.name);
-            let title = truncate(&tab_title(tab, pool, fallback), MAX_TITLE_CHARS);
-            let tab_state = TabState {
-                active: repo.active_tab == Some(tab.id),
-                dirty: tab.file.as_deref().is_some_and(|p| buffers.is_dirty(p)),
-                busy: tab_busy(tab, pool),
-                attention: tab_status(tab, pool).filter(|s| s.needs_attention()),
-                program: tab_program(tab, pool),
-            };
-            let (response, close) = tab_item(ui, index + 1, tab, &title, &tab_state);
-            centers.push(response.rect.center().x);
-            if response.dragged()
-                && let Some(pos) = response.interact_pointer_pos()
-            {
-                dragging = Some((index, tab.id, pos.x));
-            }
-            if close || response.middle_clicked() {
-                actions.push(Action::CloseTab { repo: repo.id, tab: tab.id });
-            } else if response.clicked() {
-                actions.push(Action::SelectTab { repo: repo.id, tab: tab.id });
-            }
-            response.context_menu(|ui| tab_menu(ui, state, repo.id, tab.id, actions));
-        }
+        // Bring the current tab into view when it changes, not while the user scrolls the strip.
+        let revealed_id = ui.scope_id().with("revealed-tab");
+        let reveal = ui.data(|d| d.get_temp::<Option<Uuid>>(revealed_id)) != Some(repo.active_tab);
+        ui.data_mut(|d| d.insert_temp(revealed_id, repo.active_tab));
+        // More tabs than fit scroll sideways, under the wheel, instead of running under the buttons.
+        ui.style_mut().always_scroll_the_only_direction = true;
+        let room = (ui.available_width() - CONTROLS_WIDTH).max(0.0);
+        let strip = ScrollArea::horizontal()
+            .id_salt("tab-strip")
+            .max_width(room)
+            .scroll_bar_visibility(ScrollBarVisibility::AlwaysHidden);
+        // Top-aligned: centred, the strip would start a text line high and grow down past the bar.
+        ui.allocate_ui_with_layout(vec2(room, TAB_HEIGHT), Layout::left_to_right(Align::Min), |ui| {
+            strip.show(ui, |ui| {
+                // Files and diffs have their own strip in the Code view.
+                for (index, tab) in repo.view_tabs().enumerate() {
+                    let fallback = branch.unwrap_or(&repo.name);
+                    let title = truncate(&tab_title(tab, pool, fallback), MAX_TITLE_CHARS);
+                    let tab_state = TabState {
+                        active: repo.active_tab == Some(tab.id),
+                        dirty: tab.file.as_deref().is_some_and(|p| buffers.is_dirty(p)),
+                        busy: tab_busy(tab, pool),
+                        attention: tab_status(tab, pool).filter(|s| s.needs_attention()),
+                        program: tab_program(tab, pool),
+                    };
+                    let (response, close) = tab_item(ui, index + 1, tab, &title, &tab_state);
+                    if reveal && tab_state.active {
+                        response.scroll_to_me(None);
+                    }
+                    centers.push(response.rect.center().x);
+                    if response.dragged()
+                        && let Some(pos) = response.interact_pointer_pos()
+                    {
+                        dragging = Some((index, tab.id, pos.x));
+                    }
+                    if close || response.middle_clicked() {
+                        actions.push(Action::CloseTab { repo: repo.id, tab: tab.id });
+                    } else if response.clicked() {
+                        actions.push(Action::SelectTab { repo: repo.id, tab: tab.id });
+                    }
+                    response.context_menu(|ui| tab_menu(ui, state, repo.id, tab.id, actions));
+                }
+            });
+        });
         // Dragging a tab past a neighbour's centre moves it there.
         if let Some((index, tab, x)) = dragging {
             let to = centers.iter().enumerate().filter(|(i, c)| *i != index && **c < x).count();
@@ -115,7 +144,7 @@ fn tab_item(ui: &mut Ui, number: usize, tab: &Tab, title: &str, state: &TabState
     let text_color = if active { ui.visuals().text_color() } else { muted(ui) };
     // Files and diffs show only their name; terminals what runs in them.
     let icon_width = if tab.is_document() { 0.0 } else { ICON_SIZE };
-    let font = FontId::proportional(13.5);
+    let font = FontId::proportional(TEXT_BODY);
     let layout = |text: String, color: Color32| ui.painter().layout_no_wrap(text, font.clone(), color);
     let number_galley = layout(number.to_string(), muted(ui));
     let title_galley = layout(title.to_string(), text_color);
@@ -136,6 +165,7 @@ fn tab_item(ui: &mut Ui, number: usize, tab: &Tab, title: &str, state: &TabState
     if response.hovered() && !active {
         painter.rect_filled(rect.shrink2(vec2(0.0, 5.0)), 6.0, ui.visuals().widgets.hovered.weak_bg_fill);
     }
+    focus_ring(ui, &response, RADIUS_ROW);
 
     let mut x = rect.left() + 12.0;
     let y = rect.center().y;
@@ -152,7 +182,7 @@ fn tab_item(ui: &mut Ui, number: usize, tab: &Tab, title: &str, state: &TabState
     let close_rect =
         Rect::from_center_size(pos2(rect.right() - 8.0 - close_size / 2.0, y), vec2(close_size, close_size));
     let pointer = response.hover_pos();
-    let over_close = pointer.is_some_and(|p| close_rect.contains(p));
+    let over_close = pointer.is_some_and(|p| close_rect.expand(CLOSE_REACH).contains(p));
     if dirty && !over_close {
         painter.circle_filled(close_rect.center(), 3.5, text_color);
     } else if let Some(color) = attention_color.filter(|_| !over_close) {
@@ -161,9 +191,16 @@ fn tab_item(ui: &mut Ui, number: usize, tab: &Tab, title: &str, state: &TabState
         spinner_at(ui, close_rect.shrink(2.0));
     } else if response.hovered() || active {
         if over_close {
-            painter.rect_filled(close_rect, 4.0, ui.visuals().widgets.active.weak_bg_fill);
+            let lit = close_rect.expand(CLOSE_REACH / 2.0);
+            painter.rect_filled(lit, 4.0, ui.visuals().widgets.active.weak_bg_fill);
         }
-        painter.text(close_rect.center(), Align2::CENTER_CENTER, "×", FontId::proportional(14.0), muted(ui));
+        painter.text(
+            close_rect.center(),
+            Align2::CENTER_CENTER,
+            "×",
+            FontId::proportional(TEXT_BODY),
+            muted(ui),
+        );
     }
     if active {
         let underline = Rect::from_min_max(

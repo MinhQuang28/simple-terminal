@@ -5,7 +5,7 @@ use eframe::egui::{Color32, CornerRadius, Response, RichText, Sense, Shape, Stro
 
 use super::claude_icon;
 use super::design::{self, TEXT_BODY, TEXT_SECONDARY, TEXT_TITLE};
-use super::widgets::{GOOD, ago, icon_button_frame, muted, right_aligned};
+use super::widgets::{ago, icon_button_frame, muted, right_aligned};
 use crate::claude_status_line::{StatusLine, Window, duration, now};
 use crate::model::AppState;
 
@@ -82,11 +82,11 @@ fn bar_row(ui: &mut Ui, state: &AppState, label: &str, amount: &str, note: &str,
 
 fn level_color(state: &AppState, used: f64) -> Color32 {
     if used >= CRITICAL_AT {
-        Color32::from_rgb(0xe0, 0x5a, 0x4f)
+        state.settings.theme.danger()
     } else if used >= WARN_AT {
         state.settings.theme.modified()
     } else {
-        GOOD
+        state.settings.theme.success()
     }
 }
 

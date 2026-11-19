@@ -14,6 +14,7 @@ use crate::font_catalog::FontCatalog;
 use crate::model::Settings;
 use crate::notification_permission::NotificationPermission;
 use crate::ui::claude_icon;
+use crate::ui::design::TEXT_BODY;
 use crate::ui::widgets::muted;
 
 const CONTENT_MAX_WIDTH: f32 = 760.0;
@@ -121,7 +122,7 @@ fn page_header(ui: &mut Ui, page: Page) {
         ui.label(RichText::new(page.title()).size(24.0).strong().color(ui.visuals().strong_text_color()));
     });
     ui.add_space(4.0);
-    ui.label(RichText::new(page.subtitle()).size(13.5).color(muted(ui)));
+    ui.label(RichText::new(page.subtitle()).size(TEXT_BODY).color(muted(ui)));
 }
 
 /// Small glyph identifying a page in the nav and header.

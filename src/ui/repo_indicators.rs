@@ -1,11 +1,12 @@
-use eframe::egui::{Color32, RichText, Sense, Ui, vec2};
+use eframe::egui::{Rect, RichText, Sense, Ui, Vec2, vec2};
 
 use super::Action;
 use super::agent_status;
 use super::chevron;
+use super::design::{self, TEXT_CAPTION};
 use super::sidebar::{tab_busy, tab_status};
 use super::spinner::spinner;
-use super::widgets::{accent, ago, muted, tag};
+use super::widgets::{GLYPH_BUTTON_SIZE, accent, ago, muted, tag};
 use crate::git_status::GitStatus;
 use crate::model::{LaunchPreset, Repo};
 use crate::pr_status::{CheckState, PullRequest};
@@ -27,20 +28,24 @@ pub struct RepoRow<'a> {
 pub fn indicators(ui: &mut Ui, row: &RepoRow, actions: &mut Vec<Action>) {
     let RepoRow { repo, status, pr, pool, now, .. } = *row;
     ui.spacing_mut().item_spacing.x = 8.0;
-    ui.label(RichText::new(ago(repo.last_active(), now)).color(muted(ui)).size(11.5));
+    // The spinner already says "now", and the row is short of room for the repo's name.
+    let busy = repo.tabs.iter().any(|t| tab_busy(t, pool));
+    if !busy {
+        ui.label(RichText::new(ago(repo.last_active(), now)).color(muted(ui)).size(TEXT_CAPTION));
+    }
     if let Some(pr) = pr {
         pr_badge(ui, pr, actions);
     }
-    if repo.tabs.iter().any(|t| tab_busy(t, pool)) {
+    if busy {
         busy_mark(ui);
     }
     if let Some(status) = status {
         if status.ahead > 0 {
-            ui.label(RichText::new("⬆").color(accent(ui)).size(11.5))
+            ui.label(RichText::new("⬆").color(accent(ui)).size(TEXT_CAPTION))
                 .on_hover_text(format!("{} commits to push", status.ahead));
         }
         if status.behind > 0 {
-            ui.label(RichText::new("⬇").color(muted(ui)).size(11.5))
+            ui.label(RichText::new("⬇").color(muted(ui)).size(TEXT_CAPTION))
                 .on_hover_text(format!("{} commits to pull", status.behind));
         }
         if status.merged {
@@ -59,9 +64,12 @@ pub fn busy_mark(ui: &mut Ui) {
     spinner(ui, 11.0);
 }
 
-/// `›`/`⌄` that shows or hides the repo's terminal rows.
+/// `›`/`⌄` that shows or hides the repo's worktree rows.
 pub fn tabs_chevron(ui: &mut Ui, repo: &Repo, actions: &mut Vec<Action>) {
-    let (rect, response) = ui.allocate_exact_size(vec2(chevron::SIZE, chevron::SIZE), Sense::click());
+    let (rect, _) = ui.allocate_exact_size(vec2(chevron::SIZE, chevron::SIZE), Sense::hover());
+    // The mark is small; the target around it is not.
+    let target = Rect::from_center_size(rect.center(), Vec2::splat(GLYPH_BUTTON_SIZE));
+    let response = ui.interact(target, ui.auto_id_with("tabs-chevron"), Sense::click());
     let color = if response.hovered() { ui.visuals().text_color() } else { muted(ui) };
     chevron::paint(ui, rect, !repo.tabs_collapsed, color);
     if response.clicked() {
@@ -72,9 +80,9 @@ pub fn tabs_chevron(ui: &mut Ui, repo: &Repo, actions: &mut Vec<Action>) {
 /// `#123` tinted by CI state; hovering lists the checks, clicking opens the pull request.
 fn pr_badge(ui: &mut Ui, pr: &PullRequest, actions: &mut Vec<Action>) {
     let color = match pr.ci() {
-        Some(CheckState::Failing) => Color32::from_rgb(0xe5, 0x53, 0x53),
+        Some(CheckState::Failing) => design::danger(ui),
         Some(CheckState::Pending) => ui.visuals().warn_fg_color,
-        Some(CheckState::Passing) => Color32::from_rgb(0x7f, 0xd8, 0x8f),
+        Some(CheckState::Passing) => design::success(ui),
         None => muted(ui),
     };
     let mut hover = format!("#{} {}", pr.number, pr.title);

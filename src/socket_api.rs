@@ -10,8 +10,8 @@ use uuid::Uuid;
 use crate::app::{Job, RepodeckApp};
 use crate::finder_service::FolderRequest;
 use crate::model::PaneKind;
-use crate::socket_commands;
 use crate::store;
+use crate::{socket_commands, socket_queries, socket_worktree};
 
 /// Environment variable naming the socket, so `repodeck` run inside a pane finds its app.
 pub const SOCKET_VAR: &str = "REPODECK_SOCKET";
@@ -49,6 +49,10 @@ pub fn listen(jobs: Sender<Job>, ctx: egui::Context) {
                 let mut stream = stream;
                 if let Some(path) = command.strip_prefix("shot\t") {
                     return shot(app, PathBuf::from(path), stream);
+                }
+                // These run git, so they answer from a background thread.
+                if socket_worktree::runs_git(&command) {
+                    return socket_worktree::apply_in_background(app, &command, stream);
                 }
                 let reply = apply(app, &command);
                 let _ = writeln!(stream, "{reply}");
@@ -93,6 +97,12 @@ fn apply(app: &mut RepodeckApp, command: &str) -> String {
             }
             let kind = if verb == "claude" { PaneKind::Agent } else { PaneKind::Shell };
             let pane = app.open_folder(FolderRequest { path, kind });
+            // Started now, so a script can `send` to it right away instead of once it is drawn.
+            if let Some(pane) = pane
+                && let Err(err) = socket_commands::start(app, pane)
+            {
+                return format!("error: {err}");
+            }
             app.ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
             // The new pane, so a script can `send` to it or `read` it.
             pane.map_or_else(|| "ok".into(), |p| p.to_string())
@@ -113,29 +123,10 @@ fn apply(app: &mut RepodeckApp, command: &str) -> String {
             app.notify_from_cli(pane, text.to_string());
             "ok".into()
         }
-        "list" => list(app),
+        "list" => socket_queries::list(app, false).unwrap_or_else(|err| format!("error: {err}")),
         "" => "error: empty command".into(),
         other => format!("error: unknown command {other}"),
     }
-}
-
-/// One tab-separated line per pane: repo, path, tab title, pane id, kind, agent status.
-fn list(app: &RepodeckApp) -> String {
-    let mut lines = Vec::new();
-    for repo in app.state.projects.iter().flat_map(|p| &p.repos) {
-        for tab in &repo.tabs {
-            for pane in &tab.panes {
-                let kind = match pane.kind {
-                    PaneKind::Shell => "shell",
-                    PaneKind::Agent => "claude",
-                };
-                let status = app.pool.agent_status(pane.id).map(|s| s.label()).unwrap_or_default();
-                let path = repo.path.display();
-                lines.push(format!("{}\t{path}\t{}\t{}\t{kind}\t{status}", repo.name, tab.title, pane.id));
-            }
-        }
-    }
-    lines.join("\n")
 }
 
 /// Sends `command` to the running app and returns its reply.

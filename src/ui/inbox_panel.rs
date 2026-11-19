@@ -1,11 +1,11 @@
 use eframe::egui::{
-    Align, Align2, Color32, CornerRadius, FontId, Id, Label, Layout, Response, RichText, ScrollArea, Sense,
-    Shape, Stroke, Ui, UiBuilder, pos2, vec2,
+    Align, Align2, CornerRadius, FontId, Id, Label, Layout, Response, RichText, ScrollArea, Sense, Shape,
+    Stroke, Ui, UiBuilder, pos2, vec2,
 };
 
 use super::Action;
 use super::agent_status;
-use super::design::{self, RADIUS_ROW, TEXT_BODY, TEXT_CAPTION, TEXT_SECONDARY};
+use super::design::{self, RADIUS_ROW, TEXT_BADGE, TEXT_BODY, TEXT_CAPTION, TEXT_SECONDARY};
 use super::dialog_kit::{Tone, button};
 use super::widgets::{AGENT, accent, ago, icon_button_frame, muted, right_aligned, text_button};
 use crate::inbox::{Inbox, Notice, Source};
@@ -197,9 +197,16 @@ fn bell_icon(ui: &mut Ui, unread: usize, urgent: bool) -> Response {
     painter.line_segment([pos2(c.x - 1.5, rim_y + 2.2), pos2(c.x + 1.5, rim_y + 2.2)], stroke);
     if unread > 0 {
         let badge = rect.right_top() + vec2(-7.0, 7.0);
-        painter.circle_filled(badge, 5.5, if urgent { AGENT } else { accent(ui) });
+        let fill = if urgent { AGENT } else { accent(ui) };
+        painter.circle_filled(badge, 5.5, fill);
         let count = if unread > 9 { "9+".to_string() } else { unread.to_string() };
-        painter.text(badge, Align2::CENTER_CENTER, count, FontId::proportional(8.5), Color32::WHITE);
+        painter.text(
+            badge,
+            Align2::CENTER_CENTER,
+            count,
+            FontId::proportional(TEXT_BADGE),
+            design::on_color(fill),
+        );
     }
     response
 }

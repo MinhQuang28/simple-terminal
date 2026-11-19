@@ -9,7 +9,6 @@ use uuid::Uuid;
 
 use crate::agent_events::AgentStatus;
 use crate::app_notices::{PaneReport, Report};
-use crate::attention;
 use crate::claude_history::ClaudeHistory;
 use crate::diff::DiffCache;
 use crate::editor::Buffers;
@@ -36,6 +35,7 @@ use crate::ui::Action;
 use crate::ui::dialogs::{self, Dialog, DialogResult};
 use crate::ui::palette::Palette;
 use crate::ui::settings::{self, Page};
+use crate::worktree::BranchFate;
 use crate::worktree_branch_name;
 
 /// How long output must be idle before a tab's "last active" timestamp is persisted again.
@@ -91,7 +91,6 @@ pub struct RepodeckApp {
     applied_font: Option<(String, String, u32)>,
     last_save: Instant,
     saver: Saver,
-    badge: usize,
     folder_requests: Receiver<FolderRequest>,
     jobs: Receiver<Job>,
     job_tx: Sender<Job>,
@@ -164,7 +163,6 @@ impl RepodeckApp {
             applied_font: None,
             last_save: Instant::now(),
             saver: Saver::spawn(),
-            badge: 0,
             folder_requests,
             jobs,
             job_tx,
@@ -206,10 +204,15 @@ impl RepodeckApp {
             self.dialog = None;
         }
         match result {
-            Some(DialogResult::CreateProject(name)) => self.create_project(name),
+            Some(DialogResult::AddProject { name, source }) => self.add_project(name, source),
             Some(DialogResult::RenameProject(id, name)) => {
                 if let Some(p) = self.state.projects.iter_mut().find(|p| p.id == id) {
                     p.name = name;
+                }
+            }
+            Some(DialogResult::RenameRepo(id, name)) => {
+                if let Some(repo) = self.state.repo_mut(id) {
+                    repo.name = name;
                 }
             }
             Some(DialogResult::SaveAndClose { repo, tab }) => {
@@ -233,10 +236,11 @@ impl RepodeckApp {
                 }
             }
             Some(DialogResult::CreateWorktree { repo, branch }) => {
-                self.create_worktree(repo, Some(&branch), None, None)
+                self.create_worktree(repo, Some(&branch), None, None, PaneKind::Agent)
             }
             Some(DialogResult::RemoveWorktree { repo, delete_branch, force }) => {
-                self.remove_worktree(repo, delete_branch, force)
+                let fate = if delete_branch { BranchFate::DeleteIfMerged } else { BranchFate::Keep };
+                self.remove_worktree(repo, fate, force)
             }
             Some(DialogResult::OpenWorktree { repo, path }) => self.open_worktree(repo, &path),
             Some(DialogResult::Run(action)) => {
@@ -379,6 +383,10 @@ impl RepodeckApp {
                     for text in session.take_notifications() {
                         report(Report::Message(text));
                     }
+                    if let Some(id) = session.untitled_conversation() {
+                        let title = self.claude_history.named_title(&repo.path, id);
+                        session.set_transcript_title(title);
+                    }
                     let summary = (pane.kind == PaneKind::Agent)
                         .then(|| session.title().and_then(task_summary))
                         .flatten();
@@ -398,11 +406,6 @@ impl RepodeckApp {
             self.name_worktree_branch(repo, temp, prompt);
         }
         self.deliver(reports, window_focused, visible);
-        let badge = self.pool.attention_count();
-        if badge != self.badge {
-            self.badge = badge;
-            attention::set_badge(badge);
-        }
     }
 
     /// Keeps the window open while files have unsaved changes, asking what to do with them.

@@ -2,14 +2,17 @@ use eframe::egui::{self, Ui};
 use uuid::Uuid;
 
 use super::Action;
+use super::add_project_dialog::{AddProject, ProjectSource};
 use super::dialog_kit::{self as kit, Tone};
 use super::worktree_dialogs::{OpenWorktree, RemoveWorktree};
 
 pub enum Dialog {
-    NewProject {
+    AddProject(AddProject),
+    RenameProject {
+        id: Uuid,
         name: String,
     },
-    RenameProject {
+    RenameRepo {
         id: Uuid,
         name: String,
     },
@@ -52,8 +55,12 @@ pub enum Dialog {
 }
 
 pub enum DialogResult {
-    CreateProject(String),
+    AddProject {
+        name: String,
+        source: ProjectSource,
+    },
     RenameProject(Uuid, String),
+    RenameRepo(Uuid, String),
     SaveAndClose {
         repo: Uuid,
         tab: Uuid,
@@ -150,14 +157,15 @@ pub fn show(ctx: &egui::Context, dialog: &mut Dialog) -> (bool, Option<DialogRes
             });
             close = result.is_some() || footer.cancel;
         }
-        Dialog::NewProject { name } => {
-            let (submitted, cancel) = name_form(ui, "New project", None, "e.g. Client work", "Create", name);
-            result = submitted.map(DialogResult::CreateProject);
-            close = result.is_some() || cancel;
-        }
+        Dialog::AddProject(dialog) => (close, result) = dialog.show(ui),
         Dialog::RenameProject { id, name } => {
             let (submitted, cancel) = name_form(ui, "Rename project", None, "", "Rename", name);
             result = submitted.map(|n| DialogResult::RenameProject(*id, n));
+            close = result.is_some() || cancel;
+        }
+        Dialog::RenameRepo { id, name } => {
+            let (submitted, cancel) = name_form(ui, "Rename repository", None, "", "Rename", name);
+            result = submitted.map(|n| DialogResult::RenameRepo(*id, n));
             close = result.is_some() || cancel;
         }
         Dialog::RenameTab { repo, tab, name } => {

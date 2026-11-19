@@ -6,7 +6,7 @@ use eframe::egui::{
 };
 
 use super::Action;
-use super::design;
+use super::design::{self, TEXT_CAPTION, TEXT_SECONDARY};
 use super::file_icon;
 use super::widgets::{accent, muted, row_sized};
 use crate::definitions::{Definition, Peek};
@@ -23,7 +23,7 @@ pub fn show(ctx: &Context, peek: &Peek, actions: &mut Vec<Action>) {
         };
         ui.horizontal(|ui| {
             ui.label(RichText::new(&peek.word).monospace().strong());
-            ui.label(RichText::new(count).color(muted(ui)).size(12.0));
+            ui.label(RichText::new(count).color(muted(ui)).size(TEXT_SECONDARY));
         });
         ui.add_space(8.0);
         ScrollArea::vertical().max_height(ctx.content_rect().height() * 0.6).show(ui, |ui| {
@@ -45,11 +45,11 @@ fn entry(ui: &mut Ui, peek: &Peek, definition: &Definition, actions: &mut Vec<Ac
     let (header, ()) = row_sized(ui, false, 0.0, 24.0, |ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         file_icon::show(ui, 15.0, &name, false, false);
-        ui.label(RichText::new(&name).size(12.5));
+        ui.label(RichText::new(&name).size(TEXT_SECONDARY));
         if let Some(folder) = folder.filter(|f| !f.as_os_str().is_empty()) {
-            ui.label(RichText::new(folder.display().to_string()).size(11.0).color(muted(ui)));
+            ui.label(RichText::new(folder.display().to_string()).size(TEXT_CAPTION).color(muted(ui)));
         }
-        ui.label(RichText::new(format!(":{}", definition.line)).size(11.0).color(muted(ui)));
+        ui.label(RichText::new(format!(":{}", definition.line)).size(TEXT_CAPTION).color(muted(ui)));
     });
     let font = FontId::monospace(12.0);
     let mut job = LayoutJob::default();

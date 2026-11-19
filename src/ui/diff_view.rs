@@ -10,6 +10,7 @@ use eframe::egui::{
 use uuid::Uuid;
 
 use super::Action;
+use super::design::TEXT_SECONDARY;
 use super::diff_comments::{self, Comment};
 use super::widgets::muted;
 use crate::model::Settings;
@@ -31,7 +32,7 @@ pub fn show(
     let relative = file.strip_prefix(root).unwrap_or(file);
     Frame::new().inner_margin(Margin::symmetric(14, 8)).show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label(RichText::new(relative.display().to_string()).color(muted(ui)).size(12.5));
+            ui.label(RichText::new(relative.display().to_string()).color(muted(ui)).size(TEXT_SECONDARY));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if ui
                     .add_enabled(text.is_some(), Button::new("Send to Claude"))

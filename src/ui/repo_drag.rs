@@ -4,6 +4,7 @@ use eframe::egui::{
 use uuid::Uuid;
 
 use super::Action;
+use super::design::TEXT_BODY;
 use crate::file_drag::FileDrag;
 use crate::model::AppState;
 
@@ -79,7 +80,7 @@ fn insertion_y(others: &[Rect], index: usize) -> Option<f32> {
 fn ghost(ui: &Ui, name: &str, pointer: Pos2) {
     let painter = ui.ctx().layer_painter(LayerId::new(Order::Tooltip, Id::unique("repo-drag-ghost")));
     let color = ui.visuals().text_color();
-    let galley = painter.layout_no_wrap(name.to_owned(), FontId::proportional(13.0), color);
+    let galley = painter.layout_no_wrap(name.to_owned(), FontId::proportional(TEXT_BODY), color);
     let text = pointer + vec2(16.0, 6.0);
     let rect = Rect::from_min_size(text, galley.size()).expand2(vec2(8.0, 4.0));
     painter.rect_filled(rect, 6.0, ui.visuals().window_fill);

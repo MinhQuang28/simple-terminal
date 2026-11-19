@@ -10,6 +10,8 @@ use eframe::egui::{
 pub const RADIUS_SURFACE: u8 = 12;
 /// Corner radius of selectable rows and controls.
 pub const RADIUS_ROW: u8 = 6;
+/// Corner radius of small marks inside a row: shortcut chips, checkboxes.
+pub const RADIUS_CHIP: u8 = 4;
 /// Inner padding of floating surfaces.
 pub const SURFACE_PADDING: i8 = 8;
 /// Height of a single-line list row.
@@ -20,6 +22,35 @@ pub const TEXT_TITLE: f32 = 15.5;
 pub const TEXT_BODY: f32 = 13.5;
 pub const TEXT_SECONDARY: f32 = 12.5;
 pub const TEXT_CAPTION: f32 = 11.5;
+/// Tags and counts beside a label.
+pub const TEXT_MICRO: f32 = 10.5;
+/// Digits inside a round badge on an icon.
+pub const TEXT_BADGE: f32 = 9.0;
+
+/// Failures and anything about to be lost, in the theme's red.
+pub fn danger(ui: &Ui) -> Color32 {
+    ui.visuals().error_fg_color
+}
+
+/// Healthy states, in the theme's green.
+pub fn success(ui: &Ui) -> Color32 {
+    crate::theme::success(ui.ctx())
+}
+
+/// Black or white, whichever reads better on `fill`.
+pub fn on_color(fill: Color32) -> Color32 {
+    let [r, g, b, _] = fill.to_array().map(f32::from);
+    let luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
+    if luminance > 0.6 { Color32::from_rgb(0x15, 0x15, 0x15) } else { Color32::WHITE }
+}
+
+/// Outlines a hand-painted control while it holds keyboard focus, as egui does for its own.
+pub fn focus_ring(ui: &Ui, response: &Response, radius: u8) {
+    if response.has_focus() {
+        let stroke = Stroke::new(1.5, ui.visuals().hyperlink_color);
+        ui.painter().rect_stroke(response.rect, CornerRadius::same(radius), stroke, StrokeKind::Inside);
+    }
+}
 
 /// Hairline for borders and separators.
 pub fn hairline(ui: &Ui) -> Color32 {
@@ -66,7 +97,7 @@ pub fn popup<R>(
 
 /// Uppercase caption introducing a group of rows.
 pub fn section_label(ui: &mut Ui, text: &str) {
-    let color = ui.visuals().text_color().gamma_multiply(0.55);
+    let color = ui.visuals().weak_text_color();
     ui.add_space(6.0);
     ui.label(RichText::new(text.to_uppercase()).size(TEXT_CAPTION).strong().color(color));
     ui.add_space(2.0);
@@ -84,7 +115,7 @@ pub fn divider(ui: &mut Ui) {
 pub fn empty_state(ui: &mut Ui, text: &str) {
     ui.add_space(14.0);
     ui.vertical_centered(|ui| {
-        let color = ui.visuals().text_color().gamma_multiply(0.6);
+        let color = ui.visuals().weak_text_color();
         ui.label(RichText::new(text).size(TEXT_SECONDARY).color(color));
     });
     ui.add_space(14.0);
@@ -97,10 +128,21 @@ pub fn kbd(ui: &mut Ui, keys: &str) {
     let (rect, _) = ui.allocate_exact_size(galley.size() + vec2(10.0, 4.0), Sense::hover());
     ui.painter().rect(
         rect,
-        CornerRadius::same(4),
+        CornerRadius::same(RADIUS_CHIP),
         ui.visuals().text_color().gamma_multiply(0.06),
         Stroke::new(1.0, hairline(ui)),
         StrokeKind::Inside,
     );
     ui.painter().galley(rect.min + vec2(5.0, 2.0), galley, color);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn text_on_light_accents_is_dark_and_on_dark_accents_is_white() {
+        assert_eq!(on_color(Color32::from_rgb(0xf5, 0xc5, 0x42)), Color32::from_rgb(0x15, 0x15, 0x15));
+        assert_eq!(on_color(Color32::from_rgb(0x2b, 0x5c, 0xd6)), Color32::WHITE);
+    }
 }

@@ -26,7 +26,21 @@ type Branches = Arc<Result<Vec<String>, String>>;
 /// The branch chip with its switch menu.
 pub fn chip(ui: &mut Ui, repo: &Repo, branch: &str, pool: &SessionPool, actions: &mut Vec<Action>) {
     let response = chip_button(ui, branch).on_hover_text("Switch branch");
-    let popup_id = Popup::default_response_id(&response);
+    switch_menu(ui, &response, RectAlign::BOTTOM_START, repo, branch, pool, actions);
+}
+
+/// The switch menu, opened by clicking `button` and placed against it by `align`.
+pub fn switch_menu(
+    ui: &Ui,
+    button: &Response,
+    align: RectAlign,
+    repo: &Repo,
+    branch: &str,
+    pool: &SessionPool,
+    actions: &mut Vec<Action>,
+) {
+    let response = button;
+    let popup_id = Popup::default_response_id(response);
     let cache = popup_id.with("branches");
     let new_name = popup_id.with("new");
     // Read afresh each time the menu opens.
@@ -36,8 +50,8 @@ pub fn chip(ui: &mut Ui, repo: &Repo, branch: &str, pool: &SessionPool, actions:
             d.remove::<String>(new_name);
         });
     }
-    Popup::from_toggle_button_response(&response)
-        .align(RectAlign::BOTTOM_START)
+    Popup::from_toggle_button_response(response)
+        .align(align)
         .gap(6.0)
         .layout(Layout::top_down_justified(Align::Min))
         .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
@@ -95,7 +109,7 @@ fn working_agents(repo: &Repo, pool: &SessionPool) -> usize {
 /// A quiet outlined pill, lit on hover: it labels the repo first and opens a menu second.
 fn chip_button(ui: &mut Ui, branch: &str) -> Response {
     let color = ui.visuals().text_color().gamma_multiply(0.85);
-    let galley = ui.painter().layout_no_wrap(branch.to_string(), FontId::proportional(12.5), color);
+    let galley = ui.painter().layout_no_wrap(branch.to_string(), FontId::proportional(TEXT_SECONDARY), color);
     let (pad, icon, gap) = (8.0, 12.0, 5.0);
     let size = vec2(pad + icon + gap + galley.size().x + pad, 22.0);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
@@ -105,6 +119,7 @@ fn chip_button(ui: &mut Ui, branch: &str) -> Response {
     }
     let outline = Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color);
     painter.rect_stroke(rect, CornerRadius::same(6), outline, StrokeKind::Inside);
+    super::design::focus_ring(ui, &response, 6);
     let glyph = Rect::from_min_size(pos2(rect.left() + pad, rect.center().y - icon / 2.0), vec2(icon, icon));
     branch_glyph(ui, glyph, muted(ui));
     painter.galley(pos2(glyph.right() + gap, rect.center().y - galley.size().y / 2.0), galley, color);

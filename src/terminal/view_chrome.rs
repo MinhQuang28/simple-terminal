@@ -80,7 +80,7 @@ pub(super) fn exit_badge(ui: &Ui, session: &TerminalSession, rect: egui::Rect, s
         return;
     };
     let text = format!("exit {}", finished.exit_code);
-    let font = egui::FontId::proportional(11.0);
+    let font = egui::FontId::proportional(crate::ui::design::TEXT_CAPTION);
     let galley = ui.painter().layout_no_wrap(text, font, style.theme.background.color());
     let size = galley.size() + vec2(10.0, 4.0);
     let badge = egui::Rect::from_min_size(rect.right_bottom() - size - vec2(12.0, 8.0), size);
@@ -100,7 +100,7 @@ pub(super) fn starting_indicator(ui: &Ui, session: &TerminalSession, rect: egui:
         return;
     }
     let color = muted(ui);
-    let font = egui::FontId::proportional(13.0);
+    let font = egui::FontId::proportional(crate::ui::design::TEXT_BODY);
     let text = format!("Starting {}…", session.agent_kind().map_or("Claude", Agent::label));
     let galley = ui.painter().layout_no_wrap(text, font, color);
     let size = vec2(14.0 + 8.0 + galley.size().x, galley.size().y.max(14.0));

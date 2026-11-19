@@ -1,17 +1,18 @@
 use eframe::egui::{
-    Align2, CornerRadius, FontId, Rect, Response, RichText, Sense, Stroke, StrokeKind, Ui, ViewportCommand,
-    pos2, vec2,
+    Align, Align2, CornerRadius, FontId, Layout, Rect, RectAlign, Response, RichText, Sense, Stroke,
+    StrokeKind, Ui, ViewportCommand, pos2, vec2,
 };
 
 use super::Action;
 use super::branch_menu;
+use super::design::{RADIUS_ROW, TEXT_BODY, TEXT_CAPTION, TEXT_SECONDARY, focus_ring};
 use super::inbox_panel;
 use super::usage_panel;
-use super::widgets::{icon_button_frame, muted, right_aligned};
+use super::widgets::{icon_button_frame, muted, right_aligned, text_button, tinted_text_button};
 use crate::font_catalog::SYSTEM_FONT;
 use crate::git_status::GitStatus;
 use crate::inbox::Inbox;
-use crate::model::{AppState, Repo};
+use crate::model::{AppState, Repo, SidePanel};
 use crate::session_pool::SessionPool;
 
 /// Makes `rect` drag the window, since the native titlebar is hidden.
@@ -87,21 +88,21 @@ fn view_switch(ui: &mut Ui, repo: &Repo, actions: &mut Vec<Action>) {
     for (label, command, code) in views {
         let selected = repo.code_view == code;
         let color = if selected { ui.visuals().strong_text_color() } else { muted(ui) };
-        let name = ui.painter().layout_no_wrap(label.into(), FontId::proportional(13.0), color);
+        let name = ui.painter().layout_no_wrap(label.into(), FontId::proportional(TEXT_BODY), color);
         let keys = crate::keymap_hint::hint(command);
-        let key =
-            ui.painter().layout_no_wrap(keys, FontId::proportional(11.0), muted(ui).gamma_multiply(0.8));
+        let key = ui.painter().layout_no_wrap(keys, FontId::proportional(TEXT_CAPTION), muted(ui));
         let key_width = if key.size().x > 0.0 { key.size().x + 7.0 } else { 0.0 };
         let size = vec2(12.0 + name.size().x + key_width + 12.0, 26.0);
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
         let visuals = &ui.visuals().widgets;
-        let radius = CornerRadius::same(7);
+        let radius = CornerRadius::same(RADIUS_ROW);
         if selected {
             ui.painter().rect_filled(rect, radius, visuals.inactive.weak_bg_fill);
         } else if response.hovered() {
             ui.painter().rect_filled(rect, radius, visuals.hovered.weak_bg_fill);
         }
         ui.painter().rect_stroke(rect, radius, visuals.noninteractive.bg_stroke, StrokeKind::Inside);
+        focus_ring(ui, &response, RADIUS_ROW);
         let y = rect.center().y;
         let name_width = name.size().x;
         ui.painter().galley(pos2(rect.left() + 12.0, y - name.size().y / 2.0), name, color);
@@ -144,34 +145,60 @@ fn search_icon(ui: &mut Ui) -> Response {
     response
 }
 
-/// `model` is the one answering in the active Claude pane, if any.
-pub fn status_bar(ui: &mut Ui, state: &AppState, status: Option<&GitStatus>, model: Option<&str>) {
+/// Each part leads to where it is changed: the branch to the switch menu, the change count to
+/// Source Control, the theme and font to Settings. `model` is the one answering in the active
+/// Claude pane, if any.
+pub fn status_bar(
+    ui: &mut Ui,
+    state: &AppState,
+    status: Option<&GitStatus>,
+    model: Option<&str>,
+    pool: &SessionPool,
+    actions: &mut Vec<Action>,
+) {
     ui.horizontal_centered(|ui| {
-        ui.add_space(4.0);
-        let Some(status) = status else { return };
-        ui.spacing_mut().item_spacing.x = 5.0;
-        branch_menu::inline_glyph(ui, muted(ui));
-        ui.label(RichText::new(&status.branch).color(muted(ui)).size(12.0));
-        ui.add_space(3.0);
-        if status.ahead > 0 || status.behind > 0 {
-            ui.label(
-                RichText::new(format!("↑{} ↓{}", status.ahead, status.behind)).color(muted(ui)).size(12.0),
-            );
-        }
-        if status.changed > 0 {
-            let color = state.settings.theme.modified();
-            ui.label(RichText::new(format!("● {} changed", status.changed)).color(color).size(12.0));
-        }
-        if let Some(model) = model {
-            ui.add_space(3.0);
-            ui.label(RichText::new(format!("✦ {model}")).color(muted(ui)).size(12.0));
-        }
+        ui.spacing_mut().item_spacing.x = 0.0;
         right_aligned(ui, |ui| {
-            ui.add_space(8.0);
             let font =
                 if state.settings.font_family.is_empty() { SYSTEM_FONT } else { &state.settings.font_family };
             let info = format!("{} · {} {}pt", state.settings.theme.name, font, state.settings.font_size);
-            ui.label(RichText::new(info).color(muted(ui)).size(11.5));
+            let settings = crate::keymap_hint::with_hint("Settings", "settings.open");
+            if text_button(ui, &info, TEXT_CAPTION).on_hover_text(settings).clicked() {
+                actions.push(Action::OpenSettings);
+            }
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                let repo = state.selected_repo.and_then(|id| state.repo(id));
+                let (Some(status), Some(repo)) = (status, repo) else { return };
+                ui.add_space(4.0);
+                branch_menu::inline_glyph(ui, muted(ui));
+                let branch = text_button(ui, &status.branch, TEXT_SECONDARY).on_hover_text("Switch branch");
+                branch_menu::switch_menu(
+                    ui,
+                    &branch,
+                    RectAlign::TOP_START,
+                    repo,
+                    &status.branch,
+                    pool,
+                    actions,
+                );
+                if status.ahead > 0 || status.behind > 0 {
+                    let sync = format!("↑{} ↓{}", status.ahead, status.behind);
+                    ui.label(RichText::new(sync).color(muted(ui)).size(TEXT_SECONDARY));
+                    ui.add_space(4.0);
+                }
+                if status.changed > 0 {
+                    let color = state.settings.theme.modified();
+                    let changed = format!("● {} changed", status.changed);
+                    let button = tinted_text_button(ui, &changed, TEXT_SECONDARY, color, color);
+                    if button.on_hover_text("Open Source Control").clicked() {
+                        actions.push(Action::SetSidePanel(SidePanel::Changes));
+                    }
+                }
+                if let Some(model) = model {
+                    ui.add_space(4.0);
+                    ui.label(RichText::new(format!("✦ {model}")).color(muted(ui)).size(TEXT_SECONDARY));
+                }
+            });
         });
     });
 }

@@ -12,6 +12,7 @@ use crate::app::RepodeckApp;
 use crate::finder_service::FolderRequest;
 use crate::model::{PaneKind, SplitDir};
 use crate::terminal::content_rows;
+use crate::{socket_agents, socket_control, socket_queries, socket_worktree};
 
 /// Most lines `read` returns.
 const MAX_READ_LINES: usize = 2000;
@@ -19,16 +20,48 @@ const MAX_READ_LINES: usize = 2000;
 /// Runs a tab-separated command; returns the reply text.
 pub fn apply(app: &mut RepodeckApp, command: &str) -> String {
     let fields: Vec<&str> = command.split('\t').collect();
-    let result = match fields.as_slice() {
+    dispatch(app, &fields).unwrap_or_else(|err| format!("error: {err}"))
+}
+
+fn dispatch(app: &mut RepodeckApp, fields: &[&str]) -> Result<String, String> {
+    match fields {
         ["claude", path, task, from] => start_agent(app, path, task, from),
         ["worktree", path, task, from] => start_worktree(app, path, task, from),
         ["split", pane, dir, kind, run, from] => split(app, pane, dir, kind, run, from),
         ["status", pane] => status(app, pane),
         ["send", pane, mode, text] => send(app, pane, *mode == "enter", text),
         ["read", pane, lines] => read(app, pane, lines),
+        ["status.json", pane] => socket_queries::status(app, pane_id(pane)?),
+        ["projects", json] => socket_queries::projects(app, *json == "json"),
+        ["tabs", path, json] => socket_queries::tabs(app, path, *json == "json"),
+        ["list", "json"] => socket_queries::list(app, true),
+        ["sessions", path, json] => socket_queries::sessions(app, path, *json == "json"),
+        ["inbox", json] => socket_queries::inbox(app, *json == "json"),
+        ["inbox.mark", verb] => socket_control::inbox(app, verb),
+        ["worktree.new", path, branch, task, kind, from] => {
+            socket_worktree::worktree_new(app, path, branch, task, *kind == "shell", from)
+        }
+        ["worktree.open", path] => socket_worktree::worktree_open(app, path),
+        ["do", name, pane] => {
+            let pane = if pane.is_empty() { None } else { Some(pane_id(pane)?) };
+            socket_control::run_command(app, name, pane)
+        }
+        ["tab.select", tab] => socket_control::tab_select(app, tab),
+        ["tab.close", tab, force] => socket_control::tab_close(app, tab, *force == "force"),
+        ["tab.rename", tab, name] => socket_control::tab_rename(app, tab, name),
+        ["tab.move", tab, path] => socket_control::tab_move(app, tab, path),
+        ["pane.close", pane] => socket_control::pane_close(app, pane_id(pane)?),
+        ["interrupt", pane] => socket_agents::interrupt(app, pane_id(pane)?),
+        ["approve", pane, answer, from] => {
+            socket_agents::approve(app, pane_id(pane)?, *answer == "allow", from)
+        }
+        ["resume", path, session] => socket_agents::resume(app, path, session),
+        ["code.open", file, line, col] => socket_control::code_open(app, file, line, col),
+        ["code.diff", path] => socket_control::code_diff(app, path),
+        ["repo.add", path, project] => socket_control::repo_add(app, path, project),
+        ["project.new", name, path] => socket_control::project_new(app, name, path),
         _ => Err(format!("malformed command {:?}", fields.first().unwrap_or(&""))),
-    };
-    result.unwrap_or_else(|err| format!("error: {err}"))
+    }
 }
 
 fn pane_id(text: &str) -> Result<Uuid, String> {
@@ -62,7 +95,8 @@ fn start_worktree(app: &mut RepodeckApp, path: &str, task: &str, from: &str) -> 
     }
     let repo = app.repo_containing(&path).unwrap_or_else(|| app.add_repo_to(None, &path));
     let name = app.state.repo(repo).map(|r| r.name.clone()).unwrap_or_default();
-    app.create_worktree(repo, None, (!task.is_empty()).then(|| task.to_string()), Uuid::parse_str(from).ok());
+    let task = (!task.is_empty()).then(|| task.to_string());
+    app.create_worktree(repo, None, task, Uuid::parse_str(from).ok(), PaneKind::Agent);
     Ok(format!("creating a worktree of {name}; its tab appears when it's ready"))
 }
 

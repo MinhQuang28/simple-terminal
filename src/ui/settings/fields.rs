@@ -1,3 +1,4 @@
+use crate::ui::design::TEXT_TITLE;
 use std::ops::RangeInclusive;
 
 use eframe::egui::emath::Numeric;
@@ -18,7 +19,7 @@ pub fn number_field<T: Numeric>(
     suffix: &str,
 ) -> Response {
     let stepper = |ui: &mut Ui, label: &str| {
-        let button = Button::new(RichText::new(label).size(15.0))
+        let button = Button::new(RichText::new(label).size(TEXT_TITLE))
             .fill(ui.visuals().text_color().gamma_multiply(0.12))
             .stroke(Stroke::NONE)
             .corner_radius(CornerRadius::same(6))

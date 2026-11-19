@@ -20,6 +20,8 @@ const MAX_SESSIONS: usize = 30;
 pub struct Session {
     pub id: String,
     pub title: String,
+    /// Whether the user or Claude gave the title, rather than it being the latest prompt.
+    pub named: bool,
     /// Unix seconds of the last write to the transcript.
     pub modified: u64,
     /// Transcript size in bytes, a rough measure of how long the conversation ran.
@@ -34,7 +36,14 @@ struct Entry {
 /// A transcript's title as of its size and mtime, so rescans skip files that haven't changed.
 struct CachedTitle {
     stamp: (u64, u64),
-    title: Option<String>,
+    title: Option<Title>,
+}
+
+/// A transcript's title, and whether the user or Claude gave it rather than a prompt.
+#[derive(Clone, Debug, PartialEq)]
+struct Title {
+    text: String,
+    named: bool,
 }
 
 /// Claude Code transcripts per repo, scanned on background threads because they can be large.
@@ -61,6 +70,12 @@ impl ClaudeHistory {
             self.spawn_scan(repo.to_path_buf());
         }
         entries.get(repo).and_then(|e| e.sessions.clone())
+    }
+
+    /// The title the user or Claude gave conversation `id` in `repo`, once a scan has found one.
+    pub fn named_title(&self, repo: &Path, id: &str) -> Option<String> {
+        let sessions = self.sessions(repo)?;
+        sessions.iter().find(|s| s.id == id && s.named).map(|s| s.title.clone())
     }
 
     fn spawn_scan(&self, repo: PathBuf) {
@@ -109,7 +124,7 @@ fn scan(repo: &Path, titles: &Mutex<HashMap<PathBuf, CachedTitle>>) -> Vec<Sessi
                 return None;
             }
             let title = cached_title(titles, path, (len, modified))?;
-            Some(Session { id, title, modified, size: len })
+            Some(Session { id, title: title.text, named: title.named, modified, size: len })
         })
         .take(MAX_SESSIONS)
         .collect()
@@ -120,7 +135,7 @@ fn cached_title(
     titles: &Mutex<HashMap<PathBuf, CachedTitle>>,
     path: PathBuf,
     stamp: (u64, u64),
-) -> Option<String> {
+) -> Option<Title> {
     let cached = titles.lock().ok()?.get(&path).filter(|c| c.stamp == stamp).map(|c| c.title.clone());
     if let Some(title) = cached {
         return title;
@@ -157,9 +172,9 @@ pub fn has_transcript(cwd: &Path, session: &str) -> bool {
     transcripts_dir(cwd).is_some_and(|dir| dir.join(format!("{session}.jsonl")).is_file())
 }
 
-/// The user's rename, else Claude's generated title, else the latest prompt. `None` for transcripts
-/// without any prompt, which Claude can't meaningfully resume.
-fn read_title(path: &Path) -> Option<String> {
+/// The user's rename, else Claude's generated title, else what the latest prompt asked for. `None`
+/// for transcripts without any prompt, which Claude can't meaningfully resume.
+fn read_title(path: &Path) -> Option<Title> {
     let mut reader = BufReader::new(File::open(path).ok()?);
     let (mut custom, mut generated, mut prompt) = (None, None, None);
     // One buffer for every line: message entries can be megabytes each.
@@ -187,8 +202,11 @@ fn read_title(path: &Path) -> Option<String> {
             *slot.0 = value;
         }
     }
-    let title = custom.or(generated).or(prompt)?;
-    Some(title.lines().next().unwrap_or_default().to_string())
+    let first_line = |title: String| title.lines().next().unwrap_or_default().to_string();
+    match custom.or(generated) {
+        Some(title) => Some(Title { text: first_line(title), named: true }),
+        None => Some(Title { text: crate::prompt_text::task_line(&prompt?)?, named: false }),
+    }
 }
 
 #[cfg(test)]

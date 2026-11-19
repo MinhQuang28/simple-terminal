@@ -208,7 +208,8 @@ impl AgentEvents {
             if let Some(request) = request_from_event(&event) {
                 self.request = Some(request);
             }
-            if let Some(prompt) = event["prompt"].as_str().and_then(first_line) {
+            let prompt = event["prompt"].as_str().and_then(crate::prompt_text::task_line);
+            if let Some(prompt) = prompt.as_deref().and_then(first_line) {
                 self.prompt = Some(prompt);
             }
             if let Some(status) = status_from_event(&event) {

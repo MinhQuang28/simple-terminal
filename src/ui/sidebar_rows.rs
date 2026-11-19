@@ -1,22 +1,23 @@
-use eframe::egui::{Align, Button, Label, Layout, RichText, Ui};
+use eframe::egui::{Align, Label, Layout, RichText, Ui};
 
 use super::Action;
+use super::design::{TEXT_BODY, TEXT_CAPTION, TEXT_MICRO};
 use super::repo_drag;
 use super::repo_indicators::{RepoRow, indicators, tabs_chevron};
-use super::sidebar_tree_rows::{TEXT_INDENT, tree_row, tree_rows};
-use super::widgets::{avatar, menu_icon, muted, right_aligned, row_sized};
+use super::sidebar_repo_menus::{repo_actions_menu, repo_menu};
+use super::sidebar_worktree_rows::{TEXT_INDENT, worktree_row};
+use super::widgets::{GLYPH_BUTTON_SIZE, avatar, menu_icon, muted, right_aligned, row_hovered, row_sized};
 use crate::git_watcher::GitWatcher;
-use crate::model::{AppState, PaneKind, Repo};
-use crate::pr_status::{CheckState, PrWatcher};
+use crate::model::{AppState, PaneKind, Repo, RepoLayout};
+use crate::pr_status::PrWatcher;
 use crate::session_pool::SessionPool;
-use crate::worktree;
 
 const REPO_INDENT: f32 = 6.0;
 const AVATAR: f32 = 24.0;
+const REPO_ROW_HEIGHT: f32 = 40.0;
 
-/// A repo as a block: its name, its branch line with activity, and the terminals open in it and
-/// in its `worktrees`. Without branches the activity moves onto the name row. File and diff tabs
-/// only appear in the tab bar.
+/// A repo as a block: a row with its name, branch and activity, and a line per worktree with
+/// that worktree's branch and activity. Tabs only appear in the tab bar and the Agents strip.
 #[allow(clippy::too_many_arguments)]
 pub fn repo_block(
     ui: &mut Ui,
@@ -29,60 +30,45 @@ pub fn repo_block(
     now: u64,
     actions: &mut Vec<Action>,
 ) {
-    let selected = state.selected_repo == Some(repo.id);
-    let rows = tree_rows(repo, worktrees, state, git);
-    let tab_active =
-        selected && rows.iter().any(|r| r.repo.id == repo.id && r.tab.map(|t| t.id) == repo.active_tab);
-
+    let presets = &state.settings.presets;
+    // A folded repo has no worktree row to carry the highlight, so it stays on the repo.
+    let selected = state.selected_repo == Some(repo.id)
+        || (repo.tabs_collapsed && worktrees.iter().any(|w| state.selected_repo == Some(w.id)));
     let pr = prs.pr(&repo.path).flatten();
     let status = git.status(&repo.path);
-    let row = RepoRow {
-        repo,
-        status: status.as_deref(),
-        pr: pr.as_deref(),
-        pool,
-        now,
-        presets: &state.settings.presets,
-    };
-    let expandable = !rows.is_empty();
-    if state.settings.sidebar_branches {
-        repo_row(ui, &row, None, actions);
-        branch_row(ui, &row, selected && !tab_active, expandable, actions);
-    } else {
-        repo_row(ui, &row, Some((selected && !tab_active, expandable)), actions);
-    }
-    if !repo.tabs_collapsed {
-        for (index, tree_row_data) in rows.iter().enumerate() {
-            tree_row(ui, state, tree_row_data, index + 1 == rows.len(), pool, actions);
+    let row = RepoRow { repo, status: status.as_deref(), pr: pr.as_deref(), pool, now, presets };
+    let expandable = !worktrees.is_empty();
+    match state.settings.repo_layout {
+        RepoLayout::Compact => repo_row(ui, &row, selected, expandable, actions),
+        RepoLayout::Stacked => {
+            name_row(ui, &row, selected, actions);
+            branch_row(ui, &row, selected, expandable, actions);
         }
     }
-    ui.add_space(6.0);
+    if !repo.tabs_collapsed {
+        for (index, &worktree) in worktrees.iter().enumerate() {
+            let pr = prs.pr(&worktree.path).flatten();
+            let status = git.status(&worktree.path);
+            let row =
+                RepoRow { repo: worktree, status: status.as_deref(), pr: pr.as_deref(), pool, now, presets };
+            let shown = state.selected_repo == Some(worktree.id);
+            worktree_row(ui, &row, shown, index + 1 == worktrees.len(), actions);
+        }
+    }
+    ui.add_space(2.0);
 }
 
-/// The repo's avatar and name. `compact` (selected, expandable) also puts the activity and the tab
-/// chevron here, for when there's no branch row below.
-fn repo_row(ui: &mut Ui, row: &RepoRow, compact: Option<(bool, bool)>, actions: &mut Vec<Action>) {
+/// The two-row layout's first row: the repo's avatar and name. The "⋯" shows on the `current`
+/// repo and on the one under the pointer.
+fn name_row(ui: &mut Ui, row: &RepoRow, current: bool, actions: &mut Vec<Action>) {
     let repo = row.repo;
-    let selected = compact.is_some_and(|(selected, _)| selected);
-    let (response, ()) = row_sized(ui, selected, REPO_INDENT, 32.0, |ui| {
+    let (response, ()) = row_sized(ui, false, REPO_INDENT, 32.0, |ui| {
+        let shown = current || row_hovered(ui);
         right_aligned(ui, |ui| {
-            ui.spacing_mut().item_spacing.x = 10.0;
-            menu_icon(ui, "+", |ui| new_tab_menu(ui, row, actions)).on_hover_text("New tab");
-            if compact.is_some() {
-                indicators(ui, row, actions);
-            }
+            menu_icon(ui, "⋯", shown, |ui| repo_actions_menu(ui, repo, actions));
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                 avatar(ui, &repo.name, AVATAR);
-                let expandable = compact.is_some_and(|(_, expandable)| expandable);
-                // Leave the chevron its room so a long name truncates instead of pushing it out.
-                let chevron_width = if expandable { 20.0 } else { 0.0 };
-                ui.scope(|ui| {
-                    ui.set_max_width((ui.available_width() - chevron_width).max(0.0));
-                    ui.add(Label::new(RichText::new(&repo.name).size(14.0)).truncate().selectable(false));
-                });
-                if expandable {
-                    tabs_chevron(ui, repo, actions);
-                }
+                ui.add(Label::new(RichText::new(&repo.name).size(TEXT_BODY)).truncate().selectable(false));
             });
         });
     });
@@ -93,12 +79,12 @@ fn repo_row(ui: &mut Ui, row: &RepoRow, compact: Option<(bool, bool)>, actions: 
     response.on_hover_text(repo.path.display().to_string()).context_menu(|ui| repo_menu(ui, row, actions));
 }
 
-/// Branch name with sync state and recency; selecting it shows the repo without a terminal.
+/// The two-row layout's second row: branch name with sync state, agent status and recency. A
+/// click shows the repo's terminals; `expandable` adds the chevron that folds the worktree rows.
 fn branch_row(ui: &mut Ui, row: &RepoRow, selected: bool, expandable: bool, actions: &mut Vec<Action>) {
     let repo = row.repo;
     let indent = if expandable { TEXT_INDENT - 20.0 } else { TEXT_INDENT };
     let (response, ()) = row_sized(ui, selected, indent, 28.0, |ui| {
-        ui.spacing_mut().item_spacing.x = 6.0;
         let name = row.status.map_or("local", |s| s.branch.as_str());
         let color =
             if selected { ui.visuals().text_color() } else { ui.visuals().text_color().gamma_multiply(0.85) };
@@ -111,86 +97,69 @@ fn branch_row(ui: &mut Ui, row: &RepoRow, selected: bool, expandable: bool, acti
                     tabs_chevron(ui, repo, actions);
                 }
                 // Leave the star its room so a long branch name truncates instead of pushing it out.
-                let star_width = 16.0;
                 ui.scope(|ui| {
-                    ui.set_max_width((ui.available_width() - star_width).max(0.0));
-                    let label = Label::new(RichText::new(name).size(13.0).color(color));
+                    ui.set_max_width((ui.available_width() - 16.0).max(0.0));
+                    let label = Label::new(RichText::new(name).size(TEXT_BODY).color(color));
                     ui.add(label.truncate().selectable(false));
                 });
-                ui.label(RichText::new("★").color(muted(ui)).size(10.0));
+                ui.label(RichText::new("★").color(muted(ui)).size(TEXT_MICRO));
             });
         });
     });
     if response.clicked() {
-        actions.push(Action::SelectRepo(repo.id));
+        select_with_terminal(repo, actions);
     }
     response.context_menu(|ui| repo_menu(ui, row, actions));
 }
 
-fn new_tab_menu(ui: &mut Ui, row: &RepoRow, actions: &mut Vec<Action>) {
+/// The compact layout: avatar, name over its branch, activity on the right. A click
+/// shows the repo's terminals; `expandable` adds the chevron that folds the worktree rows. The
+/// "⋯" shows on the selected repo and on the one under the pointer.
+fn repo_row(ui: &mut Ui, row: &RepoRow, selected: bool, expandable: bool, actions: &mut Vec<Action>) {
     let repo = row.repo;
-    if ui.add(Button::new("New terminal").shortcut_text(crate::keymap_hint::hint("tab.new"))).clicked() {
-        actions.push(Action::NewTab { repo: repo.id, kind: PaneKind::Shell });
+    let (response, ()) = row_sized(ui, selected, REPO_INDENT, REPO_ROW_HEIGHT, |ui| {
+        let shown = selected || row_hovered(ui);
+        // Controls go first so the name and branch truncate to the space they leave.
+        right_aligned(ui, |ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            menu_icon(ui, "⋯", shown, |ui| repo_actions_menu(ui, repo, actions));
+            indicators(ui, row, actions);
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                avatar(ui, &repo.name, AVATAR);
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 1.0;
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 6.0;
+                        // Leave the chevron its room so a long name truncates instead of pushing it out.
+                        let chevron_width = if expandable { GLYPH_BUTTON_SIZE } else { 0.0 };
+                        ui.scope(|ui| {
+                            ui.set_max_width((ui.available_width() - chevron_width).max(0.0));
+                            let name = RichText::new(&repo.name).size(TEXT_BODY);
+                            ui.add(Label::new(name).truncate().selectable(false));
+                        });
+                        if expandable {
+                            tabs_chevron(ui, repo, actions);
+                        }
+                    });
+                    let branch = row.status.map_or("local", |s| s.branch.as_str());
+                    let branch = RichText::new(branch).size(TEXT_CAPTION).color(muted(ui));
+                    ui.add(Label::new(branch).truncate().selectable(false));
+                });
+            });
+        });
+    });
+    let response = repo_drag::drag_source(response, repo.id);
+    if response.clicked() {
+        select_with_terminal(repo, actions);
     }
-    if ui
-        .add(Button::new("New Claude session").shortcut_text(crate::keymap_hint::hint("tab.new_agent")))
-        .clicked()
-    {
-        actions.push(Action::NewTab { repo: repo.id, kind: PaneKind::Agent });
-    }
-    let worktree = Button::new("New Claude session in worktree")
-        .shortcut_text(crate::keymap_hint::hint("tab.new_agent_worktree"));
-    if ui.add(worktree).clicked() {
-        actions.push(Action::NewWorktreeAgent(repo.id));
-    }
-    let presets = row.presets.iter().enumerate().filter(|(_, p)| !p.command.trim().is_empty());
-    for (i, (preset, p)) in presets.enumerate() {
-        if i == 0 {
-            ui.separator();
-        }
-        let name = if p.name.trim().is_empty() { p.command.trim() } else { p.name.trim() };
-        if ui.button(name).on_hover_text(&p.command).clicked() {
-            actions.push(Action::RunPreset { repo: repo.id, preset });
-        }
-    }
+    response.on_hover_text(repo.path.display().to_string()).context_menu(|ui| repo_menu(ui, row, actions));
 }
 
-fn repo_menu(ui: &mut Ui, row: &RepoRow, actions: &mut Vec<Action>) {
-    let (repo, pr) = (row.repo, row.pr);
-    new_tab_menu(ui, row, actions);
-    ui.separator();
-    match pr {
-        Some(pr) => {
-            if ui.button(format!("Open pull request #{}", pr.number)).clicked() {
-                actions.push(Action::OpenUrl(pr.url.clone()));
-            }
-            if pr.ci() == Some(CheckState::Failing) && ui.button("Fix failing CI with Claude").clicked() {
-                actions.push(Action::AutoFixCi(repo.id));
-            }
-        }
-        None => {
-            if ui.button("Create pull request…").clicked() {
-                actions.push(Action::CreatePullRequest(repo.id));
-            }
-        }
-    }
-    if ui.button("New worktree on a branch…").clicked() {
-        actions.push(Action::OpenNewWorktree(repo.id));
-    }
-    if ui.button("Open worktree…").clicked() {
-        actions.push(Action::OpenWorktreeList(repo.id));
-    }
-    if ui.button("Worktree setup…").clicked() {
-        actions.push(Action::OpenRepoSetup(repo.id));
-    }
-    if worktree::is_worktree(&repo.path) && ui.button("Remove worktree…").clicked() {
-        actions.push(Action::OpenRemoveWorktree(repo.id));
-    }
-    if ui.button("Reveal in Finder").clicked() {
-        actions.push(Action::RevealRepo(repo.id));
-    }
-    ui.separator();
-    if ui.button("Remove from project").clicked() {
-        actions.push(Action::RemoveRepo(repo.id));
+/// Shows `repo`, starting a terminal in it when it has none open, so a click on a branch lands
+/// on a prompt instead of an empty view.
+pub fn select_with_terminal(repo: &Repo, actions: &mut Vec<Action>) {
+    actions.push(Action::SelectRepo(repo.id));
+    if repo.tabs.iter().all(|t| t.is_document()) {
+        actions.push(Action::NewTab { repo: repo.id, kind: PaneKind::Shell });
     }
 }
