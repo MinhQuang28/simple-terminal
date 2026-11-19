@@ -231,6 +231,14 @@ impl AgentEvents {
         }
     }
 
+    /// The turn was stopped from outside (`repodeck interrupt`). Claude Code reports no hook for
+    /// an interrupted turn, so without this the pane would read as working until the next prompt.
+    pub fn note_interrupted(&mut self) {
+        if self.status == AgentStatus::Working {
+            self.status = AgentStatus::Idle;
+        }
+    }
+
     /// The user answered a prompt or typed into the pane, so it no longer needs attention.
     pub fn note_user_input(&mut self) {
         self.status = match self.status {

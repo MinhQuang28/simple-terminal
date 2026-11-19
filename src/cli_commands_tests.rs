@@ -23,7 +23,8 @@ fn verbs_become_socket_commands() {
     assert_eq!(request("tab close T --force").unwrap(), "tab.close\tT\tforce");
     assert_eq!(request("tab rename T api work").unwrap(), "tab.rename\tT\tapi work");
     assert_eq!(request("inbox clear").unwrap(), "inbox.mark\tclear");
-    assert_eq!(request("pane close P").unwrap(), "pane.close\tP");
+    assert_eq!(request("pane close P").unwrap(), "pane.close\tP\t");
+    assert_eq!(request("pane close P --force").unwrap(), "pane.close\tP\tforce");
     assert!(request("interrupt").is_err(), "a pane is required");
     assert!(request("tab move T").is_err(), "a destination is required");
     assert!(request("approve --pane P --deny").unwrap().starts_with("approve\tP\tdeny\t"));

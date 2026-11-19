@@ -300,6 +300,14 @@ impl TerminalSession {
         }
     }
 
+    /// Presses Escape for the agent, which ends the turn it is working on.
+    pub fn interrupt_agent(&mut self) {
+        self.send_input(b"\x1b".to_vec());
+        if let Some(agent) = &mut self.agent {
+            agent.note_interrupted();
+        }
+    }
+
     /// Colors reported back to programs that query the palette (OSC 10/11/4).
     pub fn sync_theme(&mut self, theme: &Theme) {
         if self.theme != *theme {

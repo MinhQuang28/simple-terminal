@@ -50,7 +50,7 @@ fn dispatch(app: &mut RepodeckApp, fields: &[&str]) -> Result<String, String> {
         ["tab.close", tab, force] => socket_control::tab_close(app, tab, *force == "force"),
         ["tab.rename", tab, name] => socket_control::tab_rename(app, tab, name),
         ["tab.move", tab, path] => socket_control::tab_move(app, tab, path),
-        ["pane.close", pane] => socket_control::pane_close(app, pane_id(pane)?),
+        ["pane.close", pane, force] => socket_control::pane_close(app, pane_id(pane)?, *force == "force"),
         ["interrupt", pane] => socket_agents::interrupt(app, pane_id(pane)?),
         ["approve", pane, answer, from] => {
             socket_agents::approve(app, pane_id(pane)?, *answer == "allow", from)

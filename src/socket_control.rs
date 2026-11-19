@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use uuid::Uuid;
 
+use crate::agent_events::AgentStatus;
 use crate::app::RepodeckApp;
 use crate::app_shortcuts::CODE_TAKES;
 use crate::model::{Project, SidePanel};
@@ -63,11 +64,18 @@ pub fn tab_select(app: &mut RepodeckApp, id: &str) -> Result<String, String> {
 }
 
 pub fn tab_close(app: &mut RepodeckApp, id: &str, force: bool) -> Result<String, String> {
-    let (repo, tab) = find_tab(app, id).map(|(r, t)| (r, t.id))?;
-    apply(
-        app,
-        [if force { Action::DiscardAndCloseTab { repo, tab } } else { Action::CloseTab { repo, tab } }],
-    );
+    let (repo, tab) = find_tab(app, id)?;
+    // Refused here rather than asked in a dialog the caller can't see.
+    if !force {
+        if tab.panes.iter().any(|p| working(app, p.id)) {
+            return Err("Claude is still working in that tab (`--force` closes it anyway)".into());
+        }
+        if tab.file.as_ref().is_some_and(|path| app.buffers.is_dirty(path)) {
+            return Err("the file has unsaved changes (`--force` discards them)".into());
+        }
+    }
+    let tab = tab.id;
+    apply(app, [Action::DiscardAndCloseTab { repo, tab }]);
     Ok("ok".into())
 }
 
@@ -95,10 +103,19 @@ pub fn tab_move(app: &mut RepodeckApp, id: &str, path: &str) -> Result<String, S
     Ok("ok".into())
 }
 
-pub fn pane_close(app: &mut RepodeckApp, pane: Uuid) -> Result<String, String> {
+pub fn pane_close(app: &mut RepodeckApp, pane: Uuid, force: bool) -> Result<String, String> {
     let tab = tab_of_pane(app, pane).ok_or("unknown pane")?;
-    apply(app, [Action::ClosePane { tab, pane }]);
+    if !force && working(app, pane) {
+        return Err("Claude is still working in that pane (`--force` closes it anyway)".into());
+    }
+    app.close_pane(tab, pane);
+    app.dirty = true;
+    app.ctx.request_repaint();
     Ok("ok".into())
+}
+
+fn working(app: &RepodeckApp, pane: Uuid) -> bool {
+    app.pool.agent_status(pane) == Some(AgentStatus::Working)
 }
 
 /// Shows a file in the Code view, at `line` and `col` when given.

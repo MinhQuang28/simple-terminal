@@ -51,8 +51,8 @@ as such).
     repodeck tab select <tab id>             # show it (switching repo and view as needed)
     repodeck tab rename <tab id> <name>      # empty name hands the title back to its program
     repodeck tab move <tab id> --repo <folder>   # e.g. into a worktree; it shows there
-    repodeck tab close <tab id> [--force]    # --force discards unsaved file edits
-    repodeck pane close <id>
+    repodeck tab close <tab id> [--force]    # refuses unsaved edits or a working agent without --force
+    repodeck pane close <id> [--force]       # refuses a working agent without --force
     repodeck do <command> [--pane <id>]      # run an app command as its key would
     repodeck commands                        # every command `do` takes
 
@@ -84,7 +84,7 @@ turns are yours to read: they aren't sent to the user's inbox while you are runn
 
 ## Steer agents
 
-    repodeck interrupt --pane <id>           # Esc for an agent (ends its turn), Ctrl-C for a shell
+    repodeck interrupt --pane <id>           # Esc for an agent (ends its turn, `wait` then returns), Ctrl-C for a shell
     repodeck approve --pane <id> [--deny]    # answer the permission prompt of an agent you started
     repodeck sessions [folder]               # past Claude conversations: id, modified, title
     repodeck resume [folder] [--session <id>]   # reopen one (the latest by default) in a new tab

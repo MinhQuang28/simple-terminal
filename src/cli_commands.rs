@@ -68,10 +68,13 @@ pub fn build(verb: &str, args: &mut Vec<String>) -> Option<Result<Request, Strin
             }
         }
         "tab" => tab(args),
-        "pane" => match (args.first().map(String::as_str), args.get(1)) {
-            (Some("close"), Some(pane)) => send(format!("pane.close\t{}", clean(pane))),
-            _ => Some(Err("usage: repodeck pane close <id>".into())),
-        },
+        "pane" => {
+            let force = if take_flag(args, "--force") { "force" } else { "" };
+            match (args.first().map(String::as_str), args.get(1)) {
+                (Some("close"), Some(pane)) => send(format!("pane.close\t{}\t{force}", clean(pane))),
+                _ => Some(Err("usage: repodeck pane close <id> [--force]".into())),
+            }
+        }
         "code" => code(args),
         "repo" => {
             let project = take_value(args, "--project").unwrap_or_default();

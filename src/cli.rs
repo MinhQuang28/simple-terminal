@@ -14,7 +14,7 @@ focus [pane] | list [--json] | projects | tabs [--repo <folder>] | status [--pan
 split [--down] [--claude] [--pane <id>] [-- <command or task>] | \
 send [--pane <id>] [--no-enter] <text> | read [--pane <id>] [--lines <n>] | \
 wait --pane <id> [--timeout <seconds>] | interrupt|approve --pane <id> | \
-tab select|close|rename|move … | pane close <id> | do <command> | commands | \
+tab select|close|rename|move … | pane close <id> [--force] | do <command> | commands | \
 sessions [folder] | resume [folder] [--session <id>] | code open|diff … | \
 repo add <folder> | project new <name> | inbox [read|clear] | shot [file.png] | --skill \
 (see `repodeck --skill` for every option)";

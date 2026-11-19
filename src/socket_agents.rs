@@ -22,7 +22,11 @@ pub fn interrupt(app: &mut RepodeckApp, pane: Uuid) -> Result<String, String> {
         .map(|p| p.kind == PaneKind::Agent)
         .ok_or("unknown pane")?;
     let session = app.pool.get_mut(pane).ok_or("pane not running")?;
-    session.send_input(if agent { b"\x1b".to_vec() } else { b"\x03".to_vec() });
+    if agent {
+        session.interrupt_agent();
+    } else {
+        session.send_input(b"\x03".to_vec());
+    }
     Ok("ok".into())
 }
 
