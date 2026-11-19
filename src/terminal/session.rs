@@ -115,10 +115,12 @@ pub struct TerminalSession {
     pub frame: Frame,
     /// UI state of the pane showing this session.
     pub(super) view: super::view::ViewState,
-    agent: Option<AgentEvents>,
+    pub(super) agent: Option<AgentEvents>,
     /// Which agent the pane was started with, for its icon and label.
     agent_kind: Option<agent_launch::Agent>,
     status_change: Option<(AgentStatus, String)>,
+    /// When Escape last reached the agent mid-turn, while its screen is watched for the result.
+    pub(super) escape_at: Option<Instant>,
     /// When the user started looking at this pane while its agent reported "Done".
     done_seen_at: Option<Instant>,
     pub(super) shell: Option<ShellEvents>,
@@ -270,6 +272,7 @@ impl TerminalSession {
                 _ => None,
             },
             status_change: None,
+            escape_at: None,
             transcript_title: None,
             prompt_title: None,
             done_seen_at: None,
@@ -297,14 +300,6 @@ impl TerminalSession {
         self.last_user_input = Instant::now();
         if let Some(agent) = &mut self.agent {
             agent.note_user_input();
-        }
-    }
-
-    /// Presses Escape for the agent, which ends the turn it is working on.
-    pub fn interrupt_agent(&mut self) {
-        self.send_input(b"\x1b".to_vec());
-        if let Some(agent) = &mut self.agent {
-            agent.note_interrupted();
         }
     }
 
@@ -504,6 +499,7 @@ impl TerminalSession {
             }
         }
         self.flush_queued();
+        self.check_interrupted();
         if let Some(agent) = &mut self.agent
             && let Some(status) = agent.poll()
         {

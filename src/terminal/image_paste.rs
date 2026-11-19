@@ -34,6 +34,7 @@ impl TerminalSession {
     /// Typed or pasted input; while a pasted image is being saved it waits so it still lands
     /// after the image's path.
     pub fn send_input(&mut self, bytes: Vec<u8>) {
+        self.note_escape(&bytes);
         if self.queued.is_empty() {
             self.write(bytes);
         } else {

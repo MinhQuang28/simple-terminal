@@ -231,8 +231,8 @@ impl AgentEvents {
         }
     }
 
-    /// The turn was stopped from outside (`repodeck interrupt`). Claude Code reports no hook for
-    /// an interrupted turn, so without this the pane would read as working until the next prompt.
+    /// The turn was stopped with Escape. Claude Code reports no hook for an interrupted turn, so
+    /// without this the pane would read as working until the next prompt.
     pub fn note_interrupted(&mut self) {
         if self.status == AgentStatus::Working {
             self.status = AgentStatus::Idle;
