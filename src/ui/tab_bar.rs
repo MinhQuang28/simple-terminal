@@ -1,7 +1,6 @@
 use eframe::egui::scroll_area::ScrollBarVisibility;
 use eframe::egui::{
-    Align, Align2, Button, Color32, FontId, Layout, Rect, Response, RichText, ScrollArea, Sense, Ui, pos2,
-    vec2,
+    Align, Align2, Color32, FontId, Layout, Rect, Response, ScrollArea, Sense, Ui, pos2, vec2,
 };
 use uuid::Uuid;
 
@@ -10,6 +9,7 @@ use super::agent_status;
 use super::claude_icon::ICON_SIZE;
 use super::design::{RADIUS_ROW, TEXT_BODY, focus_ring};
 use super::history_menu;
+use super::new_tab_menu;
 use super::program_icon;
 use super::sidebar::{tab_busy, tab_menu, tab_program, tab_status, tab_title};
 use super::spinner::spinner_at;
@@ -17,7 +17,7 @@ use super::widgets::{accent, muted, right_aligned};
 use crate::agent_events::AgentStatus;
 use crate::claude_history::ClaudeHistory;
 use crate::editor::Buffers;
-use crate::model::{AppState, PaneKind, Repo, Tab};
+use crate::model::{AppState, Repo, Tab};
 use crate::programs::Program;
 use crate::session_pool::SessionPool;
 
@@ -107,29 +107,7 @@ pub fn show(
             }
         }
         ui.add_space(6.0);
-        ui.menu_button(RichText::new("+").size(19.0), |ui| {
-            ui.set_min_width(260.0);
-            if ui
-                .add(Button::new("New terminal").shortcut_text(crate::keymap_hint::hint("tab.new")))
-                .clicked()
-            {
-                actions.push(Action::NewTab { repo: repo.id, kind: PaneKind::Shell });
-            }
-            if ui
-                .add(
-                    Button::new("New Claude session")
-                        .shortcut_text(crate::keymap_hint::hint("tab.new_agent")),
-                )
-                .clicked()
-            {
-                actions.push(Action::NewTab { repo: repo.id, kind: PaneKind::Agent });
-            }
-            let worktree = Button::new("New Claude session in worktree")
-                .shortcut_text(crate::keymap_hint::hint("tab.new_agent_worktree"));
-            if ui.add(worktree).clicked() {
-                actions.push(Action::NewWorktreeAgent(repo.id));
-            }
-        });
+        new_tab_menu::show(ui, state, repo, actions);
         right_aligned(ui, |ui| {
             ui.add_space(8.0);
             history_menu::show(ui, repo, history, actions);

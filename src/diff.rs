@@ -5,10 +5,11 @@ use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 
-use eframe::egui::{self, Galley};
+use eframe::egui;
 
 use crate::git_status::GitStatus;
 use crate::ui::diff_comments::Comment;
+use crate::ui::diff_view::DiffLaid;
 
 /// Lines of a unified diff beyond this are dropped so huge diffs stay responsive.
 const MAX_LINES: usize = 20_000;
@@ -21,7 +22,7 @@ struct Entry {
     computing: Option<u64>,
     text: Option<Arc<str>>,
     /// Laid-out text for the current `text` and the look it was laid out with.
-    galley: Option<(u64, Arc<Galley>)>,
+    galley: Option<DiffLaid>,
     comments: Vec<Comment>,
 }
 
@@ -78,7 +79,7 @@ impl DiffCache {
 
     /// Where the view keeps the laid-out diff of `file` (keyed by the look it was built for) and
     /// the user's comments on it.
-    pub fn view_slots(&mut self, file: &Path) -> (&mut Option<(u64, Arc<Galley>)>, &mut Vec<Comment>) {
+    pub fn view_slots(&mut self, file: &Path) -> (&mut Option<DiffLaid>, &mut Vec<Comment>) {
         let entry = self.entries.entry(file.to_path_buf()).or_default();
         (&mut entry.galley, &mut entry.comments)
     }

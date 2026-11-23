@@ -5,15 +5,23 @@ use eframe::egui::{
 
 use super::Action;
 use super::branch_menu;
+use super::context_ring;
 use super::design::{RADIUS_ROW, TEXT_BODY, TEXT_CAPTION, TEXT_SECONDARY, focus_ring};
 use super::inbox_panel;
+use super::model_menu;
+use super::open_in_menu;
 use super::usage_panel;
 use super::widgets::{icon_button_frame, muted, right_aligned, text_button, tinted_text_button};
+use crate::claude_models::ModelOption;
+use crate::claude_status_line::StatusLine;
 use crate::font_catalog::SYSTEM_FONT;
 use crate::git_status::GitStatus;
 use crate::inbox::Inbox;
 use crate::model::{AppState, Repo, SidePanel};
 use crate::session_pool::SessionPool;
+
+/// Height of the view switch's pills, which fit the status bar.
+const VIEW_SWITCH_HEIGHT: f32 = 22.0;
 
 /// Makes `rect` drag the window, since the native titlebar is hidden.
 /// Must run before widgets in that area so they stay clickable on top.
@@ -34,7 +42,7 @@ pub fn top_bar(
     status: Option<&GitStatus>,
     inbox: &Inbox,
     pool: &SessionPool,
-    context: Option<f64>,
+    (limits, context): (Option<&StatusLine>, Option<f64>),
     actions: &mut Vec<Action>,
 ) {
     window_drag_area(ui, ui.max_rect());
@@ -51,8 +59,6 @@ pub fn top_bar(
                 ui.add_space(6.0);
                 branch_menu::chip(ui, repo, &status.branch, pool, actions);
             }
-            ui.add_space(14.0);
-            view_switch(ui, repo, actions);
         }
         right_aligned(ui, |ui| {
             ui.add_space(4.0);
@@ -73,7 +79,10 @@ pub fn top_bar(
                 }
             }
             inbox_panel::bell(ui, state, inbox, pool, actions);
-            usage_panel::gauge(ui, state, pool.latest_limits().as_ref(), context);
+            usage_panel::gauge(ui, state, limits, context, actions);
+            if let Some(repo) = state.selected_repo.and_then(|id| state.repo(id)) {
+                open_in_menu::show(ui, repo, actions);
+            }
             if search_icon(ui).on_hover_text("Find in terminal (⌘F)").clicked() {
                 actions.push(Action::OpenFind);
             }
@@ -81,10 +90,12 @@ pub fn top_bar(
     });
 }
 
-/// Herdr-style pills that switch the repo between its terminals and its code, each with its key.
+/// Pills at the status bar's right end that switch the repo between its terminals and its code,
+/// each with its key.
 fn view_switch(ui: &mut Ui, repo: &Repo, actions: &mut Vec<Action>) {
     ui.spacing_mut().item_spacing.x = 6.0;
-    let views = [("Terminals", "view.terminals", false), ("Code", "view.code", true)];
+    // Laid out from the right, so the last one listed comes first.
+    let views = [("Code", "view.code", true), ("Terminals", "view.terminals", false)];
     for (label, command, code) in views {
         let selected = repo.code_view == code;
         let color = if selected { ui.visuals().strong_text_color() } else { muted(ui) };
@@ -92,10 +103,10 @@ fn view_switch(ui: &mut Ui, repo: &Repo, actions: &mut Vec<Action>) {
         let keys = crate::keymap_hint::hint(command);
         let key = ui.painter().layout_no_wrap(keys, FontId::proportional(TEXT_CAPTION), muted(ui));
         let key_width = if key.size().x > 0.0 { key.size().x + 7.0 } else { 0.0 };
-        let size = vec2(12.0 + name.size().x + key_width + 12.0, 26.0);
+        let size = vec2(12.0 + name.size().x + key_width + 12.0, VIEW_SWITCH_HEIGHT);
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
         let visuals = &ui.visuals().widgets;
-        let radius = CornerRadius::same(RADIUS_ROW);
+        let radius = CornerRadius::same((VIEW_SWITCH_HEIGHT / 2.0) as u8);
         if selected {
             ui.painter().rect_filled(rect, radius, visuals.inactive.weak_bg_fill);
         } else if response.hovered() {
@@ -148,17 +159,32 @@ fn search_icon(ui: &mut Ui) -> Response {
 /// Each part leads to where it is changed: the branch to the switch menu, the change count to
 /// Source Control, the theme and font to Settings. `model` is the one answering in the active
 /// Claude pane, if any.
+/// What the status bar shows of the Claude Code session in the active pane.
+pub struct AgentInfo<'a> {
+    /// The model answering, once Claude Code has reported it.
+    pub model: Option<&'a str>,
+    /// Share of the context window in use, 0 to 100.
+    pub context: Option<f64>,
+    /// Models the session can be switched to.
+    pub models: &'a [ModelOption],
+}
+
 pub fn status_bar(
     ui: &mut Ui,
     state: &AppState,
     status: Option<&GitStatus>,
-    model: Option<&str>,
+    agent: &AgentInfo<'_>,
     pool: &SessionPool,
     actions: &mut Vec<Action>,
 ) {
     ui.horizontal_centered(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         right_aligned(ui, |ui| {
+            if let Some(repo) = state.selected_repo.and_then(|id| state.repo(id)) {
+                ui.add_space(6.0);
+                ui.scope(|ui| view_switch(ui, repo, actions));
+                ui.add_space(8.0);
+            }
             let font =
                 if state.settings.font_family.is_empty() { SYSTEM_FONT } else { &state.settings.font_family };
             let info = format!("{} · {} {}pt", state.settings.theme.name, font, state.settings.font_size);
@@ -194,9 +220,15 @@ pub fn status_bar(
                         actions.push(Action::SetSidePanel(SidePanel::Changes));
                     }
                 }
-                if let Some(model) = model {
+                if let Some(model) = agent.model {
                     ui.add_space(4.0);
-                    ui.label(RichText::new(format!("✦ {model}")).color(muted(ui)).size(TEXT_SECONDARY));
+                    model_menu::show(ui, model, agent.models, actions);
+                }
+                if let Some(context) = agent.context {
+                    ui.add_space(6.0);
+                    let hint = format!("Context window: {context:.0}% used");
+                    context_ring::show(ui, context, VIEW_SWITCH_HEIGHT, &state.settings.theme)
+                        .on_hover_text(hint);
                 }
             });
         });

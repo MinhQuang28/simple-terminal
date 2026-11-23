@@ -8,7 +8,7 @@ use super::sidebar::{tab_busy, tab_status};
 use super::spinner::spinner;
 use super::widgets::{GLYPH_BUTTON_SIZE, accent, ago, muted, tag};
 use crate::git_status::GitStatus;
-use crate::model::{LaunchPreset, Repo};
+use crate::model::{LaunchPreset, PaneKind, Repo};
 use crate::pr_status::{CheckState, PullRequest};
 use crate::session_pool::SessionPool;
 
@@ -21,6 +21,8 @@ pub struct RepoRow<'a> {
     pub now: u64,
     /// Offered in the repo's new-tab menu.
     pub presets: &'a [LaunchPreset],
+    /// What a click starts in the repo when nothing runs in it.
+    pub opens: PaneKind,
 }
 
 /// A repo's activity, right to left: recency, pull request, spinner, sync state, merged, attention.

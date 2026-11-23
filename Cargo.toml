@@ -30,8 +30,8 @@ egui_extras = { version = "0.37", default-features = false, features = ["svg"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSEvent", "NSResponder", "NSPasteboard", "NSPasteboardItem", "NSWindow", "NSDockTile", "NSMenu", "NSMenuItem"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSError", "NSFileManager", "NSGeometry", "NSString", "NSURL"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSEvent", "NSResponder", "NSPasteboard", "NSPasteboardItem", "NSWindow", "NSDockTile", "NSMenu", "NSMenuItem", "NSWorkspace", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphicsContext", "objc2-core-graphics"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSDictionary", "NSError", "NSFileManager", "NSGeometry", "NSString", "NSURL"] }
 objc2-user-notifications = { version = "0.3", default-features = false, features = ["std", "UNUserNotificationCenter", "UNNotificationSettings", "UNNotification", "UNNotificationContent", "UNNotificationRequest", "UNNotificationSound", "UNNotificationTrigger", "block2"] }
 block2 = "0.6"
 

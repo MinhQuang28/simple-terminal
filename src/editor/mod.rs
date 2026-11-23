@@ -12,5 +12,5 @@ mod view;
 pub use buffer::Buffers;
 pub use commands::{EditorCommand, Request};
 pub use find_bar::{BarKind, EditorBar};
-pub use highlight::warm_up;
+pub use highlight::{layout_job as highlight_job, ready as highlight_ready, warm_up};
 pub use view::show;

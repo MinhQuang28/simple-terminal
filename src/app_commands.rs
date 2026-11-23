@@ -42,7 +42,8 @@ impl RepodeckApp {
                 repo.map(|repo| Action::NewTab { repo, kind: PaneKind::Agent }).into_iter().collect()
             }
             "tab.new" => {
-                repo.map(|repo| Action::NewTab { repo, kind: PaneKind::Shell }).into_iter().collect()
+                let kind = self.state.settings.new_tab;
+                repo.map(|repo| Action::NewTab { repo, kind }).into_iter().collect()
             }
             "tab.close" => vec![Action::CloseActiveTab],
             "pane.zoom" => vec![Action::ToggleZoom],

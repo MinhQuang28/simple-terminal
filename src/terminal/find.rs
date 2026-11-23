@@ -5,22 +5,22 @@ use alacritty_terminal::index::{Column, Direction, Line, Point, Side};
 use alacritty_terminal::selection::{Selection, SelectionType};
 use alacritty_terminal::term::Term;
 use alacritty_terminal::term::search::{Match, RegexSearch};
-use eframe::egui::{
-    Align, Frame, Key, Layout, Margin, Modifiers, Rect, Response, RichText, TextEdit, Ui, pos2, vec2,
-};
+use eframe::egui::{Align, Frame, Key, Layout, Margin, Modifiers, Rect, Response, Ui, pos2, vec2};
 
 use super::render::Grid;
 use super::session::{EventProxy, TerminalSession};
 use super::style::TerminalStyle;
+use crate::find_box::{self, FindOptions};
 
 const MAX_COUNTED: usize = 999;
-const BAR_WIDTH: f32 = 320.0;
+const BAR_WIDTH: f32 = 410.0;
 
 /// In-pane search; the current match becomes the terminal selection so ⌘C copies it.
 #[derive(Default)]
 pub struct FindState {
     pub open: bool,
     query: String,
+    options: FindOptions,
     compiled: Option<Arc<Mutex<(String, RegexSearch)>>>,
     current: Option<Match>,
     total: usize,
@@ -39,7 +39,7 @@ impl FindState {
     }
 
     fn regex(&mut self) -> Option<Arc<Mutex<(String, RegexSearch)>>> {
-        let pattern = pattern_for(&self.query);
+        let pattern = find_box::pattern(&self.query, self.options);
         let fresh = self.compiled.as_ref().is_some_and(|c| c.lock().map(|c| c.0 == pattern).unwrap_or(false));
         if !fresh {
             let regex = RegexSearch::new(&pattern).ok()?;
@@ -47,11 +47,6 @@ impl FindState {
         }
         self.compiled.clone()
     }
-}
-
-/// Smart case: all-lowercase queries match case-insensitively. Regex syntax is passed through.
-fn pattern_for(query: &str) -> String {
-    if query.chars().any(char::is_uppercase) { query.to_string() } else { format!("(?i){query}") }
 }
 
 /// Draws the find bar and match highlights over `rect`; handles Enter/⇧Enter/Esc.
@@ -73,40 +68,30 @@ pub fn overlay(
         eframe::egui::UiBuilder::new().max_rect(bar).layout(Layout::left_to_right(Align::Center)),
         |ui| {
             Frame::popup(ui.style()).inner_margin(Margin::symmetric(8, 4)).show(ui, |ui| {
-                let edit = ui.add(
-                    TextEdit::singleline(&mut state.query).hint_text("Find (regex)").desired_width(170.0),
-                );
+                let status = match state.total {
+                    _ if state.query.is_empty() => String::new(),
+                    0 => "No results".into(),
+                    1 => "1 result".into(),
+                    total if total >= MAX_COUNTED => format!("{MAX_COUNTED}+ results"),
+                    total => format!("{total} results"),
+                };
+                let found = find_box::show(ui, &mut state.query, &mut state.options, &status);
                 // Count once per edit, deferred until the box has a query; this used to re-count
                 // every frame whenever the box lost focus with no match.
-                state.unsearched |= edit.changed();
+                state.unsearched |= found.changed;
                 if state.unsearched && !state.query.is_empty() {
                     changed = true;
                     state.unsearched = false;
                 }
                 if ui.memory(|m| m.focused().is_none()) {
-                    edit.request_focus();
+                    found.edit.request_focus();
                 }
-                let (shift, enter, escape) =
-                    ui.input(|i| (i.modifiers.shift, i.key_pressed(Key::Enter), i.key_pressed(Key::Escape)));
-                if edit.has_focus() && enter {
-                    step = Some(if shift { Direction::Left } else { Direction::Right });
-                }
-                close = escape;
-                let count = if state.total >= MAX_COUNTED {
-                    format!("{MAX_COUNTED}+")
-                } else {
-                    state.total.to_string()
+                step = match found.step {
+                    0 => None,
+                    back if back < 0 => Some(Direction::Left),
+                    _ => Some(Direction::Right),
                 };
-                ui.label(RichText::new(count).size(11.5).weak());
-                if ui.small_button("‹").clicked() {
-                    step = Some(Direction::Left);
-                }
-                if ui.small_button("›").clicked() {
-                    step = Some(Direction::Right);
-                }
-                if ui.small_button("×").clicked() {
-                    close = true;
-                }
+                close = found.close;
             });
         },
     );

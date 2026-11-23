@@ -115,11 +115,11 @@ fn chip_button(ui: &mut Ui, branch: &str) -> Response {
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let painter = ui.painter();
     if response.hovered() || Popup::is_id_open(ui.ctx(), Popup::default_response_id(&response)) {
-        painter.rect_filled(rect, CornerRadius::same(6), ui.visuals().widgets.hovered.weak_bg_fill);
+        painter.rect_filled(rect, CornerRadius::same(11), ui.visuals().widgets.hovered.weak_bg_fill);
     }
     let outline = Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color);
-    painter.rect_stroke(rect, CornerRadius::same(6), outline, StrokeKind::Inside);
-    super::design::focus_ring(ui, &response, 6);
+    painter.rect_stroke(rect, CornerRadius::same(11), outline, StrokeKind::Inside);
+    super::design::focus_ring(ui, &response, 11);
     let glyph = Rect::from_min_size(pos2(rect.left() + pad, rect.center().y - icon / 2.0), vec2(icon, icon));
     branch_glyph(ui, glyph, muted(ui));
     painter.galley(pos2(glyph.right() + gap, rect.center().y - galley.size().y / 2.0), galley, color);

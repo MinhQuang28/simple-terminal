@@ -110,6 +110,10 @@ pub struct Settings {
     pub repo_layout: RepoLayout,
     /// Reusable prompts shown in the Library panel.
     pub prompts: Vec<Prompt>,
+    /// What the new-tab key opens: a terminal or Claude Code.
+    pub new_tab: PaneKind,
+    /// What starts in a repo shown with nothing running in it, e.g. the first click on it.
+    pub repo_opens: PaneKind,
 }
 
 impl Default for Settings {
@@ -141,6 +145,8 @@ impl Default for Settings {
             editor_word_wrap: false,
             repo_layout: RepoLayout::default(),
             prompts: Vec::new(),
+            new_tab: PaneKind::Shell,
+            repo_opens: PaneKind::Shell,
         }
     }
 }
@@ -283,9 +289,12 @@ pub struct Tab {
     pub settled: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PaneKind {
     Shell,
+    /// State saved while Repodeck had chat panes names them "Chat"; they come back as Claude Code,
+    /// which resumes the same conversation.
+    #[serde(alias = "Chat")]
     Agent,
 }
 
@@ -349,14 +358,7 @@ impl Repo {
 
 impl Tab {
     pub fn new(kind: PaneKind) -> Self {
-        let pane = Pane {
-            id: Uuid::new_v4(),
-            kind: kind.clone(),
-            cwd: None,
-            session: None,
-            command: None,
-            parent: None,
-        };
+        let pane = Pane { id: Uuid::new_v4(), kind, cwd: None, session: None, command: None, parent: None };
         let title = match kind {
             PaneKind::Shell => "Terminal",
             PaneKind::Agent => "Claude",
@@ -419,7 +421,7 @@ impl Tab {
     }
 
     pub fn kind(&self) -> PaneKind {
-        self.panes.first().map(|p| p.kind.clone()).unwrap_or(PaneKind::Shell)
+        self.panes.first().map(|p| p.kind).unwrap_or(PaneKind::Shell)
     }
 }
 
@@ -446,5 +448,20 @@ impl AppState {
 
     pub fn all_pane_ids(&self) -> impl Iterator<Item = Uuid> + '_ {
         self.projects.iter().flat_map(|p| &p.repos).flat_map(|r| &r.tabs).flat_map(|t| &t.panes).map(|p| p.id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chat_panes_of_saved_state_come_back_as_claude_code() {
+        let kinds: Vec<PaneKind> = serde_json::from_str(r#"["Shell","Agent","Chat"]"#).unwrap();
+        assert_eq!(kinds, [PaneKind::Shell, PaneKind::Agent, PaneKind::Agent]);
+        let settings: Settings = serde_json::from_str(r#"{"new_tab":"Chat","repo_opens":"Chat"}"#).unwrap();
+        assert_eq!((settings.new_tab, settings.repo_opens), (PaneKind::Agent, PaneKind::Agent));
+        let state: AppState = serde_json::from_str(r#"{"chat_sessions":["abc"]}"#).unwrap();
+        assert!(state.projects.is_empty());
     }
 }

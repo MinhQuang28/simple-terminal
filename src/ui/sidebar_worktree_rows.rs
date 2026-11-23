@@ -8,7 +8,7 @@ use super::Action;
 use super::branch_menu::inline_glyph;
 use super::design::TEXT_SECONDARY;
 use super::repo_indicators::{RepoRow, indicators};
-use super::sidebar_rows::select_with_terminal;
+use super::sidebar_rows::select_and_open;
 use super::widgets::{muted, right_aligned, row_sized};
 use crate::model::{PaneKind, Repo};
 
@@ -43,7 +43,7 @@ pub fn worktree_row(ui: &mut Ui, row: &RepoRow, selected: bool, last: bool, acti
     });
     tree_connector(ui, response.rect.left() + TEXT_INDENT + 6.0, response.rect, last);
     if response.clicked() {
-        select_with_terminal(repo, actions);
+        select_and_open(row, actions);
     }
     response.on_hover_text(repo.path.display().to_string()).context_menu(|ui| {
         if ui.button("New Claude session").clicked() {

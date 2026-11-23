@@ -35,6 +35,7 @@ use crate::ui::Action;
 use crate::ui::dialogs::{self, Dialog, DialogResult};
 use crate::ui::palette::Palette;
 use crate::ui::settings::{self, Page};
+use crate::usage_limits::UsageLimits;
 use crate::worktree::BranchFate;
 use crate::worktree_branch_name;
 
@@ -56,6 +57,7 @@ pub struct PendingPaste {
 pub struct RepodeckApp {
     pub(crate) state: AppState,
     pub(crate) pool: SessionPool,
+    pub(crate) usage: UsageLimits,
     pub(crate) git: GitWatcher,
     pub(crate) prs: PrWatcher,
     pub(crate) dialog: Option<Dialog>,
@@ -130,9 +132,12 @@ impl RepodeckApp {
             .and_then(|id| state.repo(id))
             .and_then(|r| r.tabs.iter().find(|t| Some(t.id) == r.active_tab))
             .and_then(|t| t.active_pane);
+        let shell = shell_env::program(&state.settings.shell);
+        let usage = UsageLimits::spawn(ctx.clone(), shell, state.settings.agent_hide_api_keys);
         let app = Self {
             state,
             pool: SessionPool::default(),
+            usage,
             git,
             prs,
             dialog: None,

@@ -11,17 +11,22 @@ pub mod code_sidebar;
 mod code_tabs;
 mod code_view;
 pub mod commit_box;
+mod context_ring;
 pub mod definition_peek;
 pub mod design;
 pub(crate) mod dialog_kit;
 pub mod dialogs;
 pub(crate) mod diff_comments;
+mod diff_rows;
 pub mod diff_view;
 mod file_explorer;
 mod file_icon;
 mod history_menu;
 mod inbox_panel;
 mod library_panel;
+mod model_menu;
+mod new_tab_menu;
+mod open_in_menu;
 pub mod palette;
 mod palette_items;
 mod pane_chrome;
@@ -242,6 +247,15 @@ pub enum Action {
     MarkNoticesRead,
     ClearNotices,
     OpenUrl(String),
+    /// Opens a folder in another app, by the name `open -a` takes.
+    OpenIn {
+        app: String,
+        path: PathBuf,
+    },
+    /// Asks Claude for the subscription's usage limits again.
+    RefreshUsage,
+    /// Switches the active Claude Code pane to this model, by the value `/model` takes.
+    SetAgentModel(String),
     /// Opens `gh pr create` in the browser for the repo's branch.
     CreatePullRequest(Uuid),
     /// Sends the failing CI logs of the repo's pull request to its Claude pane.

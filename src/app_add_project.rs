@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::app::RepodeckApp;
-use crate::model::{PaneKind, Project};
+use crate::model::Project;
 use crate::ui::add_project_dialog::{ProjectSource, clone_name};
 use crate::ui::toast;
 
@@ -49,7 +49,7 @@ impl RepodeckApp {
         let repo = self.add_repo_to(Some(project_id), path);
         self.state.selected_repo = Some(repo);
         if self.state.repo(repo).is_some_and(|r| r.tabs.is_empty()) {
-            self.new_tab(repo, PaneKind::Shell, None);
+            self.new_tab(repo, self.state.settings.repo_opens, None);
         }
         self.focus_active_pane();
         self.dirty = true;

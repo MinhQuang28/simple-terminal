@@ -19,7 +19,7 @@ pub struct Comment {
     pub text: String,
 }
 
-const GUTTER_WIDTH: f32 = 18.0;
+pub(super) const GUTTER_WIDTH: f32 = 18.0;
 const EDITOR_WIDTH: f32 = 360.0;
 
 /// Column left of the diff: hover a row for "+", click it to write a comment; commented rows keep

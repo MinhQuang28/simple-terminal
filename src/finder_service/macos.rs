@@ -40,7 +40,7 @@ impl ServiceProvider {
     fn forward(&self, pboard: &NSPasteboard, kind: PaneKind) {
         let Ivars { tx, ctx } = self.ivars();
         for path in file_paths(pboard) {
-            let _ = tx.send(FolderRequest { path, kind: kind.clone() });
+            let _ = tx.send(FolderRequest { path, kind });
         }
         ctx.request_repaint();
     }

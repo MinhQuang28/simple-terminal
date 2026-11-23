@@ -64,7 +64,12 @@ impl RepodeckApp {
             }
         }
         let agent_status = self.active_status_line();
-        let model = agent_status.as_ref().and_then(|s| s.model.clone());
+        let models = self.usage.models();
+        let agent = chrome::AgentInfo {
+            model: agent_status.as_ref().and_then(|s| s.model.as_deref()),
+            context: agent_status.as_ref().and_then(|s| s.context_percent),
+            models: &models,
+        };
         // With no sidebar on the left, the top bar starts past the traffic lights.
         let top_left = if left_panel { 6 } else { 80 };
 
@@ -79,7 +84,11 @@ impl RepodeckApp {
             }))
             .show(ui, |ui| {
                 let context = agent_status.as_ref().and_then(|s| s.context_percent);
-                chrome::top_bar(ui, &self.state, status.as_deref(), &self.inbox, &self.pool, context, actions)
+                // Whichever is newer: what Claude was asked directly, or an agent pane's report.
+                let limits = [self.usage.latest(), self.pool.latest_limits()];
+                let limits = limits.into_iter().flatten().max_by_key(|l| l.reported_at);
+                let usage = (limits.as_ref(), context);
+                chrome::top_bar(ui, &self.state, status.as_deref(), &self.inbox, &self.pool, usage, actions)
             });
 
         Panel::bottom("statusbar")
@@ -87,7 +96,7 @@ impl RepodeckApp {
             .show_separator_line(false)
             .frame(Frame::new().fill(window_bg).inner_margin(Margin::symmetric(6, 0)))
             .show(ui, |ui| {
-                chrome::status_bar(ui, &self.state, status.as_deref(), model.as_deref(), &self.pool, actions)
+                chrome::status_bar(ui, &self.state, status.as_deref(), &agent, &self.pool, actions)
             });
 
         CentralPanel::default().frame(Frame::new().fill(window_bg)).show(ui, |ui| {
@@ -116,11 +125,16 @@ impl RepodeckApp {
 
     /// What Claude Code last reported in the active pane, while an agent runs there.
     fn active_status_line(&self) -> Option<StatusLine> {
+        let session = self.pool.get(self.active_pane_id()?)?;
+        session.is_agent().then(|| session.agent_status_line()).flatten()
+    }
+
+    /// The selected repo's active pane.
+    pub(crate) fn active_pane_id(&self) -> Option<uuid::Uuid> {
         let repo = self.state.selected_repo.and_then(|id| self.state.repo(id))?;
         let tab = repo.tabs.iter().find(|t| Some(t.id) == repo.active_tab)?;
         let pane = tab.panes.iter().find(|p| Some(p.id) == tab.active_pane).or(tab.panes.first())?;
-        let session = self.pool.get(pane.id)?;
-        session.is_agent().then(|| session.agent_status_line()).flatten()
+        Some(pane.id)
     }
 }
 

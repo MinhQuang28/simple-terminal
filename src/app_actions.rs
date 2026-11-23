@@ -390,6 +390,24 @@ impl RepodeckApp {
                 self.inbox.clear();
                 return;
             }
+            Action::OpenIn { app, path } => {
+                if let Err(err) = Command::new("open").args(["-a", &app]).arg(&path).spawn() {
+                    self.report_error(&format!("Could not open {app}"), err.to_string());
+                }
+                return;
+            }
+            Action::RefreshUsage => {
+                self.usage.refresh();
+                return;
+            }
+            Action::SetAgentModel(model) => {
+                // Typed as the user would: Claude Code's own command switches the session.
+                if let Some(session) = self.active_pane_id().and_then(|id| self.pool.get_mut(id)) {
+                    session.paste(&format!("/model {model}"));
+                    session.send_input(b"\r".to_vec());
+                }
+                return;
+            }
             Action::OpenUrl(url) => {
                 if let Err(err) = Command::new("open").arg(&url).spawn() {
                     self.report_error("Could not open the link", err.to_string());
@@ -490,7 +508,7 @@ impl RepodeckApp {
         }
         project.collapsed = false;
         if let Some(repo) = first_new {
-            self.new_tab(repo, PaneKind::Shell, None);
+            self.new_tab(repo, self.state.settings.repo_opens, None);
         }
         self.sync_git_paths();
         self.dirty = true;

@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::app::RepodeckApp;
 use crate::finder_service::FolderRequest;
-use crate::model::{PaneKind, Project, Repo};
+use crate::model::{Project, Repo};
 
 /// Project that collects folders opened from Finder that aren't part of any project yet.
 const FINDER_PROJECT: &str = "Finder";
@@ -47,7 +47,7 @@ impl RepodeckApp {
         let Some(repo_id) = first else { return };
         self.state.selected_repo = Some(repo_id);
         if self.state.repo(repo_id).is_some_and(|r| r.tabs.is_empty()) {
-            self.new_tab(repo_id, PaneKind::Shell, None);
+            self.new_tab(repo_id, self.state.settings.repo_opens, None);
         }
         self.focus_active_pane();
         self.dirty = true;

@@ -168,8 +168,13 @@ impl Theme {
             &mut visuals.widgets.active,
             &mut visuals.widgets.open,
         ] {
-            widget.corner_radius = egui::CornerRadius::same(6);
+            // Half a button's height or more, so buttons are pills; taller boxes get soft corners.
+            widget.corner_radius = egui::CornerRadius::same(14);
         }
+        // Pin egui to the palette's own lightness. Left on "follow the system", the chrome falls
+        // back to egui's stock style whenever macOS reports the other appearance (Auto mode, or
+        // the appearance settling after wake), because `set_visuals` only styles the active one.
+        ctx.set_theme(if light { egui::Theme::Light } else { egui::Theme::Dark });
         ctx.set_visuals(visuals);
         ctx.data_mut(|d| d.insert_temp(egui::Id::unique(SUCCESS), self.success()));
         ctx.all_styles_mut(|style| {

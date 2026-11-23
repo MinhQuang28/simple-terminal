@@ -138,6 +138,11 @@ pub fn warm_up(ctx: &Context) {
     });
 }
 
+/// Whether the grammars are built; until then `layout_job` returns plain text.
+pub fn ready() -> bool {
+    READY.load(Ordering::Acquire)
+}
+
 /// The coloured layout of `code` in `language` (a file extension or syntax name), memoised per
 /// frame so an unchanged file is laid out once. Until the grammars are ready the text is plain,
 /// rather than the frame waiting on them.

@@ -8,7 +8,7 @@ use super::sidebar_repo_menus::{repo_actions_menu, repo_menu};
 use super::sidebar_worktree_rows::{TEXT_INDENT, worktree_row};
 use super::widgets::{GLYPH_BUTTON_SIZE, avatar, menu_icon, muted, right_aligned, row_hovered, row_sized};
 use crate::git_watcher::GitWatcher;
-use crate::model::{AppState, PaneKind, Repo, RepoLayout};
+use crate::model::{AppState, Repo, RepoLayout};
 use crate::pr_status::PrWatcher;
 use crate::session_pool::SessionPool;
 
@@ -31,12 +31,13 @@ pub fn repo_block(
     actions: &mut Vec<Action>,
 ) {
     let presets = &state.settings.presets;
+    let opens = state.settings.repo_opens;
     // A folded repo has no worktree row to carry the highlight, so it stays on the repo.
     let selected = state.selected_repo == Some(repo.id)
         || (repo.tabs_collapsed && worktrees.iter().any(|w| state.selected_repo == Some(w.id)));
     let pr = prs.pr(&repo.path).flatten();
     let status = git.status(&repo.path);
-    let row = RepoRow { repo, status: status.as_deref(), pr: pr.as_deref(), pool, now, presets };
+    let row = RepoRow { repo, status: status.as_deref(), pr: pr.as_deref(), pool, now, presets, opens };
     let expandable = !worktrees.is_empty();
     match state.settings.repo_layout {
         RepoLayout::Compact => repo_row(ui, &row, selected, expandable, actions),
@@ -49,8 +50,15 @@ pub fn repo_block(
         for (index, &worktree) in worktrees.iter().enumerate() {
             let pr = prs.pr(&worktree.path).flatten();
             let status = git.status(&worktree.path);
-            let row =
-                RepoRow { repo: worktree, status: status.as_deref(), pr: pr.as_deref(), pool, now, presets };
+            let row = RepoRow {
+                repo: worktree,
+                status: status.as_deref(),
+                pr: pr.as_deref(),
+                pool,
+                now,
+                presets,
+                opens,
+            };
             let shown = state.selected_repo == Some(worktree.id);
             worktree_row(ui, &row, shown, index + 1 == worktrees.len(), actions);
         }
@@ -107,7 +115,7 @@ fn branch_row(ui: &mut Ui, row: &RepoRow, selected: bool, expandable: bool, acti
         });
     });
     if response.clicked() {
-        select_with_terminal(repo, actions);
+        select_and_open(row, actions);
     }
     response.context_menu(|ui| repo_menu(ui, row, actions));
 }
@@ -150,16 +158,17 @@ fn repo_row(ui: &mut Ui, row: &RepoRow, selected: bool, expandable: bool, action
     });
     let response = repo_drag::drag_source(response, repo.id);
     if response.clicked() {
-        select_with_terminal(repo, actions);
+        select_and_open(row, actions);
     }
     response.on_hover_text(repo.path.display().to_string()).context_menu(|ui| repo_menu(ui, row, actions));
 }
 
-/// Shows `repo`, starting a terminal in it when it has none open, so a click on a branch lands
-/// on a prompt instead of an empty view.
-pub fn select_with_terminal(repo: &Repo, actions: &mut Vec<Action>) {
+/// Shows the row's repo, starting what the "Opening a repository" setting names when nothing runs
+/// in it, so a click on a branch lands on a prompt instead of an empty view.
+pub fn select_and_open(row: &RepoRow, actions: &mut Vec<Action>) {
+    let repo = row.repo;
     actions.push(Action::SelectRepo(repo.id));
     if repo.tabs.iter().all(|t| t.is_document()) {
-        actions.push(Action::NewTab { repo: repo.id, kind: PaneKind::Shell });
+        actions.push(Action::NewTab { repo: repo.id, kind: row.opens });
     }
 }
