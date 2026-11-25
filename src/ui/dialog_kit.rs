@@ -38,8 +38,6 @@ pub fn modal<R>(ctx: &Context, add_contents: impl FnOnce(&mut Ui) -> R) -> Modal
     Modal::new(Id::unique("repodeck-dialog")).frame(frame).show(ctx, |ui| {
         ui.set_width(WIDTH);
         ui.spacing_mut().item_spacing.y = 8.0;
-        // A focused field gets a thin accent outline instead of the full-strength selection stroke.
-        ui.visuals_mut().selection.stroke = Stroke::new(1.0, accent(ui));
         add_contents(ui)
     })
 }

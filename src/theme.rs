@@ -1,6 +1,7 @@
 use eframe::egui::{self, Color32};
 
 use crate::contrast::{self, TEXT_MIN};
+use crate::field_outline::FieldOutline;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub use crate::theme_presets::presets;
@@ -98,6 +99,16 @@ impl Theme {
         contrast::readable(fg.lerp_to_gamma(bg, 0.4), bg, fg, min)
     }
 
+    /// Selected text: the foreground, pushed to white or black as far as it takes to be readable
+    /// on the selection.
+    pub fn selected_text(&self) -> Color32 {
+        let selection = self.selection.color();
+        let against = |color| contrast::ratio(color, selection);
+        let target =
+            if against(Color32::WHITE) >= against(Color32::BLACK) { Color32::WHITE } else { Color32::BLACK };
+        contrast::readable(self.foreground.color(), selection, target, TEXT_MIN)
+    }
+
     /// A palette color as text on the chrome, nudged toward the foreground where the theme's own
     /// is too faint on its background (a pastel green on a white theme).
     fn readable(&self, color: Hex) -> Color32 {
@@ -151,8 +162,9 @@ impl Theme {
         visuals.warn_fg_color = self.modified();
         visuals.hyperlink_color = self.accent();
         visuals.selection.bg_fill = self.selection.color();
+        visuals.selection.stroke = egui::Stroke::new(1.0, self.selected_text());
         // Focused fields get a thin accent outline rather than a bright full-strength one.
-        visuals.selection.stroke = egui::Stroke::new(1.0, self.accent());
+        ctx.replace_widget_theme(FieldOutline(self.accent()));
         visuals.widgets.noninteractive.bg_fill = visuals.panel_fill;
         visuals.widgets.noninteractive.bg_stroke.color = shift(bg, 0.12);
         visuals.widgets.inactive.weak_bg_fill = shift(bg, 0.08);
@@ -205,6 +217,16 @@ mod tests {
             for color in [theme.danger(), theme.success(), theme.modified()] {
                 assert!(contrast::ratio(color, bg) >= TEXT_MIN.min(own) - 0.01, "{}", theme.name);
             }
+        }
+    }
+
+    #[test]
+    fn selected_text_is_readable_on_every_selection() {
+        let custom =
+            Theme { foreground: Hex::rgb(0xc9c9c9), selection: Hex::rgb(0x636565), ..Theme::default() };
+        for theme in presets().into_iter().chain([custom]) {
+            let ratio = contrast::ratio(theme.selected_text(), theme.selection.color());
+            assert!(ratio >= TEXT_MIN - 0.01, "{}: {ratio}", theme.name);
         }
     }
 

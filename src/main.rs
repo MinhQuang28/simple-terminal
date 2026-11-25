@@ -40,6 +40,7 @@ mod definitions;
 mod diff;
 mod editor;
 mod event_log;
+mod field_outline;
 mod file_drag;
 mod file_icon_files;
 mod file_icons;
