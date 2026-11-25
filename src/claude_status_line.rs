@@ -14,7 +14,12 @@ const POLL_INTERVAL: Duration = Duration::from_secs(1);
 /// The `statusLine` setting for `claude --settings`: saves Claude Code's status JSON to the file
 /// named by `STATUS_VAR`, then pipes it to the user's own status line command so that still shows.
 pub fn settings(cwd: &Path) -> Value {
-    let mut status_line = user_status_line(cwd).unwrap_or_else(|| json!({ "type": "command" }));
+    saving(user_status_line(cwd))
+}
+
+/// A status line that saves the agent's status JSON, in front of the user's `own` one if any.
+pub fn saving(own: Option<Value>) -> Value {
+    let mut status_line = own.unwrap_or_else(|| json!({ "type": "command" }));
     let command = match status_line["command"].as_str() {
         Some(own) => format!("tee \"${STATUS_VAR}\" | ({own})"),
         None => format!("cat > \"${STATUS_VAR}\""),
@@ -61,10 +66,13 @@ impl Window {
         match self.key.as_str() {
             "five_hour" => "Session".into(),
             "seven_day" => "Weekly".into(),
-            key => match key.strip_prefix("seven_day_") {
-                Some(model) => format!("Weekly · {}", capitalize(&model.replace('_', " "))),
-                None => capitalize(&key.replace('_', " ")),
-            },
+            key => {
+                let weekly = key.strip_prefix("seven_day_").map(|of| ("Weekly", of));
+                match weekly.or_else(|| key.strip_prefix("five_hour_").map(|of| ("Session", of))) {
+                    Some((span, of)) => format!("{span} · {}", capitalize(&of.replace('_', " "))),
+                    None => capitalize(&key.replace('_', " ")),
+                }
+            }
         }
     }
 }
@@ -99,14 +107,19 @@ impl StatusLine {
             .filter(|(key, _)| !matches!(key.as_str(), "five_hour" | "seven_day"))
             .filter_map(|(key, window)| Some(Window { key: key.clone(), limit: limit(window)? }))
             .collect();
-        Self {
+        let mut status = Self {
             five_hour: limit(&json["rate_limits"]["five_hour"]),
             seven_day: limit(&json["rate_limits"]["seven_day"]),
             others,
             context_percent: json["context_window"]["used_percentage"].as_f64(),
             model: json["model"]["display_name"].as_str().map(str::to_owned),
             reported_at,
+        };
+        // Antigravity reports its limits as a quota.
+        if let Some(quota) = json["quota"].as_object() {
+            crate::agent_usage::apply_antigravity_quota(&mut status, quota);
         }
+        status
     }
 
     pub fn has_limits(&self) -> bool {

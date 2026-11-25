@@ -30,6 +30,7 @@ pub enum Agent {
     Claude,
     Codex,
     OpenCode,
+    Antigravity,
 }
 
 impl Agent {
@@ -38,6 +39,7 @@ impl Agent {
             Self::Claude => "Claude",
             Self::Codex => "Codex",
             Self::OpenCode => "OpenCode",
+            Self::Antigravity => "Antigravity",
         }
     }
 
@@ -47,6 +49,7 @@ impl Agent {
             "claude" => Some(Self::Claude),
             "codex" => Some(Self::Codex),
             "opencode" => Some(Self::OpenCode),
+            "agy" => Some(Self::Antigravity),
             _ => None,
         }
     }
@@ -68,6 +71,9 @@ pub fn with_hooks(command: &str) -> String {
         .map(|(start, token)| match Agent::of(token).filter(|_| start) {
             Some(Agent::Claude) => format!("{token} --settings \"${HOOKS_VAR}\""),
             Some(Agent::Codex) => format!("repodeck {CODEX_VERB} {token}"),
+            Some(Agent::Antigravity) => {
+                format!("{token} --settings \"${}\"", crate::antigravity_hooks::SETTINGS_VAR)
+            }
             _ => token.to_string(),
         })
         .collect();
@@ -75,13 +81,14 @@ pub fn with_hooks(command: &str) -> String {
 }
 
 /// `command` with `task` as the agent's first prompt: Claude Code and Codex take it as an
-/// argument, OpenCode as `--prompt`.
+/// argument, OpenCode as `--prompt`, Antigravity as `--prompt-interactive`.
 pub fn with_first_prompt(command: &str, task: &str) -> String {
     // A prompt starting with "-" would read as a flag; a leading space keeps it a prompt.
     let task = if task.starts_with('-') { format!(" {task}") } else { task.to_string() };
     let word = shell_word(&task);
     match agent_of(command) {
         Some(Agent::OpenCode) => format!("{command} --prompt {word}"),
+        Some(Agent::Antigravity) => format!("{command} --prompt-interactive {word}"),
         _ => format!("{command} {word}"),
     }
 }
@@ -162,6 +169,7 @@ mod tests {
         assert_eq!(run(&line), r"it's a \ test; rm -rf x $(id)|");
         assert_eq!(run(&with_first_prompt("", "-p print")), " -p print|", "kept from reading as a flag");
         assert_eq!(with_first_prompt("opencode", "hi"), "opencode --prompt 'hi'");
+        assert_eq!(with_first_prompt("agy", "hi"), "agy --prompt-interactive 'hi'");
     }
 
     #[test]

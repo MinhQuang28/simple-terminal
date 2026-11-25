@@ -3,7 +3,7 @@
 //! computes, so the hashes are asked for once per binary through `codex app-server` and cached.
 
 use std::hash::{DefaultHasher, Hash, Hasher};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, IsTerminal, Write};
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -34,6 +34,12 @@ pub fn run(mut args: impl Iterator<Item = String>) -> ! {
     {
         let _ = writeln!(file, "{}", started_line("codex"));
     }
+    let args: Vec<String> = args.collect();
+    // Codex gets the pane to itself: what was typed here before is cleared, history included.
+    if starts_session(&args) && std::io::stdout().is_terminal() {
+        print!("\x1b[H\x1b[2J\x1b[3J");
+        let _ = std::io::stdout().flush();
+    }
     let flags = codex_hook_flags();
     let mut command = Command::new(&codex);
     command.args(&flags);
@@ -47,6 +53,12 @@ pub fn run(mut args: impl Iterator<Item = String>) -> ! {
     let err = command.exec();
     eprintln!("repodeck: cannot start {codex}: {err}");
     std::process::exit(127)
+}
+
+/// Whether the arguments open Codex's interactive screen, rather than a subcommand or its help.
+fn starts_session(args: &[String]) -> bool {
+    let opens = args.first().is_none_or(|first| first.starts_with('-') || first == "resume");
+    opens && !args.iter().any(|arg| matches!(arg.as_str(), "-h" | "--help" | "-V" | "--version"))
 }
 
 fn trust_state(codex: &str, flags: &[String]) -> Option<String> {
@@ -162,5 +174,16 @@ mod tests {
              \"/<session-flags>/config.toml:interrupt:0:0\"={trusted_hash=\"sha256:cc\"}}"
         );
         assert_eq!(trusted_entries(&Value::Array(vec![])), None);
+    }
+
+    #[test]
+    fn only_interactive_starts_clear_the_pane() {
+        let starts =
+            |line: &str| starts_session(&line.split_whitespace().map(String::from).collect::<Vec<_>>());
+        assert!(starts(""));
+        assert!(starts("--model gpt-5"));
+        assert!(starts("resume --last"));
+        assert!(!starts("exec fix-it"));
+        assert!(!starts("--version"));
     }
 }

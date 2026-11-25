@@ -37,8 +37,9 @@ if [[ -n "$REPODECK_SHELL_EVENTS" ]]; then
   add-zsh-hook precmd __repodeck_precmd
 fi
 # Claude Code and Codex started here get Repodeck's hooks, so the pane shows their status and
-# keeps Claude's prompt box at the bottom as their own tabs do. Claude goes through a `claude`
-# on the PATH rather than a function, so scripts and aliases that start it are covered too.
+# keeps their prompt box at the bottom as their own tabs do. Claude and Antigravity go through a
+# stand-in on the PATH rather than a function, so scripts and aliases that start them are
+# covered too.
 [[ -n "$REPODECK_AGENT_HOOKS" ]] && path=("${REPODECK_ZDOTDIR:h}/bin" $path)
 if [[ -n "$REPODECK_AGENT_EVENTS" && -x "$REPODECK_EXE" ]]; then
   codex() {
@@ -49,32 +50,42 @@ if [[ -n "$REPODECK_AGENT_EVENTS" && -x "$REPODECK_EXE" ]]; then
 fi
 "#;
 
-/// Stands in for `claude` on the PATH of a pane's shell and starts the real one with the hooks.
-const CLAUDE_SHIM: &str = r#"#!/bin/sh
+/// Agents the stand-in below is installed as.
+const SHIMMED: &[&str] = &["claude", "agy"];
+
+/// Stands in for an agent on the PATH of a pane's shell: announces an interactive start, gives
+/// the agent a cleared pane, and starts the real one with Repodeck's settings (Claude Code's
+/// hooks, Antigravity's status line).
+const AGENT_SHIM: &str = r#"#!/bin/sh
+name=$(basename "$0")
 self=$(cd "$(dirname "$0")" && pwd -P)
 real=
 IFS=:
 for dir in $PATH; do
   [ -n "$dir" ] && [ "$(cd "$dir" 2>/dev/null && pwd -P)" != "$self" ] || continue
-  if [ -f "$dir/claude" ] && [ -x "$dir/claude" ]; then real=$dir/claude; break; fi
+  if [ -f "$dir/$name" ] && [ -x "$dir/$name" ]; then real=$dir/$name; break; fi
 done
 unset IFS
-[ -n "$real" ] || { echo "claude: command not found" >&2; exit 127; }
+[ -n "$real" ] || { echo "$name: command not found" >&2; exit 127; }
 [ -n "$REPODECK_AGENT_HOOKS" ] || exec "$real" "$@"
-# Interactive starts are announced first, so the pane is ready before Claude draws.
+# Interactive starts are announced first, so the pane is ready before the agent draws.
 case "${1-}" in ""|-*) interactive=1 ;; *) interactive=0 ;; esac
 for arg in "$@"; do
   case "$arg" in
     --settings) exec "$real" "$@" ;;
-    -p|--print|-v|--version|-h|--help) interactive=0 ;;
+    -p|--print|--prompt|-v|--version|-h|--help) interactive=0 ;;
   esac
 done
 if [ "$interactive" = 1 ] && [ -n "$REPODECK_AGENT_EVENTS" ]; then
-  echo '{"repodeck_agent":"claude"}' >> "$REPODECK_AGENT_EVENTS" 2>/dev/null
-  # Claude gets the pane to itself: what was typed here before is cleared, history included.
+  echo "{\"repodeck_agent\":\"$name\"}" >> "$REPODECK_AGENT_EVENTS" 2>/dev/null
+  # The agent gets the pane to itself: what was typed here before is cleared, history included.
   [ -t 1 ] && printf '\033[H\033[2J\033[3J'
 fi
-exec "$real" --settings "$REPODECK_AGENT_HOOKS" "$@"
+case "$name" in
+  claude) exec "$real" --settings "$REPODECK_AGENT_HOOKS" "$@" ;;
+  agy) [ -z "$REPODECK_AGY_SETTINGS" ] || exec "$real" --settings "$REPODECK_AGY_SETTINGS" "$@" ;;
+esac
+exec "$real" "$@"
 "#;
 
 fn user_file_loader(name: &str) -> String {
@@ -122,18 +133,21 @@ fn zsh_dir() -> Option<PathBuf> {
             fs::write(&path, content).ok()?;
         }
     }
-    write_claude_shim(&dir.with_file_name("bin"))?;
+    write_agent_shims(&dir.with_file_name("bin"))?;
     Some(dir)
 }
 
-fn write_claude_shim(dir: &Path) -> Option<()> {
+fn write_agent_shims(dir: &Path) -> Option<()> {
     use std::os::unix::fs::PermissionsExt;
     fs::create_dir_all(dir).ok()?;
-    let path = dir.join("claude");
-    if fs::read_to_string(&path).ok().as_deref() != Some(CLAUDE_SHIM) {
-        fs::write(&path, CLAUDE_SHIM).ok()?;
+    for name in SHIMMED {
+        let path = dir.join(name);
+        if fs::read_to_string(&path).ok().as_deref() != Some(AGENT_SHIM) {
+            fs::write(&path, AGENT_SHIM).ok()?;
+        }
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).ok()?;
     }
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).ok()
+    Some(())
 }
 
 #[cfg(test)]
@@ -161,6 +175,8 @@ mod tests {
         fs::write(bin.join("claude"), "#!/bin/sh\necho real claude \"$@\"\n").unwrap();
         fs::set_permissions(bin.join("claude"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
 
+        fs::write(bin.join("agy"), "#!/bin/sh\necho real agy \"$@\"\n").unwrap();
+        fs::set_permissions(bin.join("agy"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
         // A script of the user's that starts Claude, as `claude-resume` does.
         fs::write(bin.join("resume"), "#!/bin/sh\nexec claude -r abc\n").unwrap();
         fs::set_permissions(bin.join("resume"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
@@ -173,6 +189,7 @@ mod tests {
             .env("REPODECK_AGENT_EVENTS", root.join("agent-events.log"))
             .env("REPODECK_AGENT_HOOKS", "{\"hooks\":{}}")
             .env(EXE_VAR, "/bin/echo")
+            .env("REPODECK_AGY_SETTINGS", "{}")
             .env("TERM", "dumb")
             .envs(env("/bin/zsh", &events))
             .env("REPODECK_USER_ZDOTDIR", &home)
@@ -185,7 +202,7 @@ mod tests {
             .stdin
             .take()
             .unwrap()
-            .write_all(b"echo rc=$REPODECK_TEST_RC\nfalse\ncodex --yolo\nclaude -c\nclaude --version\nclaude mcp list\nresume\nexit\n")
+            .write_all(b"echo rc=$REPODECK_TEST_RC\nfalse\ncodex --yolo\nclaude -c\nclaude --version\nclaude mcp list\nresume\nagy -c\nagy models\nexit\n")
             .unwrap();
         let output = child.wait_with_output().unwrap();
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -202,8 +219,15 @@ mod tests {
             "a script's claude gets them too: {stdout:?}"
         );
 
+        assert!(stdout.contains("real agy --settings {} -c\n"), "agy gets its settings: {stdout:?}");
+
         let announced = fs::read_to_string(root.join("agent-events.log")).unwrap_or_default();
-        assert_eq!(announced.matches("repodeck_agent").count(), 2, "only the interactive starts: {announced}");
+        assert_eq!(
+            announced.matches("repodeck_agent").count(),
+            3,
+            "only the interactive starts: {announced}"
+        );
+        assert!(announced.contains(r#"{"repodeck_agent":"agy"}"#), "{announced}");
 
         let log = fs::read_to_string(&events).unwrap();
         assert!(log.lines().any(|l| l.starts_with("S\t") && l.ends_with("\tfalse")), "{log}");

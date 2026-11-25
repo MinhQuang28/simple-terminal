@@ -4,6 +4,7 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::agent_launch::Agent;
+use crate::agent_usage::RolloutUsage;
 use crate::claude_status_line::{self, StatusFile, StatusLine};
 use crate::event_log::EventLog;
 
@@ -95,6 +96,8 @@ pub struct AgentEvents {
     kind: Option<Agent>,
     /// A wrapper announced an agent that hasn't returned to the shell prompt yet.
     announced: bool,
+    /// The session file of a Codex running here, which holds its token counts and limits.
+    rollout: Option<RolloutUsage>,
 }
 
 /// The line a wrapper writes before starting an agent in a terminal tab, naming it.
@@ -117,6 +120,7 @@ impl AgentEvents {
             ended: false,
             kind: None,
             announced: false,
+            rollout: None,
         })
     }
 
@@ -145,9 +149,9 @@ impl AgentEvents {
         self.status_line.path()
     }
 
-    /// Subscription limits and context use, once Claude Code has reported them.
+    /// Subscription limits and context use, once the agent has reported them.
     pub fn status_line(&self) -> Option<StatusLine> {
-        self.status_line.latest()
+        self.status_line.latest().or_else(|| self.rollout.as_ref()?.latest())
     }
 
     pub fn status(&self) -> AgentStatus {
@@ -193,14 +197,26 @@ impl AgentEvents {
     pub fn poll(&mut self) -> Option<AgentStatus> {
         let before = self.status;
         self.status_line.poll();
+        if let Some(rollout) = &mut self.rollout {
+            rollout.poll();
+        }
         for line in self.log.poll_lines() {
             let Ok(event) = serde_json::from_str::<Value>(&line) else { continue };
+            let event = crate::antigravity_hooks::as_claude_event(&event).unwrap_or(event);
             // The wrapper writes this before the agent draws anything, so the pane is laid out
             // for it from its first frame rather than jumping when its first hook arrives.
             if let Some(agent) = event[STARTED_KEY].as_str().and_then(Agent::of) {
                 self.kind = Some(agent);
                 self.ended = false;
                 self.announced = true;
+            }
+            if let Some(path) = event["transcript_path"].as_str()
+                && self.rollout.as_ref().is_none_or(|r| r.path() != Path::new(path))
+            {
+                self.rollout = RolloutUsage::open(path);
+            }
+            if let Some(rollout) = &mut self.rollout {
+                rollout.set_model(event["model"].as_str());
             }
             if let Some(id) = event["session_id"].as_str() {
                 self.session_id = Some(id.to_string());

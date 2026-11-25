@@ -91,6 +91,7 @@ pub fn agent(agent: Agent) -> &'static Program {
         Agent::Claude => "claude",
         Agent::Codex => "codex",
         Agent::OpenCode => "opencode",
+        Agent::Antigravity => "antigravity",
     };
     get(key).or_else(|| get("agent")).expect("programs.json lists agent")
 }

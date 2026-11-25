@@ -1,5 +1,6 @@
 use eframe::egui::{CentralPanel, CornerRadius, Frame, Margin, Panel, Stroke};
 
+use crate::agent_launch::Agent;
 use crate::app::RepodeckApp;
 use crate::claude_status_line::StatusLine;
 use crate::ui::workspace::Workspace;
@@ -65,7 +66,13 @@ impl RepodeckApp {
         }
         let agent_status = self.active_status_line();
         let models = self.usage.models();
+        // Codex and Antigravity have limits of their own, shown while their pane is the active one.
+        let other_agent = self
+            .active_pane_id()
+            .and_then(|id| self.pool.get(id)?.agent_kind())
+            .filter(|kind| *kind != Agent::Claude && agent_status.is_some());
         let agent = chrome::AgentInfo {
+            switchable: other_agent.is_none(),
             model: agent_status.as_ref().and_then(|s| s.model.as_deref()),
             context: agent_status.as_ref().and_then(|s| s.context_percent),
             models: &models,
@@ -86,8 +93,11 @@ impl RepodeckApp {
                 let context = agent_status.as_ref().and_then(|s| s.context_percent);
                 // Whichever is newer: what Claude was asked directly, or an agent pane's report.
                 let limits = [self.usage.latest(), self.pool.latest_limits()];
-                let limits = limits.into_iter().flatten().max_by_key(|l| l.reported_at);
-                let usage = (limits.as_ref(), context);
+                let limits = match other_agent {
+                    Some(_) => agent_status.clone().filter(StatusLine::has_limits),
+                    None => limits.into_iter().flatten().max_by_key(|l| l.reported_at),
+                };
+                let usage = (other_agent.unwrap_or(Agent::Claude), limits.as_ref(), context);
                 chrome::top_bar(ui, &self.state, status.as_deref(), &self.inbox, &self.pool, usage, actions)
             });
 

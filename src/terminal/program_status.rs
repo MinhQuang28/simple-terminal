@@ -97,6 +97,7 @@ impl ProgramStatus {
             "claude-code" | "claude" => Some(Agent::Claude),
             "codex" | "codex-cli" => Some(Agent::Codex),
             "opencode" => Some(Agent::OpenCode),
+            "agy" | "antigravity" => Some(Agent::Antigravity),
             _ => None,
         }
     }

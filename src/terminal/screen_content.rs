@@ -18,8 +18,8 @@ pub fn content_rows(term: &Term<EventProxy>) -> usize {
     (last_used.max(cursor) + 1) as usize
 }
 
-/// Text that marks Claude Code's banner, which it draws when a session starts.
-const BANNER_MARK: &str = "Claude Code";
+/// Text that marks the banner Claude Code or Antigravity draws when a session starts.
+const BANNER_MARKS: &[&str] = &["Claude Code", "Antigravity CLI"];
 /// A banner is a handful of rows; a taller first block is something else.
 const MAX_BANNER_ROWS: i32 = 8;
 
@@ -31,7 +31,7 @@ pub fn banner_rows(term: &Term<EventProxy>) -> usize {
     let lines = (term.screen_lines() as i32).min(MAX_BANNER_ROWS + 2);
     let Some(first) = (0..lines).find(|&l| !text(l).trim().is_empty()) else { return 0 };
     let Some(end) = (first..lines).find(|&l| text(l).trim().is_empty()) else { return 0 };
-    let marked = (first..end).any(|l| text(l).contains(BANNER_MARK));
+    let marked = (first..end).any(|l| BANNER_MARKS.iter().any(|mark| text(l).contains(mark)));
     if marked && end - first <= MAX_BANNER_ROWS { end as usize } else { 0 }
 }
 

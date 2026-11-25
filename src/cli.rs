@@ -6,7 +6,7 @@ use std::io::Write;
 use std::time::{Duration, Instant};
 
 use crate::cli_commands::{self, Request};
-use crate::{agent_launch, codex_launch, socket_api};
+use crate::{agent_launch, antigravity_hooks, codex_launch, socket_api};
 
 pub const USAGE: &str = "usage: repodeck notify <text> | open [folder] | claude [folder] [--task <text>] | \
 worktree [folder] [--task <text>] | worktree list|new|open|remove|done … | \
@@ -27,6 +27,10 @@ pub fn run() -> bool {
     let mut args: Vec<String> =
         std::env::args_os().skip(1).map(|a| a.to_string_lossy().into_owned()).collect();
     let Some(verb) = (!args.is_empty()).then(|| args.remove(0)) else { return false };
+    if verb == antigravity_hooks::STATUS_VERB {
+        antigravity_hooks::print_status_line();
+        return true;
+    }
     if verb == agent_launch::CODEX_VERB {
         codex_launch::run(args.into_iter());
     }

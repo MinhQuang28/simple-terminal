@@ -6,6 +6,7 @@ use eframe::egui;
 use uuid::Uuid;
 
 use crate::agent_events::{AgentEvents, AgentStatus};
+use crate::agent_launch::Agent;
 use crate::agent_launch::{with_first_prompt, with_hooks};
 use crate::claude_history::{has_transcript, is_session_id};
 use crate::claude_status_line::StatusLine;
@@ -126,10 +127,11 @@ impl SessionPool {
         self.sessions.get(&pane)?.agent_status()
     }
 
-    /// The most recent subscription limits any agent reported; they're account-wide.
+    /// The most recent subscription limits any Claude Code pane reported; they're account-wide.
     pub fn latest_limits(&self) -> Option<StatusLine> {
         self.sessions
             .values()
+            .filter(|session| matches!(session.agent_kind(), None | Some(Agent::Claude)))
             .filter_map(TerminalSession::agent_status_line)
             .filter(StatusLine::has_limits)
             .max_by_key(|s| s.reported_at)

@@ -12,6 +12,7 @@ use super::model_menu;
 use super::open_in_menu;
 use super::usage_panel;
 use super::widgets::{icon_button_frame, muted, right_aligned, text_button, tinted_text_button};
+use crate::agent_launch::Agent;
 use crate::claude_models::ModelOption;
 use crate::claude_status_line::StatusLine;
 use crate::font_catalog::SYSTEM_FONT;
@@ -42,7 +43,7 @@ pub fn top_bar(
     status: Option<&GitStatus>,
     inbox: &Inbox,
     pool: &SessionPool,
-    (limits, context): (Option<&StatusLine>, Option<f64>),
+    (agent, limits, context): (Agent, Option<&StatusLine>, Option<f64>),
     actions: &mut Vec<Action>,
 ) {
     window_drag_area(ui, ui.max_rect());
@@ -79,7 +80,7 @@ pub fn top_bar(
                 }
             }
             inbox_panel::bell(ui, state, inbox, pool, actions);
-            usage_panel::gauge(ui, state, limits, context, actions);
+            usage_panel::gauge(ui, state, agent, limits, context, actions);
             if let Some(repo) = state.selected_repo.and_then(|id| state.repo(id)) {
                 open_in_menu::show(ui, repo, actions);
             }
@@ -167,6 +168,8 @@ pub struct AgentInfo<'a> {
     pub context: Option<f64>,
     /// Models the session can be switched to.
     pub models: &'a [ModelOption],
+    /// Whether the model can be switched from here, which only Claude Code offers.
+    pub switchable: bool,
 }
 
 pub fn status_bar(
@@ -222,7 +225,11 @@ pub fn status_bar(
                 }
                 if let Some(model) = agent.model {
                     ui.add_space(4.0);
-                    model_menu::show(ui, model, agent.models, actions);
+                    if agent.switchable {
+                        model_menu::show(ui, model, agent.models, actions);
+                    } else {
+                        ui.label(RichText::new(format!("✦ {model}")).size(TEXT_SECONDARY).color(muted(ui)));
+                    }
                 }
                 if let Some(context) = agent.context {
                     ui.add_space(6.0);

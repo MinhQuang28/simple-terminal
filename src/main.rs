@@ -4,6 +4,8 @@ pub const BUNDLE_ID: &str = "co.egohub.repodeck";
 
 mod agent_events;
 mod agent_launch;
+mod agent_usage;
+mod antigravity_hooks;
 mod app;
 mod app_actions;
 mod app_add_project;

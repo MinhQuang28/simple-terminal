@@ -9,6 +9,7 @@ const COMMAND_WIDTH: f32 = 300.0;
 const PROVIDERS: &[(&str, &str, &str)] = &[
     ("claude", "claude", "claude --continue || claude"),
     ("codex", "codex", "codex resume --last || codex"),
+    ("agy", "agy", "agy --continue || agy"),
     ("gemini", "gemini", "gemini"),
 ];
 const PANE_KINDS: [(PaneKind, &str); 2] = [(PaneKind::Shell, "Terminal"), (PaneKind::Agent, "Claude Code")];
@@ -24,7 +25,13 @@ pub fn show(ui: &mut Ui, settings: &mut Settings) {
                 let first = settings.agent_command.split_whitespace().next().unwrap_or_default();
                 let current = PROVIDERS.iter().position(|(name, _, _)| *name == first);
                 let mut picked = current.unwrap_or(PROVIDERS.len());
-                let options = [(0, "Claude"), (1, "Codex"), (2, "Gemini"), (PROVIDERS.len(), "Custom")];
+                let options = [
+                    (0, "Claude"),
+                    (1, "Codex"),
+                    (2, "Antigravity"),
+                    (3, "Gemini"),
+                    (PROVIDERS.len(), "Custom"),
+                ];
                 if segmented(ui, &mut picked, &options)
                     && let Some((_, start, resume)) = PROVIDERS.get(picked)
                 {
@@ -35,8 +42,8 @@ pub fn show(ui: &mut Ui, settings: &mut Settings) {
         );
         card.row(
             "New session command",
-            "Runs in tabs opened with “New Claude session”. Claude Code, Codex and OpenCode are \
-             recognised: their status, prompts and replies reach the sidebar and inbox.",
+            "Runs in tabs opened with “New Claude session”. Claude Code, Codex, OpenCode and Antigravity \
+             are recognised: their status, prompts and replies reach the sidebar and inbox.",
             |ui| {
                 ui.add(
                     TextEdit::singleline(&mut settings.agent_command)

@@ -7,11 +7,13 @@ use eframe::egui::{
 };
 
 use super::Action;
-use super::claude_icon;
 use super::design::{self, TEXT_BODY, TEXT_SECONDARY, TEXT_TITLE, hairline};
+use super::program_icon;
 use super::widgets::{ago, glyph_button, icon_button_frame, muted, right_aligned};
+use crate::agent_launch::Agent;
 use crate::claude_status_line::{StatusLine, Window, duration, now};
 use crate::model::AppState;
+use crate::programs;
 
 const WIDTH: f32 = 320.0;
 const BAR_HEIGHT: f32 = 4.0;
@@ -24,10 +26,12 @@ const DIAL_SWEEP: f32 = 240.0;
 const WARN_AT: f64 = 60.0;
 const CRITICAL_AT: f64 = 85.0;
 
-/// `limits` are the subscription's account-wide usage; `context` is the active agent pane's.
+/// `limits` are the account-wide usage of `agent`'s subscription; `context` is the active agent
+/// pane's.
 pub fn gauge(
     ui: &mut Ui,
     state: &AppState,
+    agent: Agent,
     limits: Option<&StatusLine>,
     context: Option<f64>,
     actions: &mut Vec<Action>,
@@ -36,8 +40,8 @@ pub fn gauge(
         Some(limits) => pill(ui, state, limits.peak_used()),
         None => gauge_icon(ui),
     };
-    let response = response.on_hover_text("Claude usage");
-    design::popup(ui, &response, WIDTH, |ui| contents(ui, state, limits, context, actions));
+    let response = response.on_hover_text(format!("{} usage", agent.label()));
+    design::popup(ui, &response, WIDTH, |ui| contents(ui, state, agent, limits, context, actions));
 }
 
 fn left(used: f64) -> f64 {
@@ -47,6 +51,7 @@ fn left(used: f64) -> f64 {
 fn contents(
     ui: &mut Ui,
     state: &AppState,
+    agent: Agent,
     limits: Option<&StatusLine>,
     context: Option<f64>,
     actions: &mut Vec<Action>,
@@ -55,10 +60,11 @@ fn contents(
     ui.add_space(4.0);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
-        claude_icon::icon(ui, 16.0);
-        ui.label(RichText::new("Claude").size(TEXT_TITLE).strong());
+        program_icon::icon(ui, 16.0, programs::agent(agent));
+        ui.label(RichText::new(agent.label()).size(TEXT_TITLE).strong());
         right_aligned(ui, |ui| {
-            if glyph_button(ui, "↻").on_hover_text("Ask Claude again").clicked() {
+            // Only Claude can be asked; the others report as they work.
+            if agent == Agent::Claude && glyph_button(ui, "↻").on_hover_text("Ask Claude again").clicked() {
                 actions.push(Action::RefreshUsage);
             }
         });
@@ -80,7 +86,10 @@ fn contents(
         }
         None => {
             ui.add_space(8.0);
-            let text = "Asking Claude for your limits. They show for Pro and Max plans.";
+            let text = match agent {
+                Agent::Claude => "Asking Claude for your limits. They show for Pro and Max plans.",
+                _ => "No limits reported yet.",
+            };
             ui.label(RichText::new(text).color(muted(ui)).size(TEXT_SECONDARY));
         }
     }

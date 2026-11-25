@@ -199,6 +199,11 @@ impl TerminalSession {
         // typed into a terminal tab, whose shell passes the hooks to `claude` (see
         // `shell_integration`).
         if let Some(agent) = &agent {
+            crate::antigravity_hooks::install();
+            env.insert(
+                crate::antigravity_hooks::SETTINGS_VAR.into(),
+                crate::antigravity_hooks::session_settings(std::env::current_exe().ok().as_deref()),
+            );
             env.insert(agent_events::EVENTS_VAR.into(), agent.path().to_string_lossy().into_owned());
             if let Ok(exe) = std::env::current_exe() {
                 env.insert(EXE_VAR.into(), exe.to_string_lossy().into_owned());
