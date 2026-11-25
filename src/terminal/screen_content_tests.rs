@@ -38,6 +38,16 @@ fn decorated_spaces_count_as_content() {
 }
 
 #[test]
+fn tabs_do_not_count_as_content() {
+    let mut term = EventProxy::test_term(20, 6);
+    feed(&mut term, b"one\r\n\r\n\t\t\x1b[1;1H");
+    assert_eq!(content_rows(&term), 1);
+
+    feed(&mut term, b"\x1b[4;1H\x1b[44m \t\x1b[0m\x1b[1;1H");
+    assert_eq!(content_rows(&term), 4, "a background beside a tab still shows");
+}
+
+#[test]
 fn ignores_the_scroll_position() {
     let mut term = EventProxy::test_term(10, 3);
     feed(&mut term, b"a\r\nb\r\nc\r\nd\r\n\x1b[2J\x1b[1;1Hx");

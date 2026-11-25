@@ -11,7 +11,7 @@ use alacritty_terminal::vte::ansi::{Color, CursorShape, CursorStyle};
 use eframe::egui::Color32;
 
 use super::colors;
-use super::screen_content::{banner_rows, content_rows};
+use super::screen_content::{banner_rows, content_rows, shown};
 use super::session::EventProxy;
 use crate::theme::Theme;
 
@@ -200,18 +200,19 @@ impl Frame {
             if cell.flags.intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER) {
                 continue;
             }
-            blank &= cell.c == ' ';
+            let c = shown(cell.c);
+            blank &= c == ' ';
             let row = indexed.point.line.0 + offset;
             let row = if (0..lifted).contains(&row) { row - band as i32 } else { row };
             let selected = selection.as_ref().is_some_and(|s| s.contains(indexed.point));
             let (fg, bg) = cell_colors(cell, palette, theme, selected);
             if indexed.point == cursor_point {
-                under = Some((cell.c, bg, cell.flags.contains(Flags::BOLD)));
+                under = Some((c, bg, cell.flags.contains(Flags::BOLD)));
             }
             cells.push(Cell {
                 row,
                 col: indexed.point.column.0,
-                c: cell.c,
+                c,
                 zerowidth: cell.zerowidth().map(|z| z.to_vec().into_boxed_slice()),
                 fg,
                 bg,

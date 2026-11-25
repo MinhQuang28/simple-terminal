@@ -39,6 +39,23 @@ fn keeps_the_previous_frame_while_the_terminal_is_locked() {
 }
 
 #[test]
+fn tab_cells_are_captured_as_spaces() {
+    let term = FairMutex::new(EventProxy::test_term(20, 3));
+    let mut frame = Frame::default();
+    // The terminal leaves the tab itself in the first cell it skips; drawn as text it would push
+    // the rest of the row off its columns. Antigravity moves its cursor over blanks this way.
+    feed(&term, b"\t");
+    assert!(frame.refresh(&term, &Theme::default(), false));
+    assert!(frame.blank, "a tab draws nothing");
+
+    feed(&term, b"\rab\tcd");
+    assert_eq!(term.lock().grid()[Line(0)][Column(2)].c, '\t');
+    assert!(frame.refresh(&term, &Theme::default(), false));
+    let row: String = frame.cells.iter().filter(|c| c.row == 0).map(|c| c.c).collect();
+    assert_eq!(row.trim_end(), "ab      cd");
+}
+
+#[test]
 fn waits_for_the_terminal_once_the_frame_is_too_old() {
     let term = Arc::new(FairMutex::new(EventProxy::test_term(10, 3)));
     let theme = Theme::default();

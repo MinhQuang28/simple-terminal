@@ -50,10 +50,16 @@ pub fn last_text_line(term: &Term<EventProxy>) -> Option<String> {
     })
 }
 
+/// The glyph a cell holding `c` shows. The terminal leaves a tab in the first blank cell it skips
+/// (Antigravity moves its cursor that way); drawn as text it would shift the rest of the row.
+pub fn shown(c: char) -> char {
+    if c == '\t' { ' ' } else { c }
+}
+
 /// Whether the cell shows anything: a glyph, a decoration (drawn even on spaces), or a background
 /// that differs from the pane's.
 fn is_visible(cell: &Cell) -> bool {
-    cell.c != ' '
+    shown(cell.c) != ' '
         || cell.zerowidth().is_some()
         || cell.flags.intersects(Flags::INVERSE | Flags::ALL_UNDERLINES | Flags::STRIKEOUT)
         || cell.bg != Color::Named(NamedColor::Background)
