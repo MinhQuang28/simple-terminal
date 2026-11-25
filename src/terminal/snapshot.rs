@@ -11,7 +11,7 @@ use alacritty_terminal::vte::ansi::{Color, CursorShape, CursorStyle};
 use eframe::egui::Color32;
 
 use super::colors;
-use super::screen_content::content_rows;
+use super::screen_content::{banner_rows, content_rows};
 use super::session::EventProxy;
 use crate::theme::Theme;
 
@@ -56,6 +56,10 @@ pub struct Frame {
     /// History rows carried above the viewport, as negative rows, so an anchored pane shows them
     /// where the screen's empty last rows would otherwise leave a gap; 0 when not anchored.
     pub band_rows: usize,
+    /// Screen rows drawn at the pane's top instead of right above the rest: Claude Code's banner
+    /// in a session young enough to leave the pane partly empty, so the banner heads the pane
+    /// while the conversation grows up from the prompt box at the bottom.
+    pub lifted_rows: usize,
     /// Whether the last capture was anchored to the pane's bottom edge.
     anchored: bool,
     /// Counts captures, so whatever is built from the cells knows when it is out of date.
@@ -106,6 +110,7 @@ impl Default for Frame {
             has_selection: false,
             blank: true,
             band_rows: 0,
+            lifted_rows: 0,
             anchored: false,
             generation: 0,
             dirty: true,
@@ -183,6 +188,9 @@ impl Frame {
         let mut under = None;
         let mut blank = true;
         let screen_lines = term.screen_lines() as i32;
+        // With nothing above it to show in the band, the banner moves up across it.
+        let nothing_above = offset == 0 && term.grid().history_size() == 0;
+        let lifted = if band > 0 && nothing_above { banner_rows(term) as i32 } else { 0 };
 
         // The band, plus the row above it that shows partially while scrolling between lines.
         let above = (-offset - 1 - band as i32..=-offset - 1).flat_map(|line| edge_row(term, line));
@@ -194,6 +202,7 @@ impl Frame {
             }
             blank &= cell.c == ' ';
             let row = indexed.point.line.0 + offset;
+            let row = if (0..lifted).contains(&row) { row - band as i32 } else { row };
             let selected = selection.as_ref().is_some_and(|s| s.contains(indexed.point));
             let (fg, bg) = cell_colors(cell, palette, theme, selected);
             if indexed.point == cursor_point {
@@ -220,6 +229,7 @@ impl Frame {
         self.has_selection = term.selection.is_some();
         self.blank = blank;
         self.band_rows = band;
+        self.lifted_rows = lifted as usize;
     }
 }
 

@@ -36,19 +36,10 @@ if [[ -n "$REPODECK_SHELL_EVENTS" ]]; then
   add-zsh-hook preexec __repodeck_preexec
   add-zsh-hook precmd __repodeck_precmd
 fi
-# Claude Code and Codex typed here start with Repodeck's hooks, so the pane shows their status
-# and keeps Claude's prompt box at the bottom as their own tabs do. A `claude` function of the
-# user's own is left alone.
-if [[ -n "$REPODECK_AGENT_HOOKS" ]] && (( ! $+functions[claude] )); then
-  claude() {
-    # Interactive starts are announced first, so the pane is ready before Claude draws.
-    if [[ -n "$REPODECK_AGENT_EVENTS" ]] && { (( $# == 0 )) || [[ "$1" == -* ]] } \
-      && (( ! ${@[(I)(-p|--print|-v|--version|-h|--help)]} )); then
-      print -r -- '{"repodeck_agent":"claude"}' >> "$REPODECK_AGENT_EVENTS" 2>/dev/null
-    fi
-    command claude --settings "$REPODECK_AGENT_HOOKS" "$@"
-  }
-fi
+# Claude Code and Codex started here get Repodeck's hooks, so the pane shows their status and
+# keeps Claude's prompt box at the bottom as their own tabs do. Claude goes through a `claude`
+# on the PATH rather than a function, so scripts and aliases that start it are covered too.
+[[ -n "$REPODECK_AGENT_HOOKS" ]] && path=("${REPODECK_ZDOTDIR:h}/bin" $path)
 if [[ -n "$REPODECK_AGENT_EVENTS" && -x "$REPODECK_EXE" ]]; then
   codex() {
     local real
@@ -56,6 +47,34 @@ if [[ -n "$REPODECK_AGENT_EVENTS" && -x "$REPODECK_EXE" ]]; then
     "$REPODECK_EXE" run-codex "$real" "$@"
   }
 fi
+"#;
+
+/// Stands in for `claude` on the PATH of a pane's shell and starts the real one with the hooks.
+const CLAUDE_SHIM: &str = r#"#!/bin/sh
+self=$(cd "$(dirname "$0")" && pwd -P)
+real=
+IFS=:
+for dir in $PATH; do
+  [ -n "$dir" ] && [ "$(cd "$dir" 2>/dev/null && pwd -P)" != "$self" ] || continue
+  if [ -f "$dir/claude" ] && [ -x "$dir/claude" ]; then real=$dir/claude; break; fi
+done
+unset IFS
+[ -n "$real" ] || { echo "claude: command not found" >&2; exit 127; }
+[ -n "$REPODECK_AGENT_HOOKS" ] || exec "$real" "$@"
+# Interactive starts are announced first, so the pane is ready before Claude draws.
+case "${1-}" in ""|-*) interactive=1 ;; *) interactive=0 ;; esac
+for arg in "$@"; do
+  case "$arg" in
+    --settings) exec "$real" "$@" ;;
+    -p|--print|-v|--version|-h|--help) interactive=0 ;;
+  esac
+done
+if [ "$interactive" = 1 ] && [ -n "$REPODECK_AGENT_EVENTS" ]; then
+  echo '{"repodeck_agent":"claude"}' >> "$REPODECK_AGENT_EVENTS" 2>/dev/null
+  # Claude gets the pane to itself: what was typed here before is cleared, history included.
+  [ -t 1 ] && printf '\033[H\033[2J\033[3J'
+fi
+exec "$real" --settings "$REPODECK_AGENT_HOOKS" "$@"
 "#;
 
 fn user_file_loader(name: &str) -> String {
@@ -103,7 +122,18 @@ fn zsh_dir() -> Option<PathBuf> {
             fs::write(&path, content).ok()?;
         }
     }
+    write_claude_shim(&dir.with_file_name("bin"))?;
     Some(dir)
+}
+
+fn write_claude_shim(dir: &Path) -> Option<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::create_dir_all(dir).ok()?;
+    let path = dir.join("claude");
+    if fs::read_to_string(&path).ok().as_deref() != Some(CLAUDE_SHIM) {
+        fs::write(&path, CLAUDE_SHIM).ok()?;
+    }
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).ok()
 }
 
 #[cfg(test)]
@@ -131,6 +161,10 @@ mod tests {
         fs::write(bin.join("claude"), "#!/bin/sh\necho real claude \"$@\"\n").unwrap();
         fs::set_permissions(bin.join("claude"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
 
+        // A script of the user's that starts Claude, as `claude-resume` does.
+        fs::write(bin.join("resume"), "#!/bin/sh\nexec claude -r abc\n").unwrap();
+        fs::set_permissions(bin.join("resume"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+
         let mut child = Command::new("/bin/zsh")
             .arg("-i")
             .env_clear()
@@ -151,7 +185,7 @@ mod tests {
             .stdin
             .take()
             .unwrap()
-            .write_all(b"echo rc=$REPODECK_TEST_RC\nfalse\ncodex --yolo\nclaude -c\nclaude --version\nclaude mcp list\nexit\n")
+            .write_all(b"echo rc=$REPODECK_TEST_RC\nfalse\ncodex --yolo\nclaude -c\nclaude --version\nclaude mcp list\nresume\nexit\n")
             .unwrap();
         let output = child.wait_with_output().unwrap();
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -163,8 +197,13 @@ mod tests {
             "claude gets the hooks: {stdout:?}"
         );
 
+        assert!(
+            stdout.contains("real claude --settings {\"hooks\":{}} -r abc"),
+            "a script's claude gets them too: {stdout:?}"
+        );
+
         let announced = fs::read_to_string(root.join("agent-events.log")).unwrap_or_default();
-        assert_eq!(announced.matches("repodeck_agent").count(), 1, "only the interactive start: {announced}");
+        assert_eq!(announced.matches("repodeck_agent").count(), 2, "only the interactive starts: {announced}");
 
         let log = fs::read_to_string(&events).unwrap();
         assert!(log.lines().any(|l| l.starts_with("S\t") && l.ends_with("\tfalse")), "{log}");

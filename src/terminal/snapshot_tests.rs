@@ -129,3 +129,39 @@ fn anchoring_while_scrolled_up_stops_where_the_band_meets_history() {
     assert_eq!((frame.display_offset, frame.band_rows), (2, 3));
     assert_eq!(glyph_at(&frame, -3), Some('a'), "the band's top row is the first line");
 }
+
+#[test]
+fn a_young_claude_session_shows_its_banner_at_the_top_of_the_pane() {
+    let theme = Theme::default();
+    let term = FairMutex::new(EventProxy::test_term(30, 10));
+    feed(&term, b"B Claude Code v2\r\nM Fable\r\n\r\n> prompt");
+    let mut frame = Frame::default();
+
+    assert!(frame.refresh(&term, &theme, true));
+    assert_eq!((frame.band_rows, frame.lifted_rows), (6, 2));
+    // The banner's rows head the pane; the prompt box stays against its bottom edge.
+    assert_eq!((pane_row(&frame, 'B'), pane_row(&frame, 'M')), (Some(0), Some(1)));
+    assert_eq!(pane_row(&frame, '>'), Some(9));
+
+    // Not anchored, the screen is drawn as it is.
+    assert!(frame.refresh(&term, &theme, false));
+    assert_eq!((frame.lifted_rows, pane_row(&frame, 'B'), pane_row(&frame, '>')), (0, Some(0), Some(3)));
+}
+
+#[test]
+fn only_a_banner_with_nothing_above_it_is_lifted() {
+    let theme = Theme::default();
+    // Another program's first block stays with the rest of its output.
+    let term = FairMutex::new(EventProxy::test_term(30, 10));
+    feed(&term, b"Accessing workspace:\r\n\r\n> yes");
+    let mut frame = Frame::default();
+    assert!(frame.refresh(&term, &theme, true));
+    assert_eq!((frame.lifted_rows, pane_row(&frame, 'A')), (0, Some(7)));
+
+    // With history above the screen, the band shows that history instead.
+    let term = FairMutex::new(EventProxy::test_term(30, 6));
+    feed(&term, b"a\r\nb\r\nc\r\nd\r\ne\r\nf\r\ng\r\n\x1b[2J\x1b[1;1HB Claude Code v2\r\n\r\n> prompt");
+    let mut frame = Frame::default();
+    assert!(frame.refresh(&term, &theme, true));
+    assert_eq!((frame.lifted_rows, pane_row(&frame, 'B'), pane_row(&frame, '>')), (0, Some(3), Some(5)));
+}
