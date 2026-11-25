@@ -28,8 +28,6 @@ pub struct Buffer {
     /// Shows rendered Markdown instead of the text editor.
     pub preview: bool,
     pub markdown: CommonMarkCache,
-    /// Line-number column for the current line count.
-    gutter: (usize, String),
     /// Find or go-to-line bar, while open.
     pub bar: Option<EditorBar>,
     /// Cursors besides the editor's own, as (anchor, cursor) character indices.
@@ -62,20 +60,9 @@ impl Buffer {
             save_error: None,
             preview: is_markdown(path),
             markdown: CommonMarkCache::default(),
-            gutter: (0, String::new()),
             bar: None,
             extra_cursors: Vec::new(),
         }
-    }
-
-    /// Right-aligned line numbers, one per line, rebuilt only when the line count changes.
-    pub fn gutter(&mut self, lines: usize) -> &str {
-        if self.gutter.0 != lines {
-            let digits = lines.to_string().len();
-            let text: String = (1..=lines).map(|n| format!("{n:>digits$}\n")).collect();
-            self.gutter = (lines, text.trim_end().to_string());
-        }
-        &self.gutter.1
     }
 
     pub fn is_dirty(&self) -> bool {

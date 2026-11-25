@@ -2,6 +2,7 @@ mod buffer;
 mod commands;
 mod cursors;
 mod find_bar;
+mod gutter;
 mod highlight;
 mod line_ops;
 mod markdown;

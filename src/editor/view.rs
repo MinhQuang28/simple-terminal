@@ -5,17 +5,20 @@ use super::buffer::{Buffer, Content, is_markdown};
 use super::commands::{self, EditorCommand, Request};
 use super::cursors;
 use super::find_bar::{self, BarKind, EditorBar, Found, Jump, char_index, line_of};
-use super::{highlight, markdown};
+use super::{gutter, highlight, markdown};
 use crate::model::Settings;
 use eframe::egui::text::{CCursor, CCursorRange, LayoutJob};
 use eframe::egui::text_edit::TextEditOutput;
 use eframe::egui::{
-    Align, Button, Color32, FocusDirection, FontId, Frame, Galley, Id, Key, Label, Layout, Margin, Modifiers,
-    Rect, RichText, ScrollArea, TextBuffer, TextEdit, TextFormat, Ui, pos2,
+    Align, Button, Color32, FocusDirection, FontId, Frame, Galley, Id, Key, Layout, Margin, Modifiers, Rect,
+    RichText, ScrollArea, TextBuffer, TextEdit, TextFormat, Ui, pos2,
 };
 
 /// Highlighting re-runs on every edit, so very large files are shown as plain text.
 const MAX_HIGHLIGHT_CHARS: usize = 200_000;
+
+/// Rows kept on view above the line a jump goes to.
+const CONTEXT_ROWS: f32 = 4.0;
 
 /// What the user asked of the editor this frame.
 #[derive(Default)]
@@ -69,7 +72,6 @@ pub fn show(
         Content::Text(text) => text.split('\n').count(),
         Content::Unavailable(_) => 0,
     };
-    let gutter = buffer.gutter(lines).to_string();
     let Buffer { content, markdown: cache, preview, bar, extra_cursors: extra, .. } = buffer;
     let text = match content {
         Content::Text(text) => text,
@@ -141,9 +143,13 @@ pub fn show(
     }
     let row_height = ui.fonts_mut(|f| f.row_height(&font));
     let mut area = ScrollArea::both().id_salt(id.with("scroll")).auto_shrink(false);
+    let landed = id.with("landed");
+    if let Some(offset) = ui.data_mut(|d| d.remove_temp::<f32>(landed)) {
+        area = area.vertical_scroll_offset(offset);
+    }
     if let Some(Jump { start, .. }) = jump {
         let line = line_of(text, start);
-        area = area.vertical_scroll_offset((line.saturating_sub(4) as f32 * row_height).max(0.0));
+        area = area.vertical_scroll_offset(((line as f32 - CONTEXT_ROWS) * row_height).max(0.0));
     }
     let matches = bar.as_ref().filter(|b| b.kind == BarKind::Find).map(|b| b.matches());
     let accent = settings.theme.accent();
@@ -162,10 +168,11 @@ pub fn show(
     let (pressed, modifiers) = ui.input(|i| (i.pointer.primary_pressed(), i.modifiers));
     let before_click = cursors::primary(ui, id);
     let caret_color = ui.visuals().text_cursor.stroke.color;
-    area.show(ui, |ui| {
+    let scrolled = area.show(ui, |ui| {
+        let top = ui.min_rect().top();
         ui.horizontal_top(|ui| {
             ui.spacing_mut().item_spacing.x = 12.0;
-            ui.add(Label::new(RichText::new(&gutter).font(font.clone()).color(muted)).selectable(false));
+            let numbers = gutter::reserve(ui, &font, lines);
             let output = TextEdit::multiline(text)
                 .id(id)
                 .code_editor()
@@ -176,6 +183,7 @@ pub fn show(
                 .lock_focus(true)
                 .layouter(&mut layouter)
                 .show(ui);
+            gutter::paint(ui, numbers, &output, &font, muted);
             if let Some((matches, current)) = matches {
                 paint_matches(ui, &output, matches, current, row_height, wrap, accent);
             }
@@ -200,8 +208,19 @@ pub fn show(
                     output.galley.pos_from_cursor(CCursor::new(head)).translate(output.galley_pos.to_vec2());
                 ui.scroll_to_rect(caret.expand(row_height), None);
             }
-        });
+            jump.map(|Jump { start, .. }| {
+                let row = output.galley.pos_from_cursor(CCursor::new(start)).top();
+                (output.galley_pos.y + row - top - CONTEXT_ROWS * row_height).max(0.0)
+            })
+        })
+        .inner
     });
+    // Wrapped lines above a jump push it below the row its line number gives; where it landed is
+    // known now that the text is laid out, and scrolled to in the next frame.
+    if let Some(offset) = scrolled.inner.filter(|_| wrap) {
+        ui.data_mut(|d| d.insert_temp(landed, offset));
+        ui.ctx().request_repaint();
+    }
     Shown { save, request }
 }
 
@@ -244,3 +263,7 @@ fn language_for(path: &Path) -> String {
         _ => path.extension().and_then(|e| e.to_str()).unwrap_or("txt").to_string(),
     }
 }
+
+#[cfg(test)]
+#[path = "view_tests.rs"]
+mod tests;
